@@ -39,7 +39,7 @@ struct WelcomeView: View {
                         LazyVGrid(columns: columns, spacing: 10) {
                             ForEach(viewModel.lists) { list in
                                 let uncheckedCount = viewModel.uncheckedCounts[list.id] ?? 0
-                                NavigationLink(destination: ShoppingListView(shoppingListId: list.id)) {
+                                NavigationLink(destination: ShoppingListView(shoppingListId: list.id, listName: list.name)) {
                                     gridButtonLabel(list.name, iconName: "list.bullet", count: uncheckedCount)
                                 }
                             }

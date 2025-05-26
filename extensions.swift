@@ -40,6 +40,24 @@ extension Color {
 
         self.init(red: red, green: green, blue: blue)
     }
+
+    func isDarkColor(threshold: Float = 0.6) -> Bool {
+        let uiColor = UIColor(self)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        // Luminance formula
+        let brightness = Float((red * 299 + green * 587 + blue * 114) / 1000)
+        return brightness < threshold
+    }
+
+    func appropriateForegroundColor() -> Color {
+        isDarkColor() ? .white : .black
+    }
 }
 
 extension View {
