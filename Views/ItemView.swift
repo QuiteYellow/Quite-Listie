@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MarkdownUI
 
 struct AddItemView: View {
     @Environment(\.dismiss) var dismiss
@@ -17,6 +18,9 @@ struct AddItemView: View {
     @State private var isLoading = true
     @State private var quantity: Int = 1
     @State private var showError = false
+    
+    @State private var mdNotes = ""
+    @State private var showMarkdownEditor = false
 
     var body: some View {
         NavigationView {
@@ -24,11 +28,13 @@ struct AddItemView: View {
                 Section(header: Text("Name")) {
                     TextField("Item name", text: $itemName)
                 }
+                
                 Section(header: Text("Quantity")) {
                     Stepper(value: $quantity, in: 1...100) {
                         Text("\(quantity)")
                     }
                 }
+                
                 Section(header: Text("Label")) {
                     if isLoading {
                         ProgressView("Loading Labels...")
@@ -41,6 +47,20 @@ struct AddItemView: View {
                         }
                     }
                 }
+                
+                Section(header: Text("Notes (Markdown)")) {
+                    if mdNotes.isEmpty {
+                        Text("No notes added.")
+                            .foregroundColor(.secondary)
+                    } else {
+                        Markdown(mdNotes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    
+                    Button("Edit Notes") {
+                        showMarkdownEditor = true
+                    }
+                }
             }
             .navigationTitle("Add Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -51,7 +71,8 @@ struct AddItemView: View {
                             let success = await viewModel.addItem(
                                 note: itemName,
                                 label: selectedLabel,
-                                quantity: Double(quantity)
+                                quantity: Double(quantity),
+                                markdownNotes: mdNotes.isEmpty ? nil : mdNotes
                             )
                             if success {
                                 dismiss()
@@ -82,6 +103,55 @@ struct AddItemView: View {
                 }
                 isLoading = false
             }
+            .sheet(isPresented: $showMarkdownEditor) {
+                NavigationView {
+                    Form {
+                        Section {
+                            TextEditor(text: $mdNotes)
+                                .frame(minHeight: 200)
+                                .autocapitalization(.sentences)
+                                .disableAutocorrection(false)
+                                .toolbar {
+                                        ToolbarItemGroup(placement: .keyboard) {
+                                            Button("**Bold**") {
+                                                mdNotes += "**bold text**"
+                                            }
+                                            Button("_Italic_") {
+                                                mdNotes += "_italic text_"
+                                            }
+                                            Button("Link") {
+                                                mdNotes += "[text](LINK)"
+                                            }
+                                            Button("Image") {
+                                                mdNotes += "![altText](LINK)"
+                                            }
+                                        }
+                                    }
+                        }
+                        
+                        Section(header: Text("Preview")) {
+                            ScrollView {
+                                Markdown(mdNotes)
+                                    .padding(.vertical)
+                            }
+                        }
+                    }
+                    .navigationTitle("Edit Notes")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                showMarkdownEditor = false
+                            }
+                        }
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                showMarkdownEditor = false
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -89,14 +159,17 @@ struct AddItemView: View {
 struct EditItemView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var viewModel: ShoppingListViewModel
-
+    
+    // Item fields
     @State private var itemName: String
     @State private var selectedLabel: ShoppingItem.LabelWrapper?
+    @State private var quantity: Int
+    @State private var mdNotes: String
     @State private var availableLabels: [ShoppingItem.LabelWrapper] = []
     @State private var isLoading = true
-    @State private var quantity: Int = 1
     @State private var showDeleteConfirmation = false
     @State private var showError = false
+    @State private var showMarkdownEditor = false
 
     let item: ShoppingItem
 
@@ -106,6 +179,7 @@ struct EditItemView: View {
         _itemName = State(initialValue: item.note)
         _selectedLabel = State(initialValue: item.label)
         _quantity = State(initialValue: Int(item.quantity ?? 1))
+        _mdNotes = State(initialValue: item.extras?["markdownNotes"] ?? "")
     }
 
     var body: some View {
@@ -115,7 +189,7 @@ struct EditItemView: View {
                     TextField("Item name", text: $itemName)
                 }
                 Section(header: Text("Quantity")) {
-                    Stepper(value: $quantity, in: 1...100, step: 1) {
+                    Stepper(value: $quantity, in: 1...100) {
                         Text("\(quantity)")
                     }
                 }
@@ -131,6 +205,18 @@ struct EditItemView: View {
                         }
                     }
                 }
+                Section(header: Text("Notes (Markdown)")) {
+                    if mdNotes.isEmpty {
+                        Text("No notes")
+                            .foregroundColor(.secondary)
+                    } else {
+                        Markdown(mdNotes)
+                            .padding(.vertical, 4)
+                    }
+                    Button("Edit Notes") {
+                        showMarkdownEditor = true
+                    }
+                }
             }
             .navigationTitle("Edit Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -143,11 +229,14 @@ struct EditItemView: View {
 
                     Button("Save") {
                         Task {
+                            var updatedExtras = item.extras ?? [:]
+                            updatedExtras["markdownNotes"] = mdNotes
                             let success = await viewModel.updateItem(
                                 item,
                                 note: itemName,
                                 label: selectedLabel,
-                                quantity: Double(quantity)
+                                quantity: Double(quantity),
+                                extras: updatedExtras
                             )
                             if success {
                                 dismiss()
@@ -161,6 +250,49 @@ struct EditItemView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showMarkdownEditor) {
+                NavigationView {
+                    Form {
+                        Section(header: Text("Edit Markdown Notes")) {
+                            TextEditor(text: $mdNotes)
+                                .frame(minHeight: 200)
+                                .autocapitalization(.sentences)
+                                .disableAutocorrection(false)
+                                .toolbar {
+                                        ToolbarItemGroup(placement: .keyboard) {
+                                            Button("**Bold**") {
+                                                mdNotes += "**bold text**"
+                                            }
+                                            Button("_Italic_") {
+                                                mdNotes += "_italic text_"
+                                            }
+                                            Button("Link") {
+                                                mdNotes += "[text](LINK)"
+                                            }
+                                            Button("Image") {
+                                                mdNotes += "![altText](LINK)"
+                                            }
+                                        }
+                                    }
+                        }
+                        
+                        Section(header: Text("Preview")) {
+                            ScrollView {
+                                Markdown(mdNotes)
+                                    .padding(.vertical)
+                            }
+                        }
+                    }
+                    .navigationTitle("Edit Notes")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                showMarkdownEditor = false
+                            }
+                        }
                     }
                 }
             }
@@ -179,8 +311,6 @@ struct EditItemView: View {
             }
             .alert("Failed to Save Changes", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
-            } message: {
-                Text("Please check your internet connection or try again.")
             }
             .task {
                 do {

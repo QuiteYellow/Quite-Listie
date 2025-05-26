@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = CB260D882DE4B7E900D05618 /* MarkdownUI */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
 		CBEFACD62DE4A7B0002F4B13 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */; };
 /* End PBXBuildFile section */
@@ -69,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +139,7 @@
 			);
 			name = ListsForMealie;
 			packageProductDependencies = (
+				CB260D882DE4B7E900D05618 /* MarkdownUI */,
 			);
 			productName = ListsForMealie;
 			productReference = CBEFA7AB2DE31318002F4B13 /* ListsForMealie.app */;
@@ -214,6 +217,9 @@
 			);
 			mainGroup = CBEFA7A22DE31318002F4B13;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CBEFA7AC2DE31318002F4B13 /* Products */;
 			projectDirPath = "";
@@ -413,7 +419,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ListsForMealie/ListsForMealie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -440,14 +446,13 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.ListsForMealie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 2.4;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -458,7 +463,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ListsForMealie/ListsForMealie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -485,14 +490,13 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.ListsForMealie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 2.4;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -626,6 +630,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/MarkdownUI";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CB260D882DE4B7E900D05618 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CBEFA7A32DE31318002F4B13 /* Project object */;
 }

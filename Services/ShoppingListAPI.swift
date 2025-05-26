@@ -99,6 +99,7 @@ class ShoppingListAPI {
             let shoppingListId: String
             let labelId: String?
             let quantity: Double?
+            let extras: [String: String]?
         }
         
         let createPayload = ShoppingItemCreateRequest(
@@ -106,7 +107,8 @@ class ShoppingListAPI {
             checked: item.checked,
             shoppingListId: shoppingListId,
             labelId: item.label?.id,
-            quantity: item.quantity
+            quantity: item.quantity,
+            extras: item.extras
         )
         
         let body = try JSONEncoder().encode(createPayload)
@@ -149,6 +151,7 @@ class ShoppingListAPI {
             let shoppingListId: String
             let labelId: String?
             let quantity: Double?
+            let extras: [String: String]?
         }
         
         let updatePayload = ShoppingItemUpdateRequest(
@@ -157,7 +160,8 @@ class ShoppingListAPI {
             checked: item.checked,
             shoppingListId: item.shoppingListId,
             labelId: item.label?.id,
-            quantity: item.quantity
+            quantity: item.quantity,
+            extras: item.extras
         )
         
         let body = try JSONEncoder().encode(updatePayload)
