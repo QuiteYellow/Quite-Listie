@@ -1,10 +1,3 @@
-//
-//  ListViewModel.swift
-//  ListsForMealie
-//
-//  Created by Jack Weekes on 25/05/2025.
-//
-
 import Foundation
 import SwiftUI
 
@@ -12,37 +5,47 @@ import SwiftUI
 class ShoppingListViewModel: ObservableObject {
     @Published var items: [ShoppingItem] = []
     @Published var isLoading = false
+    @Published var labels: [ShoppingItem.LabelWrapper] = []
     private let shoppingListId: String
     private var fetchTask: Task<Void, Never>? = nil
 
     init(shoppingListId: String) {
-            self.shoppingListId = shoppingListId
-        }
+        self.shoppingListId = shoppingListId
+    }
 
     func loadItems() async {
-            fetchTask?.cancel() // cancel any ongoing fetch
-            fetchTask = Task {
-                isLoading = true
-                do {
-                    let allItems = try await ShoppingListAPI.shared.fetchItems()
-                    items = allItems.filter { $0.shoppingListId == shoppingListId }
-                } catch {
-                    if (error as NSError).code != NSURLErrorCancelled {
-                        print("Error loading items: \(error)")
-                    }
+        fetchTask?.cancel()
+        fetchTask = Task {
+            isLoading = true
+            do {
+                let allItems = try await ShoppingListAPI.shared.fetchItems()
+                items = allItems.filter { $0.shoppingListId == shoppingListId }
+            } catch {
+                if (error as NSError).code != NSURLErrorCancelled {
+                    print("Error loading items: \(error)")
                 }
-                isLoading = false
-                fetchTask = nil
             }
-            await fetchTask?.value
+            isLoading = false
+            fetchTask = nil
         }
+        await fetchTask?.value
+    }
+    
+    func loadLabels() async {
+        do {
+            labels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+        } catch {
+            print("Error loading labels: \(error)")
+        }
+    }
 
-    func addItem(note: String, quantity: Double? = nil) async {
+    func addItem(note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async {
         let newItem = ShoppingItem(
             id: UUID(),
             note: note,
             checked: false,
             shoppingListId: shoppingListId,
+            label: label,
             quantity: quantity
         )
 
@@ -50,20 +53,27 @@ class ShoppingListViewModel: ObservableObject {
             try await ShoppingListAPI.shared.addItem(newItem, to: shoppingListId)
             await loadItems()
         } catch {
-            print("Error adding item: \(error)")
+            print("⚠️ Error adding item:", error)
         }
     }
 
-    func deleteItem(at offsets: IndexSet) async {
+    // Now delete takes ShoppingItem (with tokenId), not just UUID
+    func deleteItems(at offsets: IndexSet) async {
         for index in offsets {
-            let id = items[index].id
+            let item = items[index]
             do {
-                try await ShoppingListAPI.shared.deleteItem(id)
+                try await ShoppingListAPI.shared.deleteItem(item)  // Pass full item for token lookup
             } catch {
                 print("Error deleting item: \(error)")
             }
         }
         await loadItems()
+    }
+    
+    func deleteItem(_ item: ShoppingItem) async {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            await deleteItems(at: IndexSet(integer: index))
+        }
     }
 
     func toggleChecked(for item: ShoppingItem) async {
@@ -71,11 +81,8 @@ class ShoppingListViewModel: ObservableObject {
         updated.checked.toggle()
         do {
             try await ShoppingListAPI.shared.toggleItem(updated)
-            
-            // After the toggle API call, update the local list with the toggled item,
-            // preserving the label from the existing item
+
             if let index = items.firstIndex(where: { $0.id == item.id }) {
-                updated.label = items[index].label
                 items[index] = updated
             }
         } catch {
@@ -83,9 +90,7 @@ class ShoppingListViewModel: ObservableObject {
         }
     }
     
-    
     func colorForLabel(name: String) -> Color? {
-        // Find first item with matching label and get color string
         if let item = items.first(where: { $0.label?.name == name }),
            let hex = item.label?.color {
             return Color(hex: hex)
@@ -93,17 +98,30 @@ class ShoppingListViewModel: ObservableObject {
         return nil
     }
     
+    func updateItem(_ item: ShoppingItem, note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async {
+        var updatedItem = item
+        updatedItem.note = note
+        updatedItem.label = label
+        updatedItem.quantity = quantity
+
+        do {
+            try await ShoppingListAPI.shared.toggleItem(updatedItem)  // PUT update
+
+            if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
+                items[index] = updatedItem
+            }
+        } catch {
+            print("Failed to update item:", error)
+        }
+    }
     
     var itemsGroupedByLabel: [String: [ShoppingItem]] {
-            Dictionary(grouping: items) { item in
-                item.label?.name ?? "Unlabeled"  // Adjust this depending on your model
-            }
+        Dictionary(grouping: items) { item in
+            item.label?.name ?? "None"
         }
+    }
 
-        var sortedLabelKeys: [String] {
-            itemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
-        }
-    
-    
+    var sortedLabelKeys: [String] {
+        itemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+    }
 }
-
