@@ -1,56 +1,99 @@
 import Foundation
 import SwiftUI
 
+struct TokenInfo: Codable, Identifiable, Equatable {
+    let id: UUID
+    var token: String
+    var identifier: String // e.g. "account1", "user@example.com", etc.
+
+    init(id: UUID = UUID(), token: String, identifier: String) {
+        self.id = id
+        self.token = token
+        self.identifier = identifier
+    }
+}
+
+
 class AppSettings: ObservableObject {
     @Published var serverURLString: String {
-            didSet {
-                UserDefaults.standard.set(serverURLString, forKey: "serverURLString")
-            }
-        }
+        didSet { UserDefaults.standard.set(serverURLString, forKey: "serverURLString") }
+    }
     
+    // Old single token (optional to keep or migrate)
     @Published var apiToken: String {
+        didSet { UserDefaults.standard.set(apiToken, forKey: "apiToken") }
+    }
+    
+    // New array of tokens
+    @Published var tokens: [TokenInfo] {
         didSet {
-            UserDefaults.standard.set(apiToken, forKey: "apiToken")
+            saveTokensToUserDefaults()
         }
     }
     
     @Published var expandedSections: [String: Bool] {
-        didSet {
-            UserDefaults.standard.set(expandedSections, forKey: expandedSectionsKey)
-        }
+        didSet { UserDefaults.standard.set(expandedSections, forKey: expandedSectionsKey) }
     }
     
     @Published var cloudflareAccessEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(cloudflareAccessEnabled, forKey: "cloudflareAccessEnabled")
-        }
+        didSet { UserDefaults.standard.set(cloudflareAccessEnabled, forKey: "cloudflareAccessEnabled") }
     }
     
     @Published var cfAccessClientId: String {
-        didSet {
-            UserDefaults.standard.set(cfAccessClientId, forKey: "cfAccessClientId")
-        }
+        didSet { UserDefaults.standard.set(cfAccessClientId, forKey: "cfAccessClientId") }
     }
     
     @Published var cfAccessClientSecret: String {
-        didSet {
-            UserDefaults.standard.set(cfAccessClientSecret, forKey: "cfAccessClientSecret")
-        }
+        didSet { UserDefaults.standard.set(cfAccessClientSecret, forKey: "cfAccessClientSecret") }
+    }
+    
+    @Published var showCompletedAtBottom: Bool {
+        didSet { UserDefaults.standard.set(showCompletedAtBottom, forKey: "showCompletedAtBottom") }
     }
     
     private let expandedSectionsKey = "expandedSectionsKey"
+    private let tokensKey = "tokensKey"
     
     static let shared = AppSettings()
     
     private init() {
+        self.showCompletedAtBottom = UserDefaults.standard.bool(forKey: "showCompletedAtBottom")
         self.serverURLString = UserDefaults.standard.string(forKey: "serverURLString") ?? ""
         self.apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
         self.expandedSections = UserDefaults.standard.dictionary(forKey: expandedSectionsKey) as? [String: Bool] ?? [:]
         self.cloudflareAccessEnabled = UserDefaults.standard.bool(forKey: "cloudflareAccessEnabled")
         self.cfAccessClientId = UserDefaults.standard.string(forKey: "cfAccessClientId") ?? ""
         self.cfAccessClientSecret = UserDefaults.standard.string(forKey: "cfAccessClientSecret") ?? ""
+        self.tokens = []
+        loadTokensFromUserDefaults()
     }
     
+    // MARK: - Multiple tokens persistence
+    
+    private func saveTokensToUserDefaults() {
+        if let data = try? JSONEncoder().encode(tokens) {
+            UserDefaults.standard.set(data, forKey: tokensKey)
+        }
+    }
+    
+    private func loadTokensFromUserDefaults() {
+        guard let data = UserDefaults.standard.data(forKey: tokensKey),
+              let savedTokens = try? JSONDecoder().decode([TokenInfo].self, from: data) else {
+            return
+        }
+        self.tokens = savedTokens
+    }
+    
+    // Convenience to add/remove tokens
+    func addToken(_ token: TokenInfo) {
+        tokens.append(token)
+    }
+    
+    func removeToken(_ token: TokenInfo) {
+        tokens.removeAll { $0 == token }
+    }
+    
+    // Existing methods...
     func toggleSection(_ label: String) {
         withAnimation {
             if let isExpanded = expandedSections[label] {
@@ -70,7 +113,6 @@ class AppSettings: ObservableObject {
             }
         }
         if didChange {
-            // Trigger didSet manually to save changes
             expandedSections = expandedSections
         }
     }

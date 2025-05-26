@@ -15,11 +15,11 @@ struct ShoppingItem: Identifiable, Codable {
     var label: LabelWrapper?
     var quantity: Double?
     
+    var tokenId: UUID? = nil
+    
     struct LabelWrapper: Codable, Hashable {
         let id: String
         let name: String
         let color: String
     }
 }
-
-

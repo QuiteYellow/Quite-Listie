@@ -9,5 +9,5 @@ struct ShoppingListsResponse: Codable {
 struct ShoppingListSummary: Codable, Identifiable {
     let id: String
     let name: String
-    // other fields if needed
+    let tokenIdentifier: String?
 }
