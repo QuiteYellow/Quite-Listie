@@ -30,7 +30,7 @@ struct SectionHeaderView: View {
                         Capsule()
                             .fill(color ?? Color.gray.opacity(0.3))
                     )
-                    .foregroundColor(.white)
+                    .foregroundColor((color ?? Color.gray.opacity(0.3)).appropriateForegroundColor())
 
                 Spacer()
                 
@@ -141,6 +141,9 @@ struct ItemRowView: View {
 }
 
 struct ShoppingListView: View {
+    let listName: String
+    let shoppingListId: String
+
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
     @ObservedObject private var settings = AppSettings.shared
@@ -150,7 +153,9 @@ struct ShoppingListView: View {
     
     @State private var itemToDelete: ShoppingItem? = nil
 
-    init(shoppingListId: String) {
+    init(shoppingListId: String, listName: String) {
+        self.shoppingListId = shoppingListId
+        self.listName = listName
         _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: shoppingListId))
     }
 
@@ -230,7 +235,7 @@ struct ShoppingListView: View {
                         let allCheckedItems = viewModel.items.filter { $0.checked }
 
                         SectionHeaderView(labelName: "Completed",
-                                          color: .gray,
+                                          color: Color(.systemBackground),
                                           isExpanded: settings.expandedSections["Completed"] == true,
                                           uncheckedCount: allCheckedItems.count,
                                           settings: settings)
@@ -302,7 +307,7 @@ struct ShoppingListView: View {
             await viewModel.loadItems()
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
-        .navigationTitle("Shopping List")
+        .navigationTitle(listName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
