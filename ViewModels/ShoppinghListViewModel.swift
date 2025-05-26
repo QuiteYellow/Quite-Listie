@@ -40,8 +40,8 @@ class ShoppingListViewModel: ObservableObject {
     }
 
     @MainActor
-    func addItem(note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async -> Bool {
-        let newItem = ShoppingItem(
+    func addItem(note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?, markdownNotes: String?) async -> Bool {
+        var newItem = ShoppingItem(
             id: UUID(),
             note: note,
             checked: false,
@@ -49,6 +49,10 @@ class ShoppingListViewModel: ObservableObject {
             label: label,
             quantity: quantity
         )
+        
+        if let mdNotes = markdownNotes {
+            newItem.markdownNotes = mdNotes  // This sets extras["markdownNotes"]
+        }
 
         do {
             try await ShoppingListAPI.shared.addItem(newItem, to: shoppingListId)
@@ -59,7 +63,6 @@ class ShoppingListViewModel: ObservableObject {
             return false
         }
     }
-
     func deleteItems(at offsets: IndexSet) async {
         for index in offsets {
             let item = items[index]
@@ -111,11 +114,20 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async -> Bool {
+    func updateItem(
+        _ item: ShoppingItem,
+        note: String,
+        label: ShoppingItem.LabelWrapper?,
+        quantity: Double?,
+        extras: [String: String]? = nil
+    ) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.label = label
         updatedItem.quantity = quantity
+        if let extras = extras {
+            updatedItem.extras = extras
+        }
 
         do {
             try await ShoppingListAPI.shared.toggleItem(updatedItem)

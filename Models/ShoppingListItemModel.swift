@@ -17,6 +17,16 @@ struct ShoppingItem: Identifiable, Codable {
     
     var tokenId: UUID? = nil
     
+    var extras: [String: String]?
+
+        var markdownNotes: String {
+            get { extras?["markdownNotes"] ?? "" }
+            set {
+                if extras == nil { extras = [:] }
+                extras?["markdownNotes"] = newValue
+            }
+        }
+    
     struct LabelWrapper: Codable, Hashable {
         let id: String
         let name: String

@@ -296,8 +296,11 @@ struct ShoppingListView: View {
             } message: {
                 Text("Are you sure you want to delete this item?")
             }
-        .sheet(item: $editingItem) { item in
+        .fullScreenCover(item: $editingItem) { item in
             EditItemView(viewModel: viewModel, item: item)
+                .presentationDetents([.fraction(0.9)])
+                        .presentationDragIndicator(.visible)
+                        .padding() // Allow medium and large detents
         }
         .scrollIndicators(.visible) // Show scrollbar like List
         .refreshable {
@@ -331,8 +334,9 @@ struct ShoppingListView: View {
                 .help("Toggle completed items section")
             }
         }
-        .sheet(isPresented: $showingAddView) {
+        .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(viewModel: viewModel)
+
         }
     }
     
