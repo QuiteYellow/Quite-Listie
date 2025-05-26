@@ -147,6 +147,7 @@ struct ShoppingListView: View {
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
     @ObservedObject private var settings = AppSettings.shared
+    @EnvironmentObject var networkMonitor: NetworkMonitor
     
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
@@ -311,6 +312,11 @@ struct ShoppingListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if !networkMonitor.isConnected {
+                    Image(systemName: "wifi.slash")
+                        .foregroundColor(.red)
+                        .help("No internet connection")
+                }
                 Button {
                     showingAddView = true
                 } label: {

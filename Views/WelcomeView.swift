@@ -4,6 +4,7 @@ struct WelcomeView: View {
     @StateObject private var viewModel = WelcomeViewModel()
     @State private var showingSettings = false
     @State private var refreshTask: Task<Void, Never>? = nil
+    @EnvironmentObject var networkMonitor: NetworkMonitor
 
     let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -70,7 +71,12 @@ struct WelcomeView: View {
             .navigationTitle("All Lists")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    if !networkMonitor.isConnected {
+                        Image(systemName: "wifi.slash")
+                            .foregroundColor(.red)
+                            .help("No internet connection")
+                    }
                     Button {
                         showingSettings = true
                     } label: {
