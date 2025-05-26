@@ -39,7 +39,8 @@ class ShoppingListViewModel: ObservableObject {
         }
     }
 
-    func addItem(note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async {
+    @MainActor
+    func addItem(note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async -> Bool {
         let newItem = ShoppingItem(
             id: UUID(),
             note: note,
@@ -52,12 +53,13 @@ class ShoppingListViewModel: ObservableObject {
         do {
             try await ShoppingListAPI.shared.addItem(newItem, to: shoppingListId)
             await loadItems()
+            return true
         } catch {
             print("⚠️ Error adding item:", error)
+            return false
         }
     }
 
-    // Now delete takes ShoppingItem (with tokenId), not just UUID
     func deleteItems(at offsets: IndexSet) async {
         for index in offsets {
             let item = items[index]
@@ -70,9 +72,19 @@ class ShoppingListViewModel: ObservableObject {
         await loadItems()
     }
     
-    func deleteItem(_ item: ShoppingItem) async {
-        if let index = items.firstIndex(where: { $0.id == item.id }) {
-            await deleteItems(at: IndexSet(integer: index))
+    @MainActor
+    func deleteItem(_ item: ShoppingItem) async -> Bool {
+        do {
+            try await ShoppingListAPI.shared.deleteItem(item)
+            
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                items.remove(at: index)
+            }
+            
+            return true
+        } catch {
+            print("⚠️ Failed to delete item:", error)
+            return false
         }
     }
 
@@ -98,20 +110,24 @@ class ShoppingListViewModel: ObservableObject {
         return nil
     }
     
-    func updateItem(_ item: ShoppingItem, note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async {
+    @MainActor
+    func updateItem(_ item: ShoppingItem, note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.label = label
         updatedItem.quantity = quantity
 
         do {
-            try await ShoppingListAPI.shared.toggleItem(updatedItem)  // PUT update
+            try await ShoppingListAPI.shared.toggleItem(updatedItem)
 
             if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
                 items[index] = updatedItem
             }
+
+            return true
         } catch {
-            print("Failed to update item:", error)
+            print("⚠️ Failed to update item:", error)
+            return false
         }
     }
     

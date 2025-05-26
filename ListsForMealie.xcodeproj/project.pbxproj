@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
+		CBEFACD62DE4A7B0002F4B13 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +33,7 @@
 		CBEFA7B92DE3131A002F4B13 /* ListsForMealieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ListsForMealieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7C32DE3131A002F4B13 /* ListsForMealieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ListsForMealieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFABE52DE35848002F4B13 /* extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extensions.swift; sourceTree = "<group>"; };
+		CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -90,6 +92,7 @@
 		CBEFA7A22DE31318002F4B13 = {
 			isa = PBXGroup;
 			children = (
+				CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */,
 				CBEFABE52DE35848002F4B13 /* extensions.swift */,
 				CBEFA7D92DE313C2002F4B13 /* Views */,
 				CBEFA7D82DE313B7002F4B13 /* ViewModels */,
@@ -253,6 +256,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */,
+				CBEFACD62DE4A7B0002F4B13 /* NetworkMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
