@@ -20,17 +20,14 @@ struct SectionHeaderView: View {
             settings.toggleSection(labelName)
         } label: {
             HStack {
-                // Colored chip with label text
                 Text(labelName.removingLabelNumberPrefix())
-                    .font(.subheadline)
+                    .font(.headline)
                     .textCase(nil)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 5)
                     .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(color ?? Color.gray.opacity(0.3))
-                    )
-                    .foregroundColor((color ?? Color.gray.opacity(0.3)).appropriateForegroundColor())
+                    //.background(Capsule().fill(color ?? Color.gray.opacity(0.3))) // Chip background
+                    //.foregroundColor((color ?? Color.gray.opacity(0.3)).appropriateForegroundColor())
+                    .foregroundColor((color ?? .primary).lightened(forBackground: Color(.systemBackground))) //need to add darkened for light mode.
 
                 Spacer()
                 
@@ -49,26 +46,28 @@ struct SectionHeaderView: View {
                 .padding(.horizontal, 10)
             }
             .contentShape(Rectangle())
-                        .padding(8)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
                         .background(
                             Group {
                                 if isExpanded {
                                     // Rounded only top corners
-                                    RoundedCorner(radius: 12, corners: [.topLeft, .topRight])
+                                    RoundedCorner(radius: 10, corners: [.topLeft, .topRight])
                                         .fill(Color(.systemBackground))
                                         .overlay(
-                                            RoundedCorner(radius: 12, corners: [.topLeft, .topRight])
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            RoundedCorner(radius: 10, corners: [.topLeft, .topRight])
+                                                .stroke(Color(.systemGray3), lineWidth: 1)
                                         )
                                 } else {
                                     // Fully rounded corners
-                                    RoundedCorner(radius: 12, corners: [.allCorners])
+                                    RoundedCorner(radius: 10, corners: [.allCorners])
                                         .fill(Color(.systemBackground))
                                         .overlay(
-                                            RoundedCorner(radius: 12, corners: [.allCorners])
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            RoundedCorner(radius: 10, corners: [.allCorners])
+                                                .stroke(Color(.systemGray3), lineWidth: 1)
                                         )
                                 }
+                                    
                             }
                         )
                     }
@@ -118,9 +117,11 @@ struct ItemRowView: View {
                 if item.checked {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.accentColor)
+                        .imageScale(.large)
                 } else {
                     Image(systemName: "circle")
-                        .foregroundColor(Color.primary)
+                        .foregroundColor(.accentColor)
+                        .imageScale(.large)
                 }
             }
             .padding(.vertical, 10)
@@ -128,19 +129,19 @@ struct ItemRowView: View {
             .background(
                 Group {
                     if isLast {
-                        RoundedCorner(radius: 12, corners: [.bottomLeft, .bottomRight])
-                            .fill(Color(.systemBackground))
+                        RoundedCorner(radius: 10, corners: [.bottomLeft, .bottomRight])
+                            .fill(Color(.systemGray5))
                             .overlay(
-                                RoundedCorner(radius: 12, corners: [.bottomLeft, .bottomRight])
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                RoundedCorner(radius: 10, corners: [.bottomLeft, .bottomRight])
+                                    .stroke(Color(.systemGray3), lineWidth: 1)
                             )
                     } else {
                         // Fully rounded corners
                         RoundedCorner(radius: 0, corners: [.bottomLeft, .bottomRight])
-                            .fill(Color(.systemBackground))
+                            .fill(Color(.systemGray5))
                             .overlay(
                                 RoundedCorner(radius: 0, corners: [.bottomLeft, .bottomRight])
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    .stroke(Color(.systemGray3), lineWidth: 1)
                                 )
                     }
                 }
@@ -175,23 +176,18 @@ struct ShoppingListView: View {
 
     var body: some View {
         ScrollView {
-            // Prepare label keys excluding empty groups
             let labelKeys = viewModel.sortedLabelKeys
             let mainPadding = CGFloat(6)
 
-            // Show normal sections with unchecked items and optionally checked items (depending on toggle)
             ForEach(labelKeys, id: \.self) { labelName in
                 let color = viewModel.colorForLabel(name: labelName)
                 let isExpanded = settings.expandedSections[labelName] == true
 
-                // Filter items for this label
                 let items = viewModel.itemsGroupedByLabel[labelName] ?? []
 
-                // Separate unchecked and checked items
                 let uncheckedItems = items.filter { !$0.checked }
                 let checkedItems = items.filter { $0.checked }
 
-                // When showCompletedAtBottom == true, exclude checked items from label sections
                 let itemsToShow = settings.showCompletedAtBottom ? uncheckedItems : uncheckedItems + checkedItems
 
                 if !itemsToShow.isEmpty {
@@ -203,7 +199,8 @@ struct ShoppingListView: View {
                                           uncheckedCount: uncheckedItems.count,
                                           settings: settings)
                             .padding(.horizontal, mainPadding)
-
+                            .background(Color(.systemBackground))
+                            .zIndex(1)
 
                         if isExpanded {
                             VStack(spacing: 0) {
@@ -227,33 +224,32 @@ struct ShoppingListView: View {
                                             Label("Delete Item...", systemImage: "trash")
                                         }
                                     }
-                                    
                                 }
                                 .padding(.horizontal, mainPadding)
                             }
+                            .zIndex(0)
+                            //.transition(.move(edge: .top))
+                            .animation(.easeInOut, value: isExpanded)
                         }
                     }
-                    .padding(.horizontal, mainPadding)
-                    .padding(.vertical, mainPadding) // padding between label headings
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, mainPadding)
                 }
             }
 
-            // If showCompletedAtBottom == true, add a "Completed" section at the bottom
             if settings.showCompletedAtBottom {
-                // Gather all checked items from all labels
                 let allCheckedItems = viewModel.items.filter { $0.checked }
 
                 if !allCheckedItems.isEmpty {
                     VStack(spacing: 0) {
-                        let allCheckedItems = viewModel.items.filter { $0.checked }
-
                         SectionHeaderView(labelName: "Completed",
-                                          color: Color(.systemBackground),
+                                          color: .primary,
                                           isExpanded: settings.expandedSections["Completed"] == true,
                                           uncheckedCount: allCheckedItems.count,
                                           settings: settings)
-                        
                             .padding(.horizontal, mainPadding)
+                            .background(Color(.systemBackground))
+                            .zIndex(1)
 
                         if settings.expandedSections["Completed"] == true {
                             VStack(spacing: 0) {
@@ -280,20 +276,23 @@ struct ShoppingListView: View {
                                 }
                                 .padding(.horizontal, mainPadding)
                             }
+                            .zIndex(0)
+                            //.transition(.opacity.combined(with: .move(edge: .top)))
+                            .animation(.easeInOut, value: settings.expandedSections["Completed"])
                         }
                     }
-                    .padding(.horizontal, mainPadding)
+                    .padding(.horizontal, 3)
                     .padding(.vertical, mainPadding)
                 }
             }
         }
+        .scrollContentBackground(.hidden)
         .alert("Delete Item?", isPresented: Binding(
                 get: { itemToDelete != nil },
                 set: { newValue in if !newValue { itemToDelete = nil } }
             )) {
                 Button("Delete", role: .destructive) {
                     guard let item = itemToDelete else { return }
-                    // Call async method but outside the alert button closure
                     Task {
                         await viewModel.deleteItem(item)
                         await MainActor.run {
@@ -310,7 +309,7 @@ struct ShoppingListView: View {
         .fullScreenCover(item: $editingItem) { item in
             EditItemView(viewModel: viewModel, item: item)
         }
-        .scrollIndicators(.visible) // Show scrollbar like List
+        .scrollIndicators(.visible)
         .refreshable {
             await viewModel.loadItems()
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
@@ -344,8 +343,6 @@ struct ShoppingListView: View {
         }
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(viewModel: viewModel)
-
         }
     }
-    
 }

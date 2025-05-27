@@ -58,11 +58,86 @@ extension Color {
     func appropriateForegroundColor() -> Color {
         isDarkColor() ? .white : .black
     }
+    
+    func lightened(forBackground background: Color, threshold: CGFloat = 0.6) -> Color {
+
+            let uiSelf = UIColor(self)
+            let uiBackground = UIColor(background)
+
+            var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+
+            uiSelf.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+            uiBackground.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+            let luminance1 = (0.299 * r1 + 0.587 * g1 + 0.114 * b1)
+            let luminance2 = (0.299 * r2 + 0.587 * g2 + 0.114 * b2)
+            let contrast = abs(luminance1 - luminance2)
+
+            // If contrast is already good enough, return self
+            guard contrast < threshold else {
+                return self
+            }
+
+            // Lighten color (move toward white)
+            let lightenFactor: CGFloat = 0.5
+            let newR = min(r1 + (1 - r1) * lightenFactor, 1.0)
+            let newG = min(g1 + (1 - g1) * lightenFactor, 1.0)
+            let newB = min(b1 + (1 - b1) * lightenFactor, 1.0)
+
+            return Color(red: newR, green: newG, blue: newB)
+        }
+    
+    func closestSystemColor() -> Color {
+            let systemColors: [(name: String, color: UIColor)] = [
+                ("systemRed", .systemRed),
+                ("systemOrange", .systemOrange),
+                ("systemYellow", .systemYellow),
+                ("systemGreen", .systemGreen),
+                ("systemBlue", .systemBlue),
+                ("systemIndigo", .systemIndigo),
+                ("systemPurple", .systemPurple),
+                ("systemPink", .systemPink),
+                ("systemTeal", .systemTeal),
+                ("systemGray", .systemGray)
+            ]
+
+            let targetColor = UIColor(self)
+
+            var bestMatch = systemColors.first!
+            var smallestDistance: CGFloat = .greatestFiniteMagnitude
+
+            for systemColor in systemColors {
+                let distance = targetColor.distance(to: systemColor.color)
+                if distance < smallestDistance {
+                    smallestDistance = distance
+                    bestMatch = systemColor
+                }
+            }
+
+            return Color(bestMatch.color)
+        }
 }
 
 extension View {
     func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
         clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+extension UIColor {
+    func distance(to other: UIColor) -> CGFloat {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+
+        self.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        let dr = r1 - r2
+        let dg = g1 - g2
+        let db = b1 - b2
+
+        return sqrt(dr * dr + dg * dg + db * db)
     }
 }
 

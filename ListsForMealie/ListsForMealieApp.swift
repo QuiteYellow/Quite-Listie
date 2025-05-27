@@ -19,7 +19,7 @@ struct ShoppingListApp: App {
                 .environmentObject(networkMonitor)
                 .environmentObject(settings)
                 .onAppear {
-                    if settings.serverURLString.isEmpty || settings.apiToken.isEmpty {
+                    if settings.serverURLString.isEmpty || settings.tokens.allSatisfy({ $0.token.isEmpty }) {
                         showSettingsOnLaunch = true
                     }
                 }
