@@ -6,7 +6,7 @@ struct ShoppingListsResponse: Codable {
     let items: [ShoppingListSummary]
 }
 
-struct ShoppingListSummary: Codable, Identifiable {
+struct ShoppingListSummary: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let tokenIdentifier: String?
