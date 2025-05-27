@@ -28,7 +28,7 @@ struct WelcomeView: View {
                         VStack(spacing: 20) {
                             Text(error)
                                 .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
+                                .multilineTextAlignment(.leading)
                             Button("Retry") {
                                 Task {
                                     await viewModel.loadLists()
