@@ -55,11 +55,19 @@ struct SectionHeaderView: View {
                                 if isExpanded {
                                     // Rounded only top corners
                                     RoundedCorner(radius: 12, corners: [.topLeft, .topRight])
-                                        .fill(Color(.systemGray5))
+                                        .fill(Color(.systemBackground))
+                                        .overlay(
+                                            RoundedCorner(radius: 12, corners: [.topLeft, .topRight])
+                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        )
                                 } else {
                                     // Fully rounded corners
                                     RoundedCorner(radius: 12, corners: [.allCorners])
-                                        .fill(Color(.systemGray5))
+                                        .fill(Color(.systemBackground))
+                                        .overlay(
+                                            RoundedCorner(radius: 12, corners: [.allCorners])
+                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        )
                                 }
                             }
                         )
@@ -84,16 +92,11 @@ struct RoundedCorner: Shape {
 
 struct ItemRowView: View {
     let item: ShoppingItem
-    let showTopDivider: Bool
     let isLast: Bool
     let onTap: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            if showTopDivider {
-                Divider()
-                    .padding(.leading, 0)
-            }
 
             HStack {
                 // Quantity chip on the left
@@ -101,7 +104,7 @@ struct ItemRowView: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(item.checked ? Color(.systemGray5) : Color(.systemGray))) // quantity chip colour
+                    .background(Capsule().fill(item.checked ? Color(.systemBackground) : .primary)) // quantity chip colour
                     .foregroundColor(item.checked ? .gray : Color(.systemGray5))
 
                 // Item note text
@@ -126,9 +129,19 @@ struct ItemRowView: View {
                 Group {
                     if isLast {
                         RoundedCorner(radius: 12, corners: [.bottomLeft, .bottomRight])
-                            .fill(Color(.systemGray5))
+                            .fill(Color(.systemBackground))
+                            .overlay(
+                                RoundedCorner(radius: 12, corners: [.bottomLeft, .bottomRight])
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
                     } else {
-                        Color(.systemGray5)
+                        // Fully rounded corners
+                        RoundedCorner(radius: 0, corners: [.bottomLeft, .bottomRight])
+                            .fill(Color(.systemBackground))
+                            .overlay(
+                                RoundedCorner(radius: 0, corners: [.bottomLeft, .bottomRight])
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
                     }
                 }
             )
@@ -197,7 +210,6 @@ struct ShoppingListView: View {
                                 ForEach(Array(itemsToShow.enumerated()), id: \.element.id) { index, item in
                                     ItemRowView(
                                         item: item,
-                                        showTopDivider: true,
                                         isLast: index == itemsToShow.count - 1
                                     ) {
                                         Task {
@@ -248,7 +260,6 @@ struct ShoppingListView: View {
                                 ForEach(Array(allCheckedItems.enumerated()), id: \.element.id) { index, item in
                                     ItemRowView(
                                         item: item,
-                                        showTopDivider: true,
                                         isLast: index == allCheckedItems.count - 1
                                     ) {
                                         Task {
