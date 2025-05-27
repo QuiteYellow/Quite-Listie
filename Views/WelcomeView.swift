@@ -124,6 +124,7 @@ struct WelcomeView: View {
                     Text(text)
                         .font(.headline)
                         .foregroundColor(.primary)
+                        .multilineTextAlignment(.leading)
                         .padding([.leading, .bottom], 15)
                     Spacer()
                 }
