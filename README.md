@@ -11,7 +11,7 @@ Connect to multiple households, effectively allowing for family and personal lis
 ### Setup
 - Add a Mealie server URL.
 - Add your API tokens, one per household.
-- Optional: add you CF Access Headers.
+- Optional: add your Cloudflare Access Headers.
 
  ![F397BF77-9BE0-4EF9-A731-3C8DA6E75163_1_102_o](https://github.com/user-attachments/assets/e7aa6643-c9ed-4a36-9fe8-c69fee5cbd3b)
 
