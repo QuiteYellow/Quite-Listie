@@ -7,6 +7,9 @@ class WelcomeViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var uncheckedCounts: [String: Int] = [:]
+    
+
+
 
     func loadLists() async {
         await MainActor.run {

@@ -44,20 +44,30 @@ struct WelcomeView: View {
 struct SidebarView: View {
     @ObservedObject var viewModel: WelcomeViewModel
     @Binding var selectedListID: String?
-
+    
+    var groupedLists: [String: [ShoppingListSummary]] {
+        Dictionary(grouping: viewModel.lists) { list in
+            AppSettings.shared.tokens.first(where: { $0.id == list.tokenId })?.identifier ?? "Unknown"
+        }
+    }
+    
     var body: some View {
         List(selection: $selectedListID) {
-            ForEach(viewModel.lists, id: \.id) { list in
-                HStack {
-                    Image(systemName: "list.bullet")
-                    Text(list.name)
-                    Spacer()
-                    if let count = viewModel.uncheckedCounts[list.id], count > 0 {
-                        Text("\(count)")
-                            .foregroundColor(.secondary)
+            ForEach(groupedLists.sorted(by: { $0.key < $1.key }), id: \.key) { identifier, lists in
+                Section(header: Text(identifier)) {
+                    ForEach(lists, id: \.id) { list in
+                        HStack {
+                            Image(systemName: "list.bullet")
+                            Text(list.name)
+                            Spacer()
+                            if let count = viewModel.uncheckedCounts[list.id], count > 0 {
+                                Text("\(count)")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tag(list.id)
                     }
                 }
-                .tag(list.id) // This works now because selection is bound above
             }
         }
         .navigationTitle("All Lists")
