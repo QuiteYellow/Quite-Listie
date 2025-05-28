@@ -8,53 +8,6 @@
 import SwiftUI
 import MarkdownUI
 
-struct MarkdownEditorSheet: View {
-    @Binding var isPresented: Bool
-    @Binding var text: String
-
-    var body: some View {
-        NavigationView {
-            Form {
-                Section {
-                    TextEditor(text: $text)
-                        .frame(minHeight: 200)
-                        .autocapitalization(.sentences)
-                        .disableAutocorrection(false)
-                        .toolbar {
-                            ToolbarItemGroup(placement: .keyboard) {
-                                Button("**Bold**") { text += "**bold text**" }
-                                Button("_Italic_") { text += "_italic text_" }
-                                Button("Link") { text += "[text](LINK)" }
-                                Button("Image") { text += "![altText](LINK)" }
-                            }
-                        }
-                }
-
-                Section(header: Text("Preview")) {
-                    ScrollView {
-                        Markdown(text)
-                            .padding(.vertical)
-                    }
-                }
-            }
-            .navigationTitle("Edit Notes")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        isPresented = false
-                    }
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        isPresented = false
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct AddItemView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var viewModel: ShoppingListViewModel
@@ -71,41 +24,26 @@ struct AddItemView: View {
 
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Name")) {
-                    TextField("Item name", text: $itemName)
-                }
+            GeometryReader { geometry in
+                let isWide = geometry.size.width > 700
                 
-                Section(header: Text("Quantity")) {
-                    Stepper(value: $quantity, in: 1...100) {
-                        Text("\(quantity)")
-                    }
-                }
-                
-                Section(header: Text("Label")) {
-                    if isLoading {
-                        ProgressView("Loading Labels...")
-                    } else {
-                        Picker("Label", selection: $selectedLabel) {
-                            Text("No Label").tag(Optional<ShoppingItem.LabelWrapper>(nil))
-                            ForEach(availableLabels, id: \.id) { label in
-                                Text(label.name.removingLabelNumberPrefix()).tag(Optional(label))
-                            }
+                Group {
+                    if isWide {
+                        HStack(spacing: 0) {
+                            formLeft
+                                .frame(width: geometry.size.width * 0.4)
+                            
+                            
+                            formRight
+                                .frame(width: geometry.size.width * 0.58)
                         }
-                    }
-                }
-                
-                Section(header: Text("Notes (Markdown)")) {
-                    if mdNotes.isEmpty {
-                        Text("No notes added.")
-                            .foregroundColor(.secondary)
                     } else {
-                        Markdown(mdNotes)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    
-                    Button("Edit Notes") {
-                        showMarkdownEditor = true
+                        Form {
+                            formLeftContent
+                            Divider()
+                            
+                            formRightContent
+                        }
                     }
                 }
             }
@@ -150,56 +88,199 @@ struct AddItemView: View {
                 }
                 isLoading = false
             }
-            .sheet(isPresented: $showMarkdownEditor) {
-                NavigationView {
-                    Form {
-                        Section {
-                            TextEditor(text: $mdNotes)
-                                .frame(minHeight: 200)
-                                .autocapitalization(.sentences)
-                                .disableAutocorrection(false)
+            .fullScreenCover(isPresented: $showMarkdownEditor) {
+                GeometryReader { geometry in
+                    let isWide = geometry.size.width > 700
+
+                    if isWide {
+                        NavigationView {
+                            GeometryReader { geometry in
+                                let totalHeight = geometry.size.height
+                                    let safeAreaTop = geometry.safeAreaInsets.top
+                                    let navigationBarHeight: CGFloat = 44 // typical nav bar height
+                                    
+                                    let usableHeight = totalHeight - safeAreaTop - navigationBarHeight
+                                HStack(spacing: 0) {
+                                    // Left pane with Form and Section
+
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("Editor")
+                                                .font(.headline)
+                                                .padding(.top, 5)
+                                            Divider()
+                                            TextEditor(text: $mdNotes)
+                                                .frame(minHeight: usableHeight * 1)
+                                                .autocapitalization(.sentences)
+                                                .disableAutocorrection(false)
+                                                .toolbar {
+                                                    ToolbarItemGroup(placement: .keyboard) {
+                                                        Button("**Bold**") { mdNotes += "**bold text**" }
+                                                        Button("_Italic_") { mdNotes += "_italic text_" }
+                                                        Button("Link") { mdNotes += "[text](LINK)" }
+                                                        Button("Image") { mdNotes += "![altText](LINK)" }
+                                                    }
+                                                }
+                                               
+                                        } .padding(15)
+
+                                    .background(.clear)
+                                    .toolbarBackground(.ultraThinMaterial, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
+                                    .toolbarBackground(.visible, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
+                                    .frame(width: geometry.size.width * 0.4) // adjust width as needed
+
+                                    Divider()
+                                    
+                                    // Right pane with Form and Section for preview
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("Preview")
+                                                .font(.headline)
+                                                .padding(.top, 5)
+                                            Divider()
+                                            Markdown(mdNotes)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.top, 4)
+                                        }
+                                        .padding(15)
+                                    }
+                                    .background(Color.clear)
+                                    .frame(width: geometry.size.width * 0.58)
+                                }
+                                .navigationTitle("Edit Notes")
+                                .navigationBarTitleDisplayMode(.inline)
                                 .toolbar {
-                                        ToolbarItemGroup(placement: .keyboard) {
-                                            Button("**Bold**") {
-                                                mdNotes += "**bold text**"
-                                            }
-                                            Button("_Italic_") {
-                                                mdNotes += "_italic text_"
-                                            }
-                                            Button("Link") {
-                                                mdNotes += "[text](LINK)"
-                                            }
-                                            Button("Image") {
-                                                mdNotes += "![altText](LINK)"
-                                            }
+                                    ToolbarItem(placement: .confirmationAction) {
+                                        Button("Done") {
+                                            showMarkdownEditor = false
                                         }
                                     }
-                        }
-                        
-                        Section(header: Text("Preview")) {
-                            ScrollView {
-                                Markdown(mdNotes)
-                                    .padding(.vertical)
+                                    ToolbarItem(placement: .cancellationAction) {
+                                        Button("Cancel") {
+                                            showMarkdownEditor = false
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
-                    .navigationTitle("Edit Notes")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") {
-                                showMarkdownEditor = false
+                        // To prevent sidebar behavior, force navigationViewStyle to stack
+                        .navigationViewStyle(StackNavigationViewStyle())
+                    } else {
+                        GeometryReader { _ in
+                            NavigationView {
+                                Form {
+                                    Section(header: Text("Edit Markdown Notes")) {
+                                        TextEditor(text: $mdNotes)
+                                            .frame(minHeight: 400)
+                                            .autocapitalization(.sentences)
+                                            .disableAutocorrection(false)
+                                            .toolbar {
+                                                ToolbarItemGroup(placement: .keyboard) {
+                                                    Button("**Bold**") { mdNotes += "**bold text**" }
+                                                    Button("_Italic_") { mdNotes += "_italic text_" }
+                                                    Button("Link") { mdNotes += "[text](LINK)" }
+                                                    Button("Image") { mdNotes += "![altText](LINK)" }
+                                                }
+                                            }
+                                    }
+                                    Divider()
+
+                                    Section(header: Text("Preview")) {
+                                        ScrollView {
+                                            Markdown(mdNotes).padding(.vertical)
+                                        }
+                                    }
+                                }
+                                .navigationTitle("Edit Notes")
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    ToolbarItem(placement: .confirmationAction) {
+                                        Button("Done") {
+                                            showMarkdownEditor = false
+                                        }
+                                    }
+                                    ToolbarItem(placement: .cancellationAction) {
+                                        Button("Cancel") {
+                                            showMarkdownEditor = false
+                                        }
+                                    }
+                                }
                             }
-                        }
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showMarkdownEditor = false
-                            }
+                            .navigationViewStyle(StackNavigationViewStyle())
                         }
                     }
                 }
             }
         }
+    }
+    
+    private var formLeft: some View {
+        Form {
+            formLeftContent
+        }
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
+        .toolbarBackground(.visible, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
+        .frame(maxWidth: .infinity)
+    }
+
+    private var formRight: some View {
+
+            formRightContent
+
+        .frame(maxWidth: .infinity)
+    }
+
+    private var formLeftContent: some View {
+        Group {
+            Section(header: Text("Name")) {
+                TextField("Item name", text: $itemName)
+            }
+
+            Section(header: Text("Quantity")) {
+                Stepper(value: $quantity, in: 1...100) {
+                    Text("\(quantity)")
+                }
+            }
+
+            Section(header: Text("Label")) {
+                if isLoading {
+                    ProgressView("Loading Labels...")
+                } else {
+                    Picker("Label", selection: $selectedLabel) {
+                        Text("No Label").tag(Optional<ShoppingItem.LabelWrapper>(nil))
+                        ForEach(availableLabels, id: \.id) { label in
+                            Text(label.name.removingLabelNumberPrefix()).tag(Optional(label))
+                        }
+                    }
+                }
+            }
+            
+           
+        }
+    }
+
+    private var formRightContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Button("Edit Notes") {
+                    showMarkdownEditor = true
+                }
+                .buttonStyle(.borderedProminent)
+                Divider()
+                if mdNotes.isEmpty {
+                    Text("No notes")
+                        .foregroundColor(.secondary)
+                } else {
+                    Markdown(mdNotes)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                
+            }
+            .padding(30)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color.clear)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -230,33 +311,7 @@ struct EditItemView: View {
         _mdNotes = State(initialValue: item.extras?["markdownNotes"] ?? "")
     }
     
-    private var markdownEditorContent: some View {
-        Section(header: Text("Edit Markdown Notes")) {
-            TextEditor(text: $mdNotes)
-                .frame(minHeight: 200)
-                .autocapitalization(.sentences)
-                .disableAutocorrection(false)
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Button("**Bold**") { mdNotes += "**bold text**" }
-                        Button("_Italic_") { mdNotes += "_italic text_" }
-                        Button("Link") { mdNotes += "[text](LINK)" }
-                        Button("Image") { mdNotes += "![altText](LINK)" }
-                    }
-                }
-        }
-        .padding()
-    }
-
-    private var markdownPreviewContent: some View {
-        Section(header: Text("Preview")) {
-            ScrollView {
-                Markdown(mdNotes)
-                    .padding(.vertical)
-            }
-        }
-        .padding()
-    }
+    
 
     var body: some View {
         NavigationView {
@@ -277,6 +332,7 @@ struct EditItemView: View {
                         Form {
                             formLeftContent
                             Divider()
+            
                             formRightContent
                         }
                     }
@@ -412,6 +468,7 @@ struct EditItemView: View {
                                                 }
                                             }
                                     }
+                                    Divider()
 
                                     Section(header: Text("Preview")) {
                                         ScrollView {
