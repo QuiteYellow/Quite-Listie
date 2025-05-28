@@ -201,7 +201,11 @@ class ShoppingListAPI {
                     let responseWrapper = try JSONDecoder().decode(ShoppingListsResponse.self, from: data)
                     
                     // Tagging shopping lists with tokenId is possible if needed here
-                    return responseWrapper.items
+                    return responseWrapper.items.map { list in
+                                        var taggedList = list
+                                        taggedList.tokenId = tokenInfo.id
+                                        return taggedList
+                                    }
                 }
             }
             

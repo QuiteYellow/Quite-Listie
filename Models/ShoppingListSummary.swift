@@ -1,3 +1,5 @@
+import Foundation
+
 struct ShoppingListsResponse: Codable {
     let page: Int
     let per_page: Int
@@ -9,5 +11,19 @@ struct ShoppingListsResponse: Codable {
 struct ShoppingListSummary: Codable, Identifiable, Hashable {
     let id: String
     let name: String
-    let tokenIdentifier: String?
+    var tokenId: UUID?
+    
+    enum CodingKeys: String, CodingKey {
+            case id
+            case name
+            // do NOT include tokenId
+        }
+    
+    init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            tokenId = nil  // Manually assign later
+        }
+
 }
