@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+import SwiftUI
+
 struct SectionHeaderView: View {
     let labelName: String
     let color: Color?
@@ -16,141 +18,93 @@ struct SectionHeaderView: View {
     @ObservedObject var settings: AppSettings
     
     var body: some View {
-        Button {
-            settings.toggleSection(labelName)
-        } label: {
+        Button(action: {
+            withAnimation(.easeInOut) {
+                settings.toggleSection(labelName)
+            }
+        }) {
             HStack {
                 Text(labelName.removingLabelNumberPrefix())
                     .font(.headline)
-                    .textCase(nil)
-                    .padding(.horizontal, 5)
+                    .foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
+                    .padding(.horizontal, 0)
                     .padding(.vertical, 4)
-                    //.background(Capsule().fill(color ?? Color.gray.opacity(0.3))) // Chip background
-                    //.foregroundColor((color ?? Color.gray.opacity(0.3)).appropriateForegroundColor())
-                    .foregroundColor((color ?? .primary).lightened(forBackground: Color(.systemBackground))) //need to add darkened for light mode.
-
+                
                 Spacer()
                 
-                HStack {
+                HStack(spacing: 4) {
                     Text("\(uncheckedCount)")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .padding(.trailing, 4)
-                    
-                    
+                        .foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
+                        .font(.headline)
+                        .padding(.horizontal, 4)
+
                     Image(systemName: "chevron.right")
-                        .rotationEffect(.degrees((settings.expandedSections[labelName] ?? false) ? 90 : 0))
-                        .foregroundColor(.gray)
-                        .font(.body)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
+                        .font(.headline)
+                        .padding(.horizontal, 2)
                 }
-                .padding(.horizontal, 10)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 0)
+                .background(
+                        Capsule()
+                            .fill(.clear)
+                    )
             }
-            .contentShape(Rectangle())
-            .padding(.vertical, 10)
-            .padding(.horizontal, 8)
-                        .background(
-                            Group {
-                                if isExpanded {
-                                    // Rounded only top corners
-                                    RoundedCorner(radius: 10, corners: [.topLeft, .topRight])
-                                        .fill(Color(.systemBackground))
-                                        .overlay(
-                                            RoundedCorner(radius: 10, corners: [.topLeft, .topRight])
-                                                .stroke(Color(.systemGray3), lineWidth: 1)
-                                        )
-                                } else {
-                                    // Fully rounded corners
-                                    RoundedCorner(radius: 10, corners: [.allCorners])
-                                        .fill(Color(.systemBackground))
-                                        .overlay(
-                                            RoundedCorner(radius: 10, corners: [.allCorners])
-                                                .stroke(Color(.systemGray3), lineWidth: 1)
-                                        )
-                                }
-                                    
-                            }
-                        )
-                    }
-                    .animation(.easeInOut, value: isExpanded)
-                }
-            }
-
-struct RoundedCorner: Shape {
-    var radius: CGFloat
-    var corners: UIRectCorner
-
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(
-            roundedRect: rect,
-            byRoundingCorners: corners,
-            cornerRadii: CGSize(width: radius, height: radius)
-        )
-        return Path(path.cgPath)
+            .padding(.vertical, 1)
+            .padding(.horizontal, 0)
+        }
+        //.buttonStyle(.plain)
     }
 }
+
+import SwiftUI
 
 struct ItemRowView: View {
     let item: ShoppingItem
     let isLast: Bool
     let onTap: () -> Void
+    let onTextTap: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-
-            HStack {
-                // Quantity chip on the left
+        HStack(spacing: 12) {
+            if item.quantity ?? 0 > 1 {
                 Text((item.quantity ?? 0).formatted(.number.precision(.fractionLength(0))))
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(item.checked ? Color(.systemBackground) : .primary)) // quantity chip colour
-                    .foregroundColor(item.checked ? .gray : Color(.systemGray5))
-
-                // Item note text
-                Text(item.note)
-                    .strikethrough(item.checked, color: .gray)
-                    .foregroundColor(item.checked ? .gray : .primary)
                     .font(.subheadline)
-
-                Spacer()
-
-                if item.checked {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.accentColor)
-                        .imageScale(.large)
-                } else {
-                    Image(systemName: "circle")
-                        .foregroundColor(.accentColor)
-                        .imageScale(.large)
-                }
+                    .strikethrough(item.checked && (item.quantity ?? 0) >= 2,
+                                   color: (item.checked ? .gray : .primary))
+                    .foregroundColor(
+                        (item.quantity ?? 0) < 2 ? Color.clear :
+                        (item.checked ? .gray : .primary)
+                    )
+                    .frame(minWidth: 12, alignment: .leading)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 16)
-            .background(
-                Group {
-                    if isLast {
-                        RoundedCorner(radius: 10, corners: [.bottomLeft, .bottomRight])
-                            .fill(Color(.systemGray5))
-                            .overlay(
-                                RoundedCorner(radius: 10, corners: [.bottomLeft, .bottomRight])
-                                    .stroke(Color(.systemGray3), lineWidth: 1)
-                            )
-                    } else {
-                        // Fully rounded corners
-                        RoundedCorner(radius: 0, corners: [.bottomLeft, .bottomRight])
-                            .fill(Color(.systemGray5))
-                            .overlay(
-                                RoundedCorner(radius: 0, corners: [.bottomLeft, .bottomRight])
-                                    .stroke(Color(.systemGray3), lineWidth: 1)
-                                )
-                    }
+
+            // tap gesture for note text
+            Text(item.note)
+                .font(.subheadline)
+                .strikethrough(item.checked, color: .gray)
+                .foregroundColor(item.checked ? .gray : .primary)
+                .onTapGesture {
+                    onTextTap()
                 }
-            )
+
+            Spacer()
+
+            // Checkbox tap area
+            Button(action: {
+                onTap()
+            }) {
+                Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(.accentColor)
+                    .imageScale(.large)
+            }
+            .buttonStyle(.plain)
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap()
-        }
+        .padding(.vertical, 0)
+        .padding(.horizontal, 0)
+        .background(.clear)
+        .animation(.easeInOut(duration: 0.2), value: item.checked)
     }
 }
 
@@ -162,10 +116,9 @@ struct ShoppingListView: View {
     @State private var showingAddView = false
     @ObservedObject private var settings = AppSettings.shared
     @EnvironmentObject var networkMonitor: NetworkMonitor
-    
+
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
-    
     @State private var itemToDelete: ShoppingItem? = nil
 
     init(shoppingListId: String, listName: String) {
@@ -173,143 +126,91 @@ struct ShoppingListView: View {
         self.listName = listName
         _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: shoppingListId))
     }
+    
+    @ViewBuilder
+    private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
+        let isExpanded = settings.expandedSections[labelName] ?? true
+        let uncheckedItems = items.filter { !$0.checked }
+        let checkedItems = items.filter { $0.checked }
+
+        let itemsToShow = settings.showCompletedAtBottom && labelName != "Completed"
+            ? uncheckedItems
+            : uncheckedItems + checkedItems
+
+        if !itemsToShow.isEmpty {
+            Section(header:
+                SectionHeaderView(
+                    labelName: labelName,
+                    color: color,
+                    isExpanded: isExpanded,
+                    uncheckedCount: uncheckedItems.count,
+                    settings: settings
+                )
+                .listRowInsets(EdgeInsets(top: 6, leading: 2, bottom: 6, trailing: 2)) // custom insets for header
+            ) {
+                if isExpanded {
+                    ForEach(itemsToShow) { item in
+                        ItemRowView(
+                            item: item,
+                            isLast: false,
+                            onTap: {
+                                Task { await viewModel.toggleChecked(for: item) }
+                            },
+                            onTextTap: {
+                                editingItem = item
+                                showingEditView = true
+                            }
+                        )
+                        .contextMenu {
+                            Button("Edit Item...") {
+                                editingItem = item
+                                showingEditView = true
+                            }
+                            Button(role: .destructive) {
+                                itemToDelete = item
+                            } label: {
+                                Label("Delete Item...", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     var body: some View {
-        ScrollView {
-            let labelKeys = viewModel.sortedLabelKeys
-            let mainPadding = CGFloat(6)
-
-            ForEach(labelKeys, id: \.self) { labelName in
-                let color = viewModel.colorForLabel(name: labelName)
-                let isExpanded = settings.expandedSections[labelName] == true
-
+        
+        List {
+            ForEach(viewModel.sortedLabelKeys, id: \.self) { labelName in
                 let items = viewModel.itemsGroupedByLabel[labelName] ?? []
-
-                let uncheckedItems = items.filter { !$0.checked }
-                let checkedItems = items.filter { $0.checked }
-
-                let itemsToShow = settings.showCompletedAtBottom ? uncheckedItems : uncheckedItems + checkedItems
-
-                if !itemsToShow.isEmpty {
-                    VStack(spacing: 0) {
-                        
-                        SectionHeaderView(labelName: labelName,
-                                          color: color,
-                                          isExpanded: isExpanded,
-                                          uncheckedCount: uncheckedItems.count,
-                                          settings: settings)
-                            .padding(.horizontal, mainPadding)
-                            .background(Color(.systemBackground))
-                            .zIndex(1)
-
-                        if isExpanded {
-                            VStack(spacing: 0) {
-                                ForEach(Array(itemsToShow.enumerated()), id: \.element.id) { index, item in
-                                    ItemRowView(
-                                        item: item,
-                                        isLast: index == itemsToShow.count - 1
-                                    ) {
-                                        Task {
-                                            await viewModel.toggleChecked(for: item)
-                                        }
-                                    }
-                                    .contextMenu {
-                                        Button("Edit Item...") {
-                                            editingItem = item
-                                            showingEditView = true
-                                        }
-                                        Button(role: .destructive) {
-                                            itemToDelete = item
-                                        } label: {
-                                            Label("Delete Item...", systemImage: "trash")
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, mainPadding)
-                            }
-                            .zIndex(0)
-                            //.transition(.move(edge: .top))
-                            .animation(.easeInOut, value: isExpanded)
-                        }
-                    }
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, mainPadding)
-                }
+                let color = viewModel.colorForLabel(name: labelName)
+                renderSection(labelName: labelName, items: items, color: color)
             }
-
+            
             if settings.showCompletedAtBottom {
-                let allCheckedItems = viewModel.items.filter { $0.checked }
-
-                if !allCheckedItems.isEmpty {
-                    VStack(spacing: 0) {
-                        SectionHeaderView(labelName: "Completed",
-                                          color: .primary,
-                                          isExpanded: settings.expandedSections["Completed"] == true,
-                                          uncheckedCount: allCheckedItems.count,
-                                          settings: settings)
-                            .padding(.horizontal, mainPadding)
-                            .background(Color(.systemBackground))
-                            .zIndex(1)
-
-                        if settings.expandedSections["Completed"] == true {
-                            VStack(spacing: 0) {
-                                ForEach(Array(allCheckedItems.enumerated()), id: \.element.id) { index, item in
-                                    ItemRowView(
-                                        item: item,
-                                        isLast: index == allCheckedItems.count - 1
-                                    ) {
-                                        Task {
-                                            await viewModel.toggleChecked(for: item)
-                                        }
-                                    }
-                                    .contextMenu {
-                                        Button("Edit Item...") {
-                                            editingItem = item
-                                            showingEditView = true
-                                        }
-                                        Button(role: .destructive) {
-                                            itemToDelete = item
-                                        } label: {
-                                            Label("Delete Item...", systemImage: "trash")
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, mainPadding)
-                            }
-                            .zIndex(0)
-                            //.transition(.opacity.combined(with: .move(edge: .top)))
-                            .animation(.easeInOut, value: settings.expandedSections["Completed"])
-                        }
-                    }
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, mainPadding)
+                let completedItems = viewModel.items.filter { $0.checked }
+                renderSection(labelName: "Completed", items: completedItems, color: .primary)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(listName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if !networkMonitor.isConnected {
+                    Image(systemName: "wifi.slash")
+                        .foregroundColor(.red)
+                }
+                Button { showingAddView = true } label: {
+                    Image(systemName: "plus")
+                }
+                Button {
+                    settings.showCompletedAtBottom.toggle()
+                } label: {
+                    Image(systemName: settings.showCompletedAtBottom ? "checkmark.circle.fill" : "checkmark.circle")
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .alert("Delete Item?", isPresented: Binding(
-                get: { itemToDelete != nil },
-                set: { newValue in if !newValue { itemToDelete = nil } }
-            )) {
-                Button("Delete", role: .destructive) {
-                    guard let item = itemToDelete else { return }
-                    Task {
-                        await viewModel.deleteItem(item)
-                        await MainActor.run {
-                            itemToDelete = nil
-                        }
-                    }
-                }
-                Button("Cancel", role: .cancel) {
-                    itemToDelete = nil
-                }
-            } message: {
-                Text("Are you sure you want to delete this item?")
-            }
-        .fullScreenCover(item: $editingItem) { item in
-            EditItemView(viewModel: viewModel, item: item)
-        }
-        .scrollIndicators(.visible)
         .refreshable {
             await viewModel.loadItems()
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
@@ -318,31 +219,27 @@ struct ShoppingListView: View {
             await viewModel.loadItems()
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
-        .navigationTitle(listName)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if !networkMonitor.isConnected {
-                    Image(systemName: "wifi.slash")
-                        .foregroundColor(.red)
-                        .help("No internet connection")
-                }
-                Button {
-                    showingAddView = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                
-                Button {
-                    settings.showCompletedAtBottom.toggle()
-                } label: {
-                    Image(systemName: settings.showCompletedAtBottom ? "checkmark.circle.fill" : "checkmark.circle")
-                }
-                .help("Toggle completed items section")
-            }
-        }
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(viewModel: viewModel)
+        }
+        .fullScreenCover(item: $editingItem) { item in
+            EditItemView(viewModel: viewModel, item: item)
+        }
+        .alert("Delete Item?", isPresented: Binding(
+            get: { itemToDelete != nil },
+            set: { if !$0 { itemToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let item = itemToDelete {
+                    Task {
+                        await viewModel.deleteItem(item)
+                        await MainActor.run { itemToDelete = nil }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { itemToDelete = nil }
+        } message: {
+            Text("Are you sure you want to delete this item?")
         }
     }
 }

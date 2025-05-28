@@ -16,7 +16,7 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
             case id
             case name
-            // do NOT include tokenId
+            // do NOT include tokenId, it'll be injected in as not provided by the API
         }
     
     init(from decoder: Decoder) throws {

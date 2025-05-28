@@ -59,8 +59,7 @@ extension Color {
         isDarkColor() ? .white : .black
     }
     
-    func lightened(forBackground background: Color, threshold: CGFloat = 0.6) -> Color {
-
+    func adjusted(forBackground background: Color, threshold: CGFloat = 0.6) -> Color {
             let uiSelf = UIColor(self)
             let uiBackground = UIColor(background)
 
@@ -70,22 +69,35 @@ extension Color {
             uiSelf.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
             uiBackground.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
 
-            let luminance1 = (0.299 * r1 + 0.587 * g1 + 0.114 * b1)
-            let luminance2 = (0.299 * r2 + 0.587 * g2 + 0.114 * b2)
+            let luminance1 = 0.299 * r1 + 0.587 * g1 + 0.114 * b1
+            let luminance2 = 0.299 * r2 + 0.587 * g2 + 0.114 * b2
             let contrast = abs(luminance1 - luminance2)
 
-            // If contrast is already good enough, return self
             guard contrast < threshold else {
-                return self
+                return self // Good contrast already
             }
 
-            // Lighten color (move toward white)
-            let lightenFactor: CGFloat = 0.5
-            let newR = min(r1 + (1 - r1) * lightenFactor, 1.0)
-            let newG = min(g1 + (1 - g1) * lightenFactor, 1.0)
-            let newB = min(b1 + (1 - b1) * lightenFactor, 1.0)
+            // Determine current color scheme
+            let isDarkMode = UITraitCollection.current.userInterfaceStyle == .dark
 
-            return Color(red: newR, green: newG, blue: newB)
+            let factor: CGFloat = 0.5
+            let adjustedR: CGFloat
+            let adjustedG: CGFloat
+            let adjustedB: CGFloat
+
+            if isDarkMode {
+                // Lighten color in dark mode
+                adjustedR = min(r1 + (1 - r1) * factor, 1.0)
+                adjustedG = min(g1 + (1 - g1) * factor, 1.0)
+                adjustedB = min(b1 + (1 - b1) * factor, 1.0)
+            } else {
+                // Darken color in light mode
+                adjustedR = max(r1 * (1 - factor), 0)
+                adjustedG = max(g1 * (1 - factor), 0)
+                adjustedB = max(b1 * (1 - factor), 0)
+            }
+
+            return Color(red: adjustedR, green: adjustedG, blue: adjustedB)
         }
     
     func closestSystemColor() -> Color {
@@ -119,11 +131,7 @@ extension Color {
         }
 }
 
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
+
 
 extension UIColor {
     func distance(to other: UIColor) -> CGFloat {

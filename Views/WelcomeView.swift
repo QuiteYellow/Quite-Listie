@@ -60,7 +60,7 @@ struct SidebarView: View {
                             Image(systemName: "list.bullet")
                             Text(list.name)
                             Spacer()
-                            if let count = viewModel.uncheckedCounts[list.id], count > 0 {
+                            if let count = viewModel.uncheckedCounts[list.id], count >= 0 {
                                 Text("\(count)")
                                     .foregroundColor(.secondary)
                             }
