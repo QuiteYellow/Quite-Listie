@@ -4,6 +4,8 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) app, for managi
 
 Connect to multiple households, effectively allowing for family and personal lists.
 
+[View in TestFlight](https://testflight.apple.com/join/d7h9AqV6)
+
 ---
 
 ## Features
