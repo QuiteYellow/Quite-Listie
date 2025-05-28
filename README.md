@@ -52,4 +52,4 @@ If you want an iOS Mealie app that supports recipes, check out [Walfrosch92/Meal
 
 ## License
 
-GPL – see [LICENSE](https://github.com/jackweekes/Lists-for-Mealie-iOS?tab=GPL-3.0-1-ov-file#readme) file for details.
+GPL – see [LICENSE](LICENSE)file for details.
