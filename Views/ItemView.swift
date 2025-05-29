@@ -33,16 +33,21 @@ struct AddItemView: View {
                             formLeft
                                 .frame(width: geometry.size.width * 0.4)
                             
+                            Divider()
                             
                             formRight
-                                .frame(width: geometry.size.width * 0.58)
+                                .frame(width: geometry.size.width * 0.6)
                         }
                     } else {
                         Form {
                             formLeftContent
-                            Divider()
+
                             
-                            formRightContent
+                            Section(header: Text("Preview")) {
+                                formRightContent
+                                    .padding(.top, 8)
+                                    
+                            }
                         }
                     }
                 }
@@ -103,26 +108,18 @@ struct AddItemView: View {
                                 HStack(spacing: 0) {
                                     // Left pane with Form and Section
 
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Editor")
-                                                .font(.headline)
-                                                .padding(.top, 5)
-                                            Divider()
-                                            TextEditor(text: $mdNotes)
-                                                .frame(minHeight: usableHeight * 1)
-                                                .autocapitalization(.sentences)
-                                                .disableAutocorrection(false)
-                                                .toolbar {
-                                                    ToolbarItemGroup(placement: .keyboard) {
-                                                        Button("**Bold**") { mdNotes += "**bold text**" }
-                                                        Button("_Italic_") { mdNotes += "_italic text_" }
-                                                        Button("Link") { mdNotes += "[text](LINK)" }
-                                                        Button("Image") { mdNotes += "![altText](LINK)" }
-                                                    }
-                                                }
-                                               
-                                        } .padding(15)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        ZStack {
+                                            Color(.secondarySystemGroupedBackground)
 
+                                            CustomTextEditor(text: $mdNotes)
+                                                .padding(8)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                .padding(15)
+                                                .frame(minHeight: usableHeight)
+                                        }
+                                        
+                                    }
                                     .background(.clear)
                                     .toolbarBackground(.ultraThinMaterial, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
                                     .toolbarBackground(.visible, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
@@ -131,20 +128,20 @@ struct AddItemView: View {
                                     Divider()
                                     
                                     // Right pane with Form and Section for preview
-                                    ScrollView {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Preview")
-                                                .font(.headline)
-                                                .padding(.top, 5)
-                                            Divider()
+                                    VStack(alignment: .leading, spacing: 8) {
+                                            
+                                        ScrollView {
                                             Markdown(mdNotes)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(.top, 4)
                                         }
-                                        .padding(15)
+                                        
+                                        
                                     }
+                                    .padding(15)
                                     .background(Color.clear)
-                                    .frame(width: geometry.size.width * 0.58)
+                                    
+                                    .frame(width: geometry.size.width * 0.6)
                                 }
                                 .navigationTitle("Edit Notes")
                                 .navigationBarTitleDisplayMode(.inline)
@@ -182,7 +179,6 @@ struct AddItemView: View {
                                                 }
                                             }
                                     }
-                                    Divider()
 
                                     Section(header: Text("Preview")) {
                                         ScrollView {
@@ -223,10 +219,10 @@ struct AddItemView: View {
     }
 
     private var formRight: some View {
-
-            formRightContent
-
+        formRightContent
+        .padding(20)
         .frame(maxWidth: .infinity)
+        
     }
 
     private var formLeftContent: some View {
@@ -254,6 +250,11 @@ struct AddItemView: View {
                 }
             }
             
+            Section(header: Text("Notes")) {
+                Button("Edit Notes in Markdown") {
+                    showMarkdownEditor = true
+                }
+            }
            
         }
     }
@@ -261,11 +262,7 @@ struct AddItemView: View {
     private var formRightContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Button("Edit Notes") {
-                    showMarkdownEditor = true
-                }
-                .buttonStyle(.borderedProminent)
-                Divider()
+
                 if mdNotes.isEmpty {
                     Text("No notes")
                         .foregroundColor(.secondary)
@@ -276,7 +273,6 @@ struct AddItemView: View {
 
                 
             }
-            .padding(30)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color.clear)
@@ -323,17 +319,20 @@ struct EditItemView: View {
                         HStack(spacing: 0) {
                             formLeft
                                 .frame(width: geometry.size.width * 0.4)
-
+                            Divider()
 
                             formRight
-                                .frame(width: geometry.size.width * 0.58)
+                                .frame(width: geometry.size.width * 0.6)
                         }
                     } else {
                         Form {
                             formLeftContent
-                            Divider()
-            
-                            formRightContent
+                            Section(header: Text("Preview")) {
+                                formRightContent
+                                    .padding(.top, 8)
+                                    
+                            }
+                            
                         }
                     }
                 }
@@ -389,26 +388,18 @@ struct EditItemView: View {
                                 HStack(spacing: 0) {
                                     // Left pane with Form and Section
 
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Editor")
-                                                .font(.headline)
-                                                .padding(.top, 5)
-                                            Divider()
-                                            TextEditor(text: $mdNotes)
-                                                .frame(minHeight: usableHeight * 1)
-                                                .autocapitalization(.sentences)
-                                                .disableAutocorrection(false)
-                                                .toolbar {
-                                                    ToolbarItemGroup(placement: .keyboard) {
-                                                        Button("**Bold**") { mdNotes += "**bold text**" }
-                                                        Button("_Italic_") { mdNotes += "_italic text_" }
-                                                        Button("Link") { mdNotes += "[text](LINK)" }
-                                                        Button("Image") { mdNotes += "![altText](LINK)" }
-                                                    }
-                                                }
-                                               
-                                        } .padding(15)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        ZStack {
+                                            Color(.secondarySystemGroupedBackground)
 
+                                            CustomTextEditor(text: $mdNotes)
+                                                .padding(8)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                .padding(15)
+                                                .frame(minHeight: usableHeight)
+                                        }
+                                        
+                                    }
                                     .background(.clear)
                                     .toolbarBackground(.ultraThinMaterial, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
                                     .toolbarBackground(.visible, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
@@ -417,20 +408,20 @@ struct EditItemView: View {
                                     Divider()
                                     
                                     // Right pane with Form and Section for preview
-                                    ScrollView {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Preview")
-                                                .font(.headline)
-                                                .padding(.top, 5)
-                                            Divider()
+                                    VStack(alignment: .leading, spacing: 8) {
+                                            
+                                        ScrollView {
                                             Markdown(mdNotes)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(.top, 4)
                                         }
-                                        .padding(15)
+                                        
+                                        
                                     }
+                                    .padding(15)
                                     .background(Color.clear)
-                                    .frame(width: geometry.size.width * 0.58)
+                                    
+                                    .frame(width: geometry.size.width * 0.6)
                                 }
                                 .navigationTitle("Edit Notes")
                                 .navigationBarTitleDisplayMode(.inline)
@@ -468,7 +459,7 @@ struct EditItemView: View {
                                                 }
                                             }
                                     }
-                                    Divider()
+
 
                                     Section(header: Text("Preview")) {
                                         ScrollView {
@@ -536,9 +527,8 @@ struct EditItemView: View {
     }
 
     private var formRight: some View {
-
-            formRightContent
-
+        formRightContent
+        .padding(20)
         .frame(maxWidth: .infinity)
     }
 
@@ -553,6 +543,7 @@ struct EditItemView: View {
                     Text("\(quantity)")
                 }
             }
+            
 
             Section(header: Text("Label")) {
                 if isLoading {
@@ -567,6 +558,11 @@ struct EditItemView: View {
                 }
             }
             
+            Section(header: Text("Notes")) {
+                Button("Edit Notes in Markdown") {
+                    showMarkdownEditor = true
+                }
+            }
            
         }
     }
@@ -574,11 +570,6 @@ struct EditItemView: View {
     private var formRightContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Button("Edit Notes") {
-                    showMarkdownEditor = true
-                }
-                .buttonStyle(.borderedProminent)
-                Divider()
                 if mdNotes.isEmpty {
                     Text("No notes")
                         .foregroundColor(.secondary)
@@ -589,10 +580,48 @@ struct EditItemView: View {
 
                 
             }
-            .padding(30)
+            
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color.clear)
         .frame(maxWidth: .infinity)
+    }
+}
+
+struct CustomTextEditor: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.backgroundColor = .clear // Transparent background
+        textView.isScrollEnabled = true
+        textView.font = UIFont.preferredFont(forTextStyle: .body)
+        textView.autocorrectionType = .yes
+        textView.autocapitalizationType = .sentences
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UITextViewDelegate {
+        var parent: CustomTextEditor
+
+        init(_ parent: CustomTextEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+        }
     }
 }
