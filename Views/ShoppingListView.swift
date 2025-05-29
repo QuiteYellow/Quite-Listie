@@ -14,6 +14,7 @@ struct SectionHeaderView: View {
     let color: Color?
     let isExpanded: Bool
     let uncheckedCount: Int
+    let checkedCount: Int
     
     @ObservedObject var settings: AppSettings
     
@@ -33,7 +34,7 @@ struct SectionHeaderView: View {
                 Spacer()
                 
                 HStack(spacing: 4) {
-                    Text("\(uncheckedCount)")
+                    Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)") // Show checked count instead of unchecked for Completed!
                         .foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
                         .font(.headline)
                         .padding(.horizontal, 4)
@@ -65,6 +66,8 @@ struct ItemRowView: View {
     let isLast: Bool
     let onTap: () -> Void
     let onTextTap: () -> Void
+    let onIncrement: (() -> Void)?
+    let onDecrement: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -95,16 +98,16 @@ struct ItemRowView: View {
             Button(action: {
                 onTap()
             }) {
-                Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(.accentColor)
+                Image(systemName: item.checked ? "inset.filled.circle" : "circle")
+                    .foregroundColor(item.checked ? .gray : .accentColor)
                     .imageScale(.large)
+                
             }
             .buttonStyle(.plain)
         }
         .padding(.vertical, 0)
         .padding(.horizontal, 0)
         .background(.clear)
-        .animation(.easeInOut(duration: 0.2), value: item.checked)
     }
 }
 
@@ -144,6 +147,7 @@ struct ShoppingListView: View {
                     color: color,
                     isExpanded: isExpanded,
                     uncheckedCount: uncheckedItems.count,
+                    checkedCount: checkedItems.count,
                     settings: settings
                 )
                 .listRowInsets(EdgeInsets(top: 6, leading: 2, bottom: 6, trailing: 2)) // custom insets for header
@@ -159,8 +163,50 @@ struct ShoppingListView: View {
                             onTextTap: {
                                 editingItem = item
                                 showingEditView = true
+                            },
+                            onIncrement: {
+                                Task {
+                                    let newQty = (item.quantity ?? 1) + 1
+                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                }
+                            },
+                            onDecrement: {
+                                if (item.quantity ?? 1) <= 1 {
+                                    itemToDelete = item
+                                } else {
+                                    Task {
+                                        let newQty = max((item.quantity ?? 1) - 1, 1)
+                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    }
+                                }
                             }
                         )
+                        .swipeActions(edge: .trailing) {
+                                Button(role: .none) {
+                                    if (item.quantity ?? 1) < 2 {
+                                        itemToDelete = item
+                                    } else {
+                                        Task {
+                                            let newQty = max((item.quantity ?? 1) - 1, 1)
+                                            _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                        }
+                                    }
+                                } label: {
+                                    Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                                }
+                                .tint((item.quantity ?? 1) < 2 ? .red : .orange)
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    Task {
+                                        let newQty = (item.quantity ?? 1) + 1
+                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    }
+                                } label: {
+                                    Label("+", systemImage: "plus")
+                                }
+                                .tint(.green)
+                            }
                         .contextMenu {
                             Button("Edit Item...") {
                                 editingItem = item
@@ -207,7 +253,7 @@ struct ShoppingListView: View {
                 Button {
                     settings.showCompletedAtBottom.toggle()
                 } label: {
-                    Image(systemName: settings.showCompletedAtBottom ? "checkmark.circle.fill" : "checkmark.circle")
+                    Image(systemName: settings.showCompletedAtBottom ? "circle.badge.checkmark.fill" : "circle.badge.xmark")
                 }
             }
         }
