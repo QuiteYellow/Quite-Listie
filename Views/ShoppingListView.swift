@@ -114,6 +114,7 @@ struct ItemRowView: View {
 struct ShoppingListView: View {
     let listName: String
     let shoppingListId: String
+    let tokenID: UUID?
 
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
@@ -124,9 +125,10 @@ struct ShoppingListView: View {
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
 
-    init(shoppingListId: String, listName: String) {
+    init(shoppingListId: String, listName: String, tokenID: UUID? ) {
         self.shoppingListId = shoppingListId
         self.listName = listName
+        self.tokenID = tokenID
         _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: shoppingListId))
     }
     
@@ -266,7 +268,7 @@ struct ShoppingListView: View {
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .fullScreenCover(isPresented: $showingAddView) {
-            AddItemView(viewModel: viewModel)
+            AddItemView(tokenID: tokenID, viewModel: viewModel)
         }
         .fullScreenCover(item: $editingItem) { item in
             EditItemView(viewModel: viewModel, item: item)

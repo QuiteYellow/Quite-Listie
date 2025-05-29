@@ -55,9 +55,9 @@ class ShoppingListAPI {
                     let request = self.authorizedRequest(url: itemsURL, tokenInfo: tokenInfo)
                     let (data, response) = try await URLSession.shared.data(for: request)
                     
-//                    if let httpResponse = response as? HTTPURLResponse {
-//                        print("⭐️ [Token \(tokenInfo.id)] Status code:", httpResponse.statusCode)
-//                    }
+                    //                    if let httpResponse = response as? HTTPURLResponse {
+                    //                        print("⭐️ [Token \(tokenInfo.id)] Status code:", httpResponse.statusCode)
+                    //                    }
                     
                     let responseWrapper = try JSONDecoder().decode(ShoppingItemResponse.self, from: data)
                     
@@ -86,7 +86,7 @@ class ShoppingListAPI {
         return tokens.first(where: { $0.id == id })
     }
     
-    // MARK: - Add Item uses any token (you can customize)
+    // MARK: - Add Item uses any token
     func addItem(_ item: ShoppingItem, to shoppingListId: String) async throws {
         guard let baseURL = baseURL else {
             throw URLError(.badURL)
@@ -194,18 +194,18 @@ class ShoppingListAPI {
                     let request = self.authorizedRequest(url: listsURL, tokenInfo: tokenInfo)
                     let (data, response) = try await URLSession.shared.data(for: request)
                     
-//                    if let httpResponse = response as? HTTPURLResponse {
-//                        print("⭐️ [Token \(tokenInfo.id)] Status code:", httpResponse.statusCode)
-//                    }
+                    //                    if let httpResponse = response as? HTTPURLResponse {
+                    //                        print("⭐️ [Token \(tokenInfo.id)] Status code:", httpResponse.statusCode)
+                    //                    }
                     
                     let responseWrapper = try JSONDecoder().decode(ShoppingListsResponse.self, from: data)
                     
                     // Tagging shopping lists with tokenId is possible if needed here
                     return responseWrapper.items.map { list in
-                                        var taggedList = list
-                                        taggedList.tokenId = tokenInfo.id
-                                        return taggedList
-                                    }
+                        var taggedList = list
+                        taggedList.tokenId = tokenInfo.id
+                        return taggedList
+                    }
                 }
             }
             
@@ -217,25 +217,12 @@ class ShoppingListAPI {
         }
     }
     
-    // MARK: - Fetch labels from first token (or you can also fetch concurrently if needed)
+    // MARK: - Fetch labels using all tokens concurrently
     func fetchShoppingLabels() async throws -> [ShoppingItem.LabelWrapper] {
         guard let baseURL = baseURL else {
             throw URLError(.badURL)
         }
         let labelsURL = baseURL.appendingPathComponent("groups/labels")
-        
-        guard let tokenInfo = tokens.first else {
-            throw URLError(.userAuthenticationRequired)
-        }
-        
-        let request = authorizedRequest(url: labelsURL, tokenInfo: tokenInfo)
-        print("⭐️ Request URL:", request)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        if let httpResponse = response as? HTTPURLResponse {
-            print("⭐️ Status code:", httpResponse.statusCode)
-        }
         
         struct LabelResponse: Decodable {
             let id: String
@@ -247,11 +234,26 @@ class ShoppingListAPI {
             let items: [LabelResponse]
         }
         
-        let decoder = JSONDecoder()
-        let responseWrapper = try decoder.decode(LabelsResponseWrapper.self, from: data)
-        
-        return responseWrapper.items.map { label in
-            ShoppingItem.LabelWrapper(id: label.id, name: label.name, color: label.color)
+        return try await withThrowingTaskGroup(of: [ShoppingItem.LabelWrapper].self) { group in
+            for tokenInfo in tokens {
+                group.addTask {
+                    let request = self.authorizedRequest(url: labelsURL, tokenInfo: tokenInfo)
+                    let (data, _) = try await URLSession.shared.data(for: request)
+                    let wrapper = try JSONDecoder().decode(LabelsResponseWrapper.self, from: data)
+                    
+                    return wrapper.items.map { label in
+                        var wrapper = ShoppingItem.LabelWrapper(id: label.id, name: label.name, color: label.color)
+                        wrapper.tokenId = tokenInfo.id  // Tag the label with its token
+                        return wrapper
+                    }
+                }
+            }
+            
+            var allLabels: [ShoppingItem.LabelWrapper] = []
+            for try await labels in group {
+                allLabels.append(contentsOf: labels)
+            }
+            return allLabels
         }
     }
 }

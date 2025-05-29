@@ -7,8 +7,11 @@
 
 import SwiftUI
 import MarkdownUI
-
+// ADD ITEMS NEEDS TO FILTER OFF LIST TOKEN AND ADD BASED OFF OF LIST TOKEN
 struct AddItemView: View {
+    
+    let tokenID: UUID?
+    
     @Environment(\.dismiss) var dismiss
     @ObservedObject var viewModel: ShoppingListViewModel
     
@@ -85,13 +88,28 @@ struct AddItemView: View {
                 Text("Please check your internet connection or try again.")
             }
             .task {
-                do {
-                    availableLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
-                    availableLabels.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-                } catch {
-                    print("⚠️ Failed to fetch labels:", error)
-                }
-                isLoading = false
+                    do {
+                        //print("❄️ TOKEN ID: \(tokenID?.uuidString ?? "nil")")
+
+                        // Fetch all labels
+                        let allLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+
+                        // Filter labels with matching tokenID
+                        if let tokenID = tokenID {
+                            availableLabels = allLabels.filter { $0.tokenId == tokenID }
+                        } else {
+                            availableLabels = allLabels
+                        }
+
+                        // Sort alphabetically
+                        availableLabels.sort {
+                            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                        }
+                    } catch {
+                        print("⚠️ Failed to fetch labels:", error)
+                    }
+
+                    isLoading = false
             }
             .fullScreenCover(isPresented: $showMarkdownEditor) {
                 GeometryReader { geometry in
@@ -505,7 +523,13 @@ struct EditItemView: View {
             }
             .task {
                 do {
-                    availableLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+                    let allLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+                    availableLabels = allLabels.filter { label in
+                        if let itemToken = item.tokenId, let labelToken = label.tokenId {
+                            return itemToken == labelToken
+                        }
+                        return false
+                    }
                     availableLabels.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 } catch {
                     print("⚠️ Failed to fetch labels:", error)
