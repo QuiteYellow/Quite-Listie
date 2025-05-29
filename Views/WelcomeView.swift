@@ -26,7 +26,7 @@ struct WelcomeView: View {
                     } detail: {
             if let id = selectedListID,
                let list = viewModel.lists.first(where: { $0.id == id }) {
-                ShoppingListView(shoppingListId: list.id, listName: list.name)
+                ShoppingListView(shoppingListId: list.id, listName: list.name, tokenID: list.tokenId)
                     .id(list.id)
             } else {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
