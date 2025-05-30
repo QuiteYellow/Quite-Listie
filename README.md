@@ -25,6 +25,8 @@ Connect to multiple households, effectively allowing for family and personal lis
 - Right click support on macOS.
 - Support for Mealie labels including colours (contrast is automatically adjusted to ensure readability).
 - Add additional markdown notes to any item! Synced to the API! These aren't visible within the native Mealie web interface.
+- Renaming of lists.
+- Custom list icons, with icon picker, stored in API extras.
 
 ---
 
