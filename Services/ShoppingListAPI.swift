@@ -100,6 +100,8 @@ class ShoppingListAPI {
             let labelId: String?
             let quantity: Double?
             let extras: [String: String]?
+            let groupId: String?
+            let householdId: String?
         }
         
         let createPayload = ShoppingItemCreateRequest(
@@ -108,7 +110,9 @@ class ShoppingListAPI {
             shoppingListId: shoppingListId,
             labelId: item.label?.id,
             quantity: item.quantity,
-            extras: item.extras
+            extras: item.extras,
+            groupId: item.groupId ?? "",
+            householdId: item.householdId ?? ""
         )
         
         let body = try JSONEncoder().encode(createPayload)
@@ -152,6 +156,8 @@ class ShoppingListAPI {
             let labelId: String?
             let quantity: Double?
             let extras: [String: String]?
+            let groupId: String?
+            let householdId: String?
         }
         
         let updatePayload = ShoppingItemUpdateRequest(
@@ -161,7 +167,9 @@ class ShoppingListAPI {
             shoppingListId: item.shoppingListId,
             labelId: item.label?.id,
             quantity: item.quantity,
-            extras: item.extras
+            extras: item.extras,
+            groupId: item.groupId ?? "",
+            householdId: item.householdId ?? ""
         )
         
         let body = try JSONEncoder().encode(updatePayload)
@@ -228,6 +236,7 @@ class ShoppingListAPI {
             let id: String
             let name: String
             let color: String
+            let groupId: String
         }
         
         struct LabelsResponseWrapper: Decodable {
@@ -242,7 +251,7 @@ class ShoppingListAPI {
                     let wrapper = try JSONDecoder().decode(LabelsResponseWrapper.self, from: data)
                     
                     return wrapper.items.map { label in
-                        var wrapper = ShoppingItem.LabelWrapper(id: label.id, name: label.name, color: label.color)
+                        var wrapper = ShoppingItem.LabelWrapper(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
                         wrapper.tokenId = tokenInfo.id  // Tag the label with its token
                         return wrapper
                     }
@@ -256,4 +265,47 @@ class ShoppingListAPI {
             return allLabels
         }
     }
+    
+    // MARK: - Update Shopping List Name
+    func updateShoppingListName(list: ShoppingListSummary, newName: String, items: [ShoppingItem], extras: [String: String] = [:]) async throws {
+        guard let baseURL = baseURL else {
+            throw URLError(.badURL)
+        }
+
+        guard let groupId = list.groupId,
+              let userId = list.userId,
+              let tokenInfo = tokenInfo(for: list.tokenId) else {
+            throw NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "Missing required fields"])
+        }
+
+        let updateURL = baseURL
+            .appendingPathComponent("households/shopping/lists")
+            .appendingPathComponent(list.id)
+
+        let payload = UpdateListRequest(
+            id: list.id,
+            name: newName,
+            extras: extras,
+            groupId: groupId,
+            userId: userId,
+            listItems: items
+            
+        )
+
+        let body = try JSONEncoder().encode(payload)
+        let request = authorizedRequest(url: updateURL, tokenInfo: tokenInfo, method: "PUT", body: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse {
+            print("🧩 Status Code: \(httpResponse.statusCode)")
+            if let bodyString = String(data: data, encoding: .utf8) {
+                print("🧾 Response Body: \(bodyString)")
+            }
+            if !(200..<300).contains(httpResponse.statusCode) {
+                throw NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to update list name"])
+            }
+        }
+    }
+
 }

@@ -18,6 +18,9 @@ struct ShoppingItem: Identifiable, Codable {
     var tokenId: UUID? = nil
     
     var extras: [String: String]?
+    
+    var groupId: String?
+    var householdId: String?
 
         var markdownNotes: String {
             get { extras?["markdownNotes"] ?? "" }
@@ -31,6 +34,7 @@ struct ShoppingItem: Identifiable, Codable {
         let id: String
         let name: String
         let color: String
+        let groupId: String
         
         var tokenId: UUID? = nil
     }
