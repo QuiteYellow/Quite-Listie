@@ -34,8 +34,8 @@ struct WelcomeView: View {
         }
         .sheet(isPresented: $viewModel.showingListSettings) {
             if let list = viewModel.selectedListForSettings {
-                ListSettingsView(list: list) { updatedName, emoji in
-                    let extras = ["listsForMealieListIcon": emoji]
+                ListSettingsView(list: list) { updatedName, icon in
+                    let extras = ["listsForMealieListIcon": icon]
                     Task {
                         await viewModel.updateListName(
                             listID: list.id,

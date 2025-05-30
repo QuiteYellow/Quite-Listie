@@ -2,18 +2,13 @@ import SwiftUI
 import SymbolPicker
 
 struct ListSettingsView: View {
+    let list: ShoppingListSummary
+    let onSave: (String, String) -> Void
+    
     @Environment(\.dismiss) var dismiss
-    @State private var name: String
+    @State private var name: String = ""
+    @State private var icon: String = "pencil"
     @State private var iconPickerPresented = false
-    @State private var icon = "pencil"
-
-    let onSave: (String, String) -> Void // pass name and emoji
-
-    init(list: ShoppingListSummary, onSave: @escaping (String, String) -> Void) {
-        _name = State(initialValue: list.name)
-        _icon = State(initialValue: list.extras?["listsForMealieListIcon"] ?? "") // get from extras if exists
-        self.onSave = onSave
-    }
 
     var body: some View {
         NavigationView {
@@ -49,6 +44,10 @@ struct ListSettingsView: View {
                     }
                 }
             }
+        }
+        .onAppear {
+            name = list.name
+            icon = list.extras?["listsForMealieListIcon"] ?? ""
         }
     }
 }

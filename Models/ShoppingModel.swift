@@ -14,22 +14,19 @@ struct ShoppingItem: Identifiable, Codable {
     var shoppingListId: String
     var label: LabelWrapper?
     var quantity: Double?
+    var groupId: String?
+    var householdId: String?
     
     var tokenId: UUID? = nil
     
-    var extras: [String: String]?
+    var extras: [String: String] = [:]
     
-    var groupId: String?
-    var householdId: String?
+    var markdownNotes: String {
+        get { extras["markdownNotes"] ?? "" }
+        set { extras["markdownNotes"] = newValue }
+    }
+    
 
-        var markdownNotes: String {
-            get { extras?["markdownNotes"] ?? "" }
-            set {
-                if extras == nil { extras = [:] }
-                extras?["markdownNotes"] = newValue
-            }
-        }
-    
     struct LabelWrapper: Codable, Hashable {
         let id: String
         let name: String
@@ -38,9 +35,8 @@ struct ShoppingItem: Identifiable, Codable {
         
         var tokenId: UUID? = nil
     }
+    
 }
-
-import Foundation
 
 struct ShoppingListsResponse: Codable {
     let page: Int
@@ -64,17 +60,6 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
             case groupId
             case userId
             case extras
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            id = try container.decode(String.self, forKey: .id)
-            name = try container.decode(String.self, forKey: .name)
-            groupId = try? container.decode(String.self, forKey: .groupId)
-            userId = try? container.decode(String.self, forKey: .userId)
-            extras = try? container.decode([String: String].self, forKey: .extras)
-
-            tokenId = nil
         }
 
 }
