@@ -7,7 +7,7 @@
 
 import SwiftUI
 import MarkdownUI
-// ADD ITEMS NEEDS TO FILTER OFF LIST TOKEN AND ADD BASED OFF OF LIST TOKEN
+
 struct AddItemView: View {
     
     let tokenID: UUID?
@@ -16,7 +16,7 @@ struct AddItemView: View {
     @ObservedObject var viewModel: ShoppingListViewModel
     
     @State private var itemName = ""
-    @State private var selectedLabel: ShoppingItem.LabelWrapper?
+    @State private var selectedLabel: ShoppingItem.LabelWrapper? = nil
     @State private var availableLabels: [ShoppingItem.LabelWrapper] = []
     @State private var isLoading = true
     @State private var quantity: Int = 1
@@ -261,8 +261,10 @@ struct AddItemView: View {
                 } else {
                     Picker("Label", selection: $selectedLabel) {
                         Text("No Label").tag(Optional<ShoppingItem.LabelWrapper>(nil))
+                        
                         ForEach(availableLabels, id: \.id) { label in
-                            Text(label.name.removingLabelNumberPrefix()).tag(Optional(label))
+                            Text(label.name.removingLabelNumberPrefix())
+                                .tag(Optional(label))
                         }
                     }
                 }
@@ -306,39 +308,28 @@ struct EditItemView: View {
 
     let item: ShoppingItem
 
-    @State private var itemName: String
-    @State private var selectedLabel: ShoppingItem.LabelWrapper?
-    @State private var quantity: Int
-    @State private var mdNotes: String
+    @State private var itemName: String = ""
+    @State private var selectedLabel: ShoppingItem.LabelWrapper? = nil
+    @State private var quantity: Int = 1
+    @State private var mdNotes: String = ""
     @State private var availableLabels: [ShoppingItem.LabelWrapper] = []
     @State private var isLoading = true
     @State private var showDeleteConfirmation = false
     @State private var showError = false
     @State private var showMarkdownEditor = false
 
-    init(viewModel: ShoppingListViewModel, item: ShoppingItem) {
-        self.viewModel = viewModel
-        self.item = item
-        _itemName = State(initialValue: item.note)
-        _selectedLabel = State(initialValue: item.label)
-        _quantity = State(initialValue: Int(item.quantity ?? 1))
-        _mdNotes = State(initialValue: item.extras?["markdownNotes"] ?? "")
-    }
-    
-    
-
     var body: some View {
         NavigationView {
             GeometryReader { geometry in
                 let isWide = geometry.size.width > 700
-
+                
                 Group {
                     if isWide {
                         HStack(spacing: 0) {
                             formLeft
                                 .frame(width: geometry.size.width * 0.4)
                             Divider()
-
+                            
                             formRight
                                 .frame(width: geometry.size.width * 0.6)
                         }
@@ -348,7 +339,7 @@ struct EditItemView: View {
                             Section(header: Text("Preview")) {
                                 formRightContent
                                     .padding(.top, 8)
-                                    
+                                
                             }
                             
                         }
@@ -362,11 +353,12 @@ struct EditItemView: View {
                             showDeleteConfirmation = true
                         }
                         .foregroundColor(.red)
-
+                        
                         Button("Save") {
                             Task {
-                                var updatedExtras = item.extras ?? [:]
-                                updatedExtras["markdownNotes"] = mdNotes
+                                let updates = ["markdownNotes": mdNotes]
+                                let updatedExtras = item.updatedExtras(with: updates)
+                                
                                 let success = await viewModel.updateItem(
                                     item,
                                     note: itemName,
@@ -383,7 +375,7 @@ struct EditItemView: View {
                         }
                         .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-
+                    
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {
                             dismiss()
@@ -394,22 +386,22 @@ struct EditItemView: View {
             .fullScreenCover(isPresented: $showMarkdownEditor) {
                 GeometryReader { geometry in
                     let isWide = geometry.size.width > 700
-
+                    
                     if isWide {
                         NavigationView {
                             GeometryReader { geometry in
                                 let totalHeight = geometry.size.height
-                                    let safeAreaTop = geometry.safeAreaInsets.top
-                                    let navigationBarHeight: CGFloat = 44 // typical nav bar height
-                                    
-                                    let usableHeight = totalHeight - safeAreaTop - navigationBarHeight
+                                let safeAreaTop = geometry.safeAreaInsets.top
+                                let navigationBarHeight: CGFloat = 44 // typical nav bar height
+                                
+                                let usableHeight = totalHeight - safeAreaTop - navigationBarHeight
                                 HStack(spacing: 0) {
                                     // Left pane with Form and Section
-
+                                    
                                     VStack(alignment: .leading, spacing: 8) {
                                         ZStack {
                                             Color(.secondarySystemGroupedBackground)
-
+                                            
                                             CustomTextEditor(text: $mdNotes)
                                                 .padding(8)
                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -422,12 +414,12 @@ struct EditItemView: View {
                                     .toolbarBackground(.ultraThinMaterial, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
                                     .toolbarBackground(.visible, for: .navigationBar) // forces the navigation bar blur to show, otherwise bug causes left view not to trigger it.
                                     .frame(width: geometry.size.width * 0.4) // adjust width as needed
-
+                                    
                                     Divider()
                                     
                                     // Right pane with Form and Section for preview
                                     VStack(alignment: .leading, spacing: 8) {
-                                            
+                                        
                                         ScrollView {
                                             Markdown(mdNotes)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -477,8 +469,8 @@ struct EditItemView: View {
                                                 }
                                             }
                                     }
-
-
+                                    
+                                    
                                     Section(header: Text("Preview")) {
                                         ScrollView {
                                             Markdown(mdNotes).padding(.vertical)
@@ -537,6 +529,13 @@ struct EditItemView: View {
                 isLoading = false
             }
         }
+        .onAppear {
+            // Initialize state values from item
+            itemName = item.note
+            selectedLabel = item.label
+            quantity = Int(item.quantity ?? 1)
+            mdNotes = item.markdownNotes
+        }
     }
 
     // MARK: - Forms and Content
@@ -575,8 +574,10 @@ struct EditItemView: View {
                 } else {
                     Picker("Label", selection: $selectedLabel) {
                         Text("No Label").tag(Optional<ShoppingItem.LabelWrapper>(nil))
+                        
                         ForEach(availableLabels, id: \.id) { label in
-                            Text(label.name.removingLabelNumberPrefix()).tag(Optional(label))
+                            Text(label.name.removingLabelNumberPrefix())
+                                .tag(Optional(label))
                         }
                     }
                 }

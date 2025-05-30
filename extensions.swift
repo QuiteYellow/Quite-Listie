@@ -149,3 +149,27 @@ extension UIColor {
     }
 }
 
+
+//MARK: - ShoppingItem+Extras
+extension ShoppingItem {
+    func updatedExtras(with updates: [String: String]) -> [String: String] {
+        var copy = extras
+        for (key, value) in updates {
+            copy[key] = value
+        }
+        return copy
+    }
+}
+
+
+/* USAGE (NOT HERE!!!)
+ 
+ let updates = [
+     "markdownNotes": "Remember to buy almond milk",
+     "notifyAlexa": "true",
+     "customKey": "customValue"
+ ]
+
+ let updatedExtras = item.updatedExtras(with: updates)
+ 
+ */
