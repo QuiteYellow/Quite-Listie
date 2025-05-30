@@ -9,21 +9,21 @@ struct WelcomeView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(viewModel: viewModel, selectedListID: $selectedListID)
-                            .toolbar {
-                                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                                    if !networkMonitor.isConnected {
-                                        Image(systemName: "wifi.slash")
-                                            .foregroundColor(.red)
-                                            .help("No internet connection")
-                                    }
-                                    Button {
-                                        showingSettings = true
-                                    } label: {
-                                        Image(systemName: "gear")
-                                    }
-                                }
-                            }
-                    } detail: {
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        if !networkMonitor.isConnected {
+                            Image(systemName: "wifi.slash")
+                                .foregroundColor(.red)
+                                .help("No internet connection")
+                        }
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gear")
+                        }
+                    }
+                }
+        } detail: {
             if let id = selectedListID,
                let list = viewModel.lists.first(where: { $0.id == id }) {
                 ShoppingListView(shoppingListId: list.id, listName: list.name, tokenID: list.tokenId)
@@ -32,6 +32,21 @@ struct WelcomeView: View {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
             }
         }
+        .sheet(isPresented: $viewModel.showingListSettings) {
+            if let list = viewModel.selectedListForSettings {
+                ListSettingsView(list: list) { updatedName, emoji in
+                    let extras = ["listsForMealieListIcon": emoji]
+                    Task {
+                        await viewModel.updateListName(
+                            listID: list.id,
+                            newName: updatedName,
+                            extras: extras
+                        )
+                    }
+                }
+            }
+        }
+        
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
@@ -57,7 +72,9 @@ struct SidebarView: View {
                 Section(header: Text(identifier)) {
                     ForEach(lists, id: \.id) { list in
                         HStack {
-                            Image(systemName: "list.bullet")
+                            Image(systemName: list.extras?["listsForMealieListIcon"] ?? "list.bullet")
+                                .frame(minWidth: 40)
+                                .foregroundColor(.secondary)
                             Text(list.name)
                             Spacer()
                             if let count = viewModel.uncheckedCounts[list.id], count >= 0 {
@@ -66,6 +83,13 @@ struct SidebarView: View {
                             }
                         }
                         .tag(list.id)
+                        .contextMenu {
+                            Button("List Settings") {
+                                selectedListID = list.id
+                                viewModel.selectedListForSettings = list
+                                viewModel.showingListSettings = true
+                            }
+                        }
                     }
                 }
             }

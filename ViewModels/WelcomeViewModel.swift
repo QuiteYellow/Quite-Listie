@@ -8,6 +8,9 @@ class WelcomeViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var uncheckedCounts: [String: Int] = [:]
     
+    @Published var selectedListForSettings: ShoppingListSummary? = nil
+    @Published var showingListSettings = false
+    
 
 
 
@@ -77,4 +80,26 @@ class WelcomeViewModel: ObservableObject {
             return counts
         }
     }
+    
+    func updateListName(listID: String, newName: String, extras: [String: String]) async {
+        guard let index = lists.firstIndex(where: { $0.id == listID }) else { return }
+
+        do {
+            let list = lists[index]
+            let allItems = try await ShoppingListAPI.shared.fetchItems()
+            let listItems = allItems.filter { $0.shoppingListId == list.id }
+
+            try await ShoppingListAPI.shared.updateShoppingListName(
+                list: list,
+                newName: newName,
+                items: listItems,
+                extras: extras
+            )
+
+            lists[index].name = newName
+        } catch {
+            print("❌ Failed to update list name: \(error.localizedDescription)")
+        }
+    }
 }
+

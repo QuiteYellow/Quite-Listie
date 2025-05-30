@@ -10,20 +10,43 @@ struct ShoppingListsResponse: Codable {
 
 struct ShoppingListSummary: Codable, Identifiable, Hashable {
     let id: String
-    let name: String
+    var name: String
     var tokenId: UUID?
+    var groupId: String?
+    var userId: String?
+    var extras: [String: String]?
     
     enum CodingKeys: String, CodingKey {
             case id
             case name
-            // do NOT include tokenId, it'll be injected in as not provided by the API
+            case groupId
+            case userId
+            case extras
         }
-    
-    init(from decoder: Decoder) throws {
+
+        init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decode(String.self, forKey: .id)
             name = try container.decode(String.self, forKey: .name)
-            tokenId = nil  // Manually assign later
+            groupId = try? container.decode(String.self, forKey: .groupId)
+            userId = try? container.decode(String.self, forKey: .userId)
+            extras = try? container.decode([String: String].self, forKey: .extras)
+
+            tokenId = nil
         }
 
+}
+
+struct UpdateListRequest: Codable {
+    let id: String
+    let name: String
+    var extras: [String: String]
+    let groupId: String
+    let userId: String
+    let listItems: [ShoppingItem]
+    
+    var listsForMealieListIcon: String {
+        get { extras["listsForMealieListIcon"] ?? "" }
+        set { extras["listsForMealieListIcon"] = newValue }
+    }
 }

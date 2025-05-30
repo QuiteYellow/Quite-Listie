@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = CB260D882DE4B7E900D05618 /* MarkdownUI */; };
+		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
 		CBEFACD62DE4A7B0002F4B13 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */; };
 /* End PBXBuildFile section */
@@ -70,6 +71,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */,
 				CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -91,6 +93,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		CB3015E22DE9D43700CCFCC8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		CBEFA7A22DE31318002F4B13 = {
 			isa = PBXGroup;
 			children = (
@@ -101,6 +110,7 @@
 				CBEFA7D72DE313B0002F4B13 /* Services */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
 				CBEFA7AD2DE31318002F4B13 /* ListsForMealie */,
+				CB3015E22DE9D43700CCFCC8 /* Frameworks */,
 				CBEFA7AC2DE31318002F4B13 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -140,6 +150,7 @@
 			name = ListsForMealie;
 			packageProductDependencies = (
 				CB260D882DE4B7E900D05618 /* MarkdownUI */,
+				CB3015E32DE9D43700CCFCC8 /* SymbolPicker */,
 			);
 			productName = ListsForMealie;
 			productReference = CBEFA7AB2DE31318002F4B13 /* ListsForMealie.app */;
@@ -219,6 +230,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
+				CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CBEFA7AC2DE31318002F4B13 /* Products */;
@@ -419,7 +431,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ListsForMealie/ListsForMealie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -463,7 +475,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ListsForMealie/ListsForMealie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -640,6 +652,14 @@
 				minimumVersion = 2.4.1;
 			};
 		};
+		CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/xnth97/SymbolPicker";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -647,6 +667,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */;
 			productName = MarkdownUI;
+		};
+		CB3015E32DE9D43700CCFCC8 /* SymbolPicker */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */;
+			productName = SymbolPicker;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
