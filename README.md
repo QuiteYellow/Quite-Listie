@@ -31,7 +31,9 @@ Connect to multiple households, effectively allowing for family and personal lis
 ---
 
 ## Screenshots
-![24526711-BE8A-47F7-85CE-44F1DD4A18EE_1_102_o](https://github.com/user-attachments/assets/c03925ca-6257-4d4a-8765-83d2d10305b6)
+![AD1F329B-7FBA-498B-AA01-B1D38DD08A05_1_102_o](https://github.com/user-attachments/assets/c5ec59fe-d4ee-461c-b859-ffe218bf2957)![AEF2B834-A1B2-4C16-922F-AA515B6758FE_1_101_o](https://github.com/user-attachments/assets/60e31ed5-47ad-4dbd-8066-24e538d217d5)
+
+
 ![489242AE-4C20-4D67-808C-659378B5A131_1_102_o](https://github.com/user-attachments/assets/ef736375-5cf3-4f62-a064-39cb48690230)
 ![F2B6893D-BA44-4B62-8C89-1366DE937197_1_102_o](https://github.com/user-attachments/assets/33900963-bb7e-4838-8f95-af612f7270ac)
 
