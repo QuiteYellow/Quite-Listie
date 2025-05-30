@@ -115,6 +115,7 @@ struct ShoppingListView: View {
     let listName: String
     let shoppingListId: String
     let tokenID: UUID?
+    let iconName: String?
 
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
@@ -125,10 +126,12 @@ struct ShoppingListView: View {
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
 
-    init(shoppingListId: String, listName: String, tokenID: UUID? ) {
+    init(shoppingListId: String, listName: String, tokenID: UUID?, iconName: String?) {
         self.shoppingListId = shoppingListId
         self.listName = listName
         self.tokenID = tokenID
+        self.iconName = iconName
+        
         _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: shoppingListId))
     }
     
@@ -241,10 +244,20 @@ struct ShoppingListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle(listName)
+        //.navigationTitle(listName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                    HStack {
+                        Image(systemName: iconName ?? "list.bullet")
+                            .imageScale(.medium)
+                            .foregroundColor(.secondary)
+                        Text(listName)
+                    }
+                    .font(.headline)
+                }
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                
                 if !networkMonitor.isConnected {
                     Image(systemName: "wifi.slash")
                         .foregroundColor(.red)
