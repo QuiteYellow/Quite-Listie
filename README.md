@@ -15,8 +15,6 @@ Connect to multiple households, effectively allowing for family and personal lis
 - Add your API tokens, one per household.
 - Optional: add your Cloudflare Access Headers.
 
- ![F397BF77-9BE0-4EF9-A731-3C8DA6E75163_1_102_o](https://github.com/user-attachments/assets/e7aa6643-c9ed-4a36-9fe8-c69fee5cbd3b)
-
 ### General
 - Modern two pane navigation support.
 - Lists are organised by household (under custom titles).
@@ -31,11 +29,13 @@ Connect to multiple households, effectively allowing for family and personal lis
 ---
 
 ## Screenshots
-![AD1F329B-7FBA-498B-AA01-B1D38DD08A05_1_102_o](https://github.com/user-attachments/assets/c5ec59fe-d4ee-461c-b859-ffe218bf2957)![AEF2B834-A1B2-4C16-922F-AA515B6758FE_1_101_o](https://github.com/user-attachments/assets/60e31ed5-47ad-4dbd-8066-24e538d217d5)
+<img alt="AD1F329B-7FBA-498B-AA01-B1D38DD08A05_1_102_o" src="https://github.com/user-attachments/assets/c5ec59fe-d4ee-461c-b859-ffe218bf2957" height="530px"> <img alt="AEF2B834-A1B2-4C16-922F-AA515B6758FE_1_101_o" src="https://github.com/user-attachments/assets/60e31ed5-47ad-4dbd-8066-24e538d217d5" height="530px">
+
+<img alt="481C4CE5-3161-4384-937A-ED25EC799F5E_1_101_o" src="https://github.com/user-attachments/assets/6d6f456e-12bd-41d0-8309-1e2edbcef8b7" height="530px"> <img alt="58F6C1ED-3042-4EFB-875E-75679B90DF85_1_102_o" src="https://github.com/user-attachments/assets/04640555-88a9-4d1f-8f31-e3463e90ef70" height="530px">
+
+<img alt="8CE15FD2-9660-4849-8C46-13F472246FA2_1_102_o" src="https://github.com/user-attachments/assets/02e82dad-c7d7-4a84-8ead-db57d5c6c43a" height="530px"> <img alt="B57F70BF-5943-4E25-9DAE-9F9606550F4B_1_101_o" src="https://github.com/user-attachments/assets/cbb43328-6017-4791-b013-cc37a4d8bd88" height="530px">
 
 
-![489242AE-4C20-4D67-808C-659378B5A131_1_102_o](https://github.com/user-attachments/assets/ef736375-5cf3-4f62-a064-39cb48690230)
-![F2B6893D-BA44-4B62-8C89-1366DE937197_1_102_o](https://github.com/user-attachments/assets/33900963-bb7e-4838-8f95-af612f7270ac)
 
 
 ---
