@@ -26,7 +26,7 @@ struct WelcomeView: View {
         } detail: {
             if let id = selectedListID,
                let list = viewModel.lists.first(where: { $0.id == id }) {
-                ShoppingListView(shoppingListId: list.id, listName: list.name, tokenID: list.tokenId)
+                ShoppingListView(shoppingListId: list.id, listName: list.name, tokenID: list.tokenId, iconName: list.extras?["listsForMealieListIcon"])
                     .id(list.id)
             } else {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
@@ -73,7 +73,7 @@ struct SidebarView: View {
                     ForEach(lists, id: \.id) { list in
                         HStack {
                             Image(systemName: list.extras?["listsForMealieListIcon"] ?? "list.bullet")
-                                .frame(minWidth: 40)
+                                .frame(minWidth: 30)
                                 .foregroundColor(.secondary)
                             Text(list.name)
                             Spacer()
