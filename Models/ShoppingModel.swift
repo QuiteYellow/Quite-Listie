@@ -77,9 +77,9 @@ struct UpdateListRequest: Codable {
         set { extras["listsForMealieListIcon"] = newValue }
     }
     
-    var enableLabelColors: Bool { // Enable list colours per list
-        get { extras["enableLabelColors"].flatMap { Bool($0) } ?? false }
-        set { extras["enableLabelColors"] = String(newValue) }
+    var hiddenLabels: Bool { // Enable list colours per list
+        get { extras["hiddenLabels"].flatMap { Bool($0) } ?? false }
+        set { extras["hiddenLabels"] = String(newValue) }
     }
 }
 

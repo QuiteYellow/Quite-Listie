@@ -65,7 +65,7 @@ class ShoppingListAPI {
                     return responseWrapper.items.map { item in
                         
                         var taggedItem = item
-                        print("🏷️ taggedItem: \(taggedItem)")
+                        //print("🏷️ taggedItem: \(taggedItem)")
                         taggedItem.localTokenId = tokenInfo.id
                         return taggedItem
                     }
@@ -323,9 +323,9 @@ class ShoppingListAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         if let httpResponse = response as? HTTPURLResponse {
-            print("🧩 Status Code: \(httpResponse.statusCode)")
+            //print("🧩 Status Code: \(httpResponse.statusCode)")
             if let bodyString = String(data: data, encoding: .utf8) {
-                print("🧾 Response Body: \(bodyString)")
+                //print("🧾 Response Body: \(bodyString)")
             }
             if !(200..<300).contains(httpResponse.statusCode) {
                 throw NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to update list name"])

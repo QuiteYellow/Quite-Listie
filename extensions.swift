@@ -152,15 +152,32 @@ extension UIColor {
 
 //MARK: - ShoppingItem+Extras
 extension ShoppingItem {
-    func updatedExtras(with updates: [String: String]) -> [String: String] {
-        var copy = extras
+    func updatedExtras(with updates: [String: String?]) -> [String: String] {
+        var merged = self.extras ?? [:]
         for (key, value) in updates {
-            copy[key] = value
+            if let value = value {
+                merged[key] = value
+            } else {
+                merged.removeValue(forKey: key)
+            }
         }
-        return copy
+        return merged
     }
 }
 
+extension ShoppingListSummary {
+    func updatedExtras(with updates: [String: String?]) -> [String: String] {
+        var merged = self.extras ?? [:]
+        for (key, value) in updates {
+            if let value = value {
+                merged[key] = value
+            } else {
+                merged.removeValue(forKey: key)
+            }
+        }
+        return merged
+    }
+}
 
 /* USAGE (NOT HERE!!!)
  
