@@ -173,3 +173,11 @@ extension ShoppingItem {
  let updatedExtras = item.updatedExtras(with: updates)
  
  */
+
+//MARK: deduplicator for lableWrapper.
+extension Sequence {
+    func uniqueBy<T: Hashable>(_ key: (Element) -> T) -> [Element] {
+        var seen = Set<T>()
+        return filter { seen.insert(key($0)).inserted }
+    }
+}

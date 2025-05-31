@@ -10,7 +10,7 @@ import MarkdownUI
 
 struct AddItemView: View {
     
-    let tokenID: UUID?
+    let groupId: String?
     
     @Environment(\.dismiss) var dismiss
     @ObservedObject var viewModel: ShoppingListViewModel
@@ -89,14 +89,14 @@ struct AddItemView: View {
             }
             .task {
                     do {
-                        //print("❄️ TOKEN ID: \(tokenID?.uuidString ?? "nil")")
+                        //print("❄️ TOKEN ID: \(localTokenId?.uuidString ?? "nil")")
 
                         // Fetch all labels
                         let allLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
 
-                        // Filter labels with matching tokenID
-                        if let tokenID = tokenID {
-                            availableLabels = allLabels.filter { $0.tokenId == tokenID }
+                        // Filter labels with matching localTokenId
+                        if let groupId = groupId {
+                            availableLabels = allLabels.filter { $0.groupId == groupId }
                         } else {
                             availableLabels = allLabels
                         }
@@ -307,6 +307,7 @@ struct EditItemView: View {
     @ObservedObject var viewModel: ShoppingListViewModel
 
     let item: ShoppingItem
+    let groupId: String?
 
     @State private var itemName: String = ""
     @State private var selectedLabel: ShoppingItem.LabelWrapper? = nil
@@ -515,14 +516,28 @@ struct EditItemView: View {
             }
             .task {
                 do {
+                    // Fetch all labels
                     let allLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
-                    availableLabels = allLabels.filter { label in
-                        if let itemToken = item.tokenId, let labelToken = label.tokenId {
-                            return itemToken == labelToken
-                        }
-                        return false
+
+                    // Filter by groupId
+                    if let groupId = groupId {
+                        availableLabels = allLabels.filter { $0.groupId == groupId }
+                    } else {
+                        availableLabels = allLabels
                     }
-                    availableLabels.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
+                    // Sort
+                    availableLabels.sort {
+                        $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                    }
+
+                    // ✅ Match selectedLabel to an instance from availableLabels
+                    if let originalLabel = item.label {
+                        selectedLabel = availableLabels.first(where: { $0.id == originalLabel.id })
+                    } else {
+                        selectedLabel = nil
+                    }
+                    
                 } catch {
                     print("⚠️ Failed to fetch labels:", error)
                 }

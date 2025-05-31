@@ -2,15 +2,10 @@ import Foundation
 import SwiftUI
 
 struct TokenInfo: Codable, Identifiable, Equatable {
-    let id: UUID
-    var token: String
-    var identifier: String // e.g. "account1", "user@example.com", etc.
-
-    init(id: UUID = UUID(), token: String, identifier: String) {
-        self.id = id
-        self.token = token
-        self.identifier = identifier
-    }
+    private(set) var id: UUID = UUID()  // handled automatically, UUID generated automatically, will gen an error if...
+    var token: String                   // ...immutable (let) so private var to supress error but still effectively be read-only (outside).
+    var identifier: String              // "account1", "someone@example.com" etc
+    
 }
 
 
