@@ -72,6 +72,9 @@ struct SidebarView: View {
     @ObservedObject var viewModel: WelcomeViewModel
     @Binding var selectedListID: String?
     
+    @State private var listToDelete: ShoppingListSummary? = nil
+    @State private var showingDeleteConfirmation = false
+    
     var groupedLists: [String: [ShoppingListSummary]] {
         Dictionary(grouping: viewModel.lists) { list in
             AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
@@ -101,6 +104,13 @@ struct SidebarView: View {
                                 viewModel.selectedListForSettings = list
                                 viewModel.showingListSettings = true
                             }
+                            
+                            Divider()
+
+                            Button("Delete List", role: .destructive) {
+                                listToDelete = list
+                                showingDeleteConfirmation = true
+                            }
                         }
                         .swipeActions(edge: .leading) {
                             Button {
@@ -111,6 +121,15 @@ struct SidebarView: View {
                             }
                             .tint(.accentColor)
                         }
+                        .swipeActions(edge: .trailing) {
+                                Button(role: .none) {
+                                    listToDelete = list
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .tint(.red)
+                            }
                     }
                 }
             }
@@ -118,6 +137,26 @@ struct SidebarView: View {
         .navigationTitle("All Lists")
         .refreshable {
             await viewModel.loadLists()
+        }
+        .alert("Delete List?", isPresented: $showingDeleteConfirmation, presenting: listToDelete) { list in
+            Button("Delete", role: .destructive) {
+                Task {
+                    do {
+                        try await ShoppingListAPI.shared.deleteList(list)
+                        await viewModel.loadLists()
+
+                        // If the deleted list was selected, clear it
+                        if selectedListID == list.id {
+                            selectedListID = nil
+                        }
+                    } catch {
+                        print("❌ Failed to delete list: \(error)")
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { list in
+            Text("Are you sure you want to delete the list \"\(list.name)\"?")
         }
     }
 }

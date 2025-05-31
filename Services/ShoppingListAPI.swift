@@ -144,6 +144,22 @@ class ShoppingListAPI {
         _ = try await URLSession.shared.data(for: request)
     }
     
+    // MARK: - Delete List uses token associated with the list
+    func deleteList(_ list: ShoppingListSummary) async throws {
+        guard let baseURL = baseURL else {
+            throw URLError(.badURL)
+        }
+        let listsURL = baseURL.appendingPathComponent("households/shopping/lists")
+        let url = listsURL.appendingPathComponent(list.id)
+
+        guard let tokenInfo = tokenInfo(for: list.localTokenId) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        let request = authorizedRequest(url: url, tokenInfo: tokenInfo, method: "DELETE")
+        _ = try await URLSession.shared.data(for: request)
+    }
+    
     // MARK: - Toggle Item uses token associated with the item
     func toggleItem(_ item: ShoppingItem) async throws {
         guard let baseURL = baseURL else {
