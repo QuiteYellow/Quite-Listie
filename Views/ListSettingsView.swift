@@ -46,6 +46,8 @@ struct ListSettingsView: View {
             }
         }
         .onAppear {
+            print("localTokenID\(list.localTokenId)")
+            print("localTokenID\(list.groupId)")
             name = list.name
             icon = list.extras?["listsForMealieListIcon"] ?? ""
         }

@@ -26,7 +26,13 @@ struct WelcomeView: View {
         } detail: {
             if let id = selectedListID,
                let list = viewModel.lists.first(where: { $0.id == id }) {
-                ShoppingListView(shoppingListId: list.id, listName: list.name, tokenID: list.tokenId, iconName: list.extras?["listsForMealieListIcon"])
+                ShoppingListView(
+                    shoppingListId: list.id,
+                    listName: list.name,
+                    groupId: list.groupId,
+                    localTokenId: list.localTokenId,
+                    iconName: list.extras?["listsForMealieListIcon"]
+                )
                     .id(list.id)
             } else {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
@@ -62,7 +68,7 @@ struct SidebarView: View {
     
     var groupedLists: [String: [ShoppingListSummary]] {
         Dictionary(grouping: viewModel.lists) { list in
-            AppSettings.shared.tokens.first(where: { $0.id == list.tokenId })?.identifier ?? "Unknown"
+            AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
         }
     }
     

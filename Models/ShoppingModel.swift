@@ -17,7 +17,7 @@ struct ShoppingItem: Identifiable, Codable {
     var groupId: String?
     var householdId: String?
     
-    var tokenId: UUID? = nil
+    var localTokenId: UUID? = nil
     
     var extras: [String: String] = [:]
     
@@ -27,13 +27,13 @@ struct ShoppingItem: Identifiable, Codable {
     }
     
 
-    struct LabelWrapper: Codable, Hashable {
+    struct LabelWrapper: Codable, Equatable, Hashable {
         let id: String
         let name: String
         let color: String
         let groupId: String
         
-        var tokenId: UUID? = nil
+        var localTokenId: UUID? = nil
     }
     
 }
@@ -49,7 +49,7 @@ struct ShoppingListsResponse: Codable {
 struct ShoppingListSummary: Codable, Identifiable, Hashable {
     let id: String
     var name: String
-    var tokenId: UUID?
+    var localTokenId: UUID?
     var groupId: String?
     var userId: String?
     var extras: [String: String]?
@@ -72,8 +72,14 @@ struct UpdateListRequest: Codable {
     let userId: String
     let listItems: [ShoppingItem]
     
-    var listsForMealieListIcon: String {
+    var listsForMealieListIcon: String { // Custom list icons
         get { extras["listsForMealieListIcon"] ?? "" }
         set { extras["listsForMealieListIcon"] = newValue }
     }
+    
+    var enableLabelColors: Bool { // Enable list colours per list
+        get { extras["enableLabelColors"].flatMap { Bool($0) } ?? false }
+        set { extras["enableLabelColors"] = String(newValue) }
+    }
 }
+

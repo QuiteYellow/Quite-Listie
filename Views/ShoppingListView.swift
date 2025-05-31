@@ -112,9 +112,10 @@ struct ItemRowView: View {
 }
 
 struct ShoppingListView: View {
-    let listName: String
     let shoppingListId: String
-    let tokenID: UUID?
+    let listName: String
+    let groupId: String?
+    let localTokenId: UUID?
     let iconName: String?
 
     @StateObject private var viewModel: ShoppingListViewModel
@@ -125,13 +126,14 @@ struct ShoppingListView: View {
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
+    
 
-    init(shoppingListId: String, listName: String, tokenID: UUID?, iconName: String?) {
+    init(shoppingListId: String, listName: String, groupId: String?, localTokenId: UUID?, iconName: String?) {
         self.shoppingListId = shoppingListId
         self.listName = listName
-        self.tokenID = tokenID
+        self.groupId = groupId
+        self.localTokenId = localTokenId
         self.iconName = iconName
-        
         _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: shoppingListId))
     }
     
@@ -281,10 +283,10 @@ struct ShoppingListView: View {
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .fullScreenCover(isPresented: $showingAddView) {
-            AddItemView(tokenID: tokenID, viewModel: viewModel)
+            AddItemView(groupId: groupId, viewModel: viewModel)
         }
         .fullScreenCover(item: $editingItem) { item in
-            EditItemView(viewModel: viewModel, item: item)
+            EditItemView(viewModel: viewModel, item: item, groupId: groupId)
         }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },

@@ -63,8 +63,10 @@ class ShoppingListAPI {
                     
                     // Tag each item with the tokenId it came from
                     return responseWrapper.items.map { item in
+                        
                         var taggedItem = item
-                        taggedItem.tokenId = tokenInfo.id
+                        print("🏷️ taggedItem: \(taggedItem)")
+                        taggedItem.localTokenId = tokenInfo.id
                         return taggedItem
                     }
                 }
@@ -80,9 +82,9 @@ class ShoppingListAPI {
         }
     }
     
-    // MARK: - Helper to find TokenInfo by tokenId
-    private func tokenInfo(for tokenId: UUID?) -> TokenInfo? {
-        guard let id = tokenId else { return nil }
+    // MARK: - Helper to find TokenInfo by localTokenId
+    private func tokenInfo(for localTokenId: UUID?) -> TokenInfo? {
+        guard let id = localTokenId else { return nil }
         return tokens.first(where: { $0.id == id })
     }
     
@@ -134,7 +136,7 @@ class ShoppingListAPI {
         let itemsURL = baseURL.appendingPathComponent("households/shopping/items")
         let url = itemsURL.appendingPathComponent(item.id.uuidString)
         
-        guard let tokenInfo = tokenInfo(for: item.tokenId) else {
+        guard let tokenInfo = tokenInfo(for: item.localTokenId) else {
             throw URLError(.userAuthenticationRequired)
         }
         
@@ -177,7 +179,7 @@ class ShoppingListAPI {
             .appendingPathComponent("households/shopping/items")
             .appendingPathComponent(item.id.uuidString)
         
-        guard let tokenInfo = tokenInfo(for: item.tokenId) else {
+        guard let tokenInfo = tokenInfo(for: item.localTokenId) else {
             throw URLError(.userAuthenticationRequired)
         }
         
@@ -208,10 +210,10 @@ class ShoppingListAPI {
                     
                     let responseWrapper = try JSONDecoder().decode(ShoppingListsResponse.self, from: data)
                     
-                    // Tagging shopping lists with tokenId is possible if needed here
+                    // Tagging shopping lists with localTokenId is possible if needed here
                     return responseWrapper.items.map { list in
                         var taggedList = list
-                        taggedList.tokenId = tokenInfo.id
+                        taggedList.localTokenId = tokenInfo.id
                         return taggedList
                     }
                 }
@@ -252,17 +254,40 @@ class ShoppingListAPI {
                     
                     return wrapper.items.map { label in
                         var wrapper = ShoppingItem.LabelWrapper(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
-                        wrapper.tokenId = tokenInfo.id  // Tag the label with its token
+                        wrapper.localTokenId = tokenInfo.id  // Tag the label with its token
                         return wrapper
                     }
                 }
             }
-            
+/*
             var allLabels: [ShoppingItem.LabelWrapper] = []
             for try await labels in group {
                 allLabels.append(contentsOf: labels)
             }
             return allLabels
+            
+ */
+            
+            // Define a Hashable struct for the dictionary key to stopp hashable error
+            struct LabelKey: Hashable {
+                let id: String
+                let groupId: String
+            }
+
+            // LabelKey
+            var allLabels: [ShoppingItem.LabelWrapper] = []
+            for try await labels in group {
+                allLabels.append(contentsOf: labels)
+            }
+
+            // Remove duplicates by (id, groupId), treating nil as ""
+            var dict = [LabelKey: ShoppingItem.LabelWrapper]()
+            for label in allLabels {
+                let key = LabelKey(id: label.id, groupId: label.groupId)
+                dict[key] = label
+            }
+
+            return Array(dict.values)
         }
     }
     
@@ -274,7 +299,7 @@ class ShoppingListAPI {
 
         guard let groupId = list.groupId,
               let userId = list.userId,
-              let tokenInfo = tokenInfo(for: list.tokenId) else {
+              let tokenInfo = tokenInfo(for: list.localTokenId) else {
             throw NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "Missing required fields"])
         }
 
