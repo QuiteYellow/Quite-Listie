@@ -112,11 +112,8 @@ struct ItemRowView: View {
 }
 
 struct ShoppingListView: View {
-    let shoppingListId: String
-    let listName: String
-    let groupId: String?
-    let localTokenId: UUID?
-    let iconName: String?
+
+    let list: ShoppingListSummary
 
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
@@ -128,13 +125,9 @@ struct ShoppingListView: View {
     @State private var itemToDelete: ShoppingItem? = nil
     
 
-    init(shoppingListId: String, listName: String, groupId: String?, localTokenId: UUID?, iconName: String?) {
-        self.shoppingListId = shoppingListId
-        self.listName = listName
-        self.groupId = groupId
-        self.localTokenId = localTokenId
-        self.iconName = iconName
-        _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: shoppingListId))
+    init(list: ShoppingListSummary) {
+        self.list = list
+        _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: list.id))
     }
     
     @ViewBuilder
@@ -251,10 +244,10 @@ struct ShoppingListView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                     HStack {
-                        Image(systemName: iconName ?? "list.bullet")
+                        Image(systemName: list.extras?["listsForMealieListIcon"] ?? "list.bullet")
                             .imageScale(.medium)
                             .foregroundColor(.secondary)
-                        Text(listName)
+                        Text(list.name)
                     }
                     .font(.headline)
                 }
@@ -283,10 +276,10 @@ struct ShoppingListView: View {
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .fullScreenCover(isPresented: $showingAddView) {
-            AddItemView(groupId: groupId, viewModel: viewModel)
+            AddItemView(list: list, viewModel: viewModel)
         }
         .fullScreenCover(item: $editingItem) { item in
-            EditItemView(viewModel: viewModel, item: item, groupId: groupId)
+            EditItemView(viewModel: viewModel, item: item, list: list)
         }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },

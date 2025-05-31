@@ -16,23 +16,27 @@ struct WelcomeView: View {
                                 .foregroundColor(.red)
                                 .help("No internet connection")
                         }
-                        Button {
-                            showingSettings = true
+                        Menu {
+                            Button() {
+                                showingSettings = true
+                            } label: {
+                                Label("Settings...", systemImage: "gear")
+                            }
+                            
+                            Button() {
+                              // do a thing
+                            } label: {
+                                Label("Label Editor (dummy)...", systemImage: "label")
+                            }
                         } label: {
-                            Image(systemName: "gear")
+                            Image(systemName: "ellipsis.circle")
                         }
                     }
                 }
         } detail: {
             if let id = selectedListID,
                let list = viewModel.lists.first(where: { $0.id == id }) {
-                ShoppingListView(
-                    shoppingListId: list.id,
-                    listName: list.name,
-                    groupId: list.groupId,
-                    localTokenId: list.localTokenId,
-                    iconName: list.extras?["listsForMealieListIcon"]
-                )
+                ShoppingListView(list: list)
                     .id(list.id)
             } else {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
@@ -40,14 +44,16 @@ struct WelcomeView: View {
         }
         .sheet(isPresented: $viewModel.showingListSettings) {
             if let list = viewModel.selectedListForSettings {
-                ListSettingsView(list: list) { updatedName, icon in
-                    let extras = ["listsForMealieListIcon": icon]
+                ListSettingsView(list: list) { updatedName, extras in
+                    let updatedExtras = list.updatedExtras(with: extras)
+
                     Task {
                         await viewModel.updateListName(
                             listID: list.id,
                             newName: updatedName,
-                            extras: extras
+                            extras: updatedExtras
                         )
+                        await viewModel.loadLists()
                     }
                 }
             }
@@ -91,10 +97,19 @@ struct SidebarView: View {
                         .tag(list.id)
                         .contextMenu {
                             Button("List Settings") {
-                                selectedListID = list.id
+                                // selectedListID = list.id //this loads the list being edited.
                                 viewModel.selectedListForSettings = list
                                 viewModel.showingListSettings = true
                             }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                viewModel.selectedListForSettings = list
+                                viewModel.showingListSettings = true
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.accentColor)
                         }
                     }
                 }
