@@ -34,6 +34,7 @@ struct ShoppingItem: Identifiable, Codable {
         let groupId: String
         
         var localTokenId: UUID? = nil
+        var householdId: String? = nil
     }
     
 }

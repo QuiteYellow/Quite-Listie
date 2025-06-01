@@ -33,7 +33,7 @@ struct SectionHeaderView: View {
                 
                 Spacer()
                 
-                HStack(spacing: 4) {
+                HStack() {
                     Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)") // Show checked count instead of unchecked for Completed!
                         .font(.subheadline)
                         .foregroundColor(.accentColor)
@@ -222,10 +222,9 @@ struct ShoppingListView: View {
                             checkedCount: checkedItems.count,
                             settings: settings
                         )
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 0)
                     }
                 )
-                .padding(.top, 4)
             }
         }
     }
@@ -233,7 +232,6 @@ struct ShoppingListView: View {
     var body: some View {
         
         List {
-
             ForEach(viewModel.sortedLabelKeys, id: \.self) { labelName in
                 let items = viewModel.itemsGroupedByLabel[labelName] ?? []
                 let color = viewModel.colorForLabel(name: labelName)
@@ -248,7 +246,8 @@ struct ShoppingListView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
-/*        .toolbar {
+
+        .toolbar {
 
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 
@@ -268,7 +267,7 @@ struct ShoppingListView: View {
                 }
             }
         }
- */
+ 
         .refreshable {
             await viewModel.loadItems()
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)

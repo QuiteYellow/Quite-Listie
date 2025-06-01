@@ -88,6 +88,7 @@ struct SidebarView: View {
     @State private var listToDelete: ShoppingListSummary? = nil
     @State private var showingDeleteConfirmation = false
     
+    
     var groupedLists: [String: [ShoppingListSummary]] {
         Dictionary(grouping: viewModel.lists) { list in
             AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
