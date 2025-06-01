@@ -32,6 +32,8 @@ struct SettingsView: View {
     @State private var editingToken: TokenInfo? = nil
     @State private var showAddTokenSheet = false
     
+    
+    
     var body: some View {
         NavigationView {
             Form {
@@ -43,22 +45,40 @@ struct SettingsView: View {
                 }
                 
                 Section(header: Text("API Tokens")) {
+                    if settings.isEnrichingTokens {
+                        HStack {
+                            ProgressView()
+                            Text("Fetching user info…")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
                     if settings.tokens.isEmpty {
                         Text("No tokens added yet.")
                             .foregroundColor(.secondary)
                     } else {
                         ForEach(settings.tokens) { tokenInfo in
                             HStack {
-                                VStack(alignment: .leading) {
+                                VStack(alignment: .leading, spacing: 4) {
                                     Text(tokenInfo.identifier)
                                         .font(.headline)
-                                    TokenView(token: tokenInfo.token)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
+                                    
+                                    // Optional metadata display
+                                    if let email = tokenInfo.email {
+                                        HStack {
+                                            Image(systemName: "envelope")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            Text(email)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
                                 }
+
                                 Spacer()
+
                                 Button(role: .destructive) {
                                     withAnimation {
                                         settings.removeToken(tokenInfo)
@@ -75,6 +95,7 @@ struct SettingsView: View {
                                 newTokenString = tokenInfo.token
                                 showAddTokenSheet = true
                             }
+
                         }
                     }
                     
@@ -118,28 +139,40 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showAddTokenSheet) {
-                TokenEditView(
-                    tokenString: $newTokenString,
-                    tokenIdentifier: $newTokenIdentifier,
-                    onSave: {
-                        if var editing = editingToken {
-                            // Update existing token
-                            if let index = settings.tokens.firstIndex(where: { $0.id == editing.id }) {
+                if let editingToken = editingToken {
+                    TokenEditSheet(
+                        tokenInfo: settings.tokens.first(where: { $0.id == editingToken.id }),
+                        tokenIdentifier: $newTokenIdentifier,
+                        tokenString: $newTokenString,
+                        onSave: {
+                            if let index = settings.tokens.firstIndex(where: { $0.id == editingToken.id }) {
                                 settings.tokens[index].token = newTokenString
                                 settings.tokens[index].identifier = newTokenIdentifier
                             }
-                        } else {
-                            // Add new token
+                            showAddTokenSheet = false
+                        },
+                        onCancel: {
+                            showAddTokenSheet = false
+                        }
+                    )
+                } else {
+                    TokenEditSheet(
+                        tokenInfo: nil,
+                        tokenIdentifier: $newTokenIdentifier,
+                        tokenString: $newTokenString,
+                        onSave: {
                             let newToken = TokenInfo(token: newTokenString, identifier: newTokenIdentifier)
                             settings.addToken(newToken)
+                            showAddTokenSheet = false
+                        },
+                        onCancel: {
+                            showAddTokenSheet = false
                         }
-                        showAddTokenSheet = false
-                    },
-                    onCancel: {
-                        showAddTokenSheet = false
-                    }
-                )
+                    )
+                }
             }
+            .id(editingToken?.id)
+        
         }
     }
 }

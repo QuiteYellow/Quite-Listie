@@ -1,11 +1,25 @@
 import Foundation
 import SwiftUI
 
+
+
 struct TokenInfo: Codable, Identifiable, Equatable {
     private(set) var id: UUID = UUID()  // handled automatically, UUID generated automatically, will gen an error if...
     var token: String                   // ...immutable (let) so private var to supress error but still effectively be read-only (outside).
     var identifier: String              // "account1", "someone@example.com" etc
     
+    // Optional enriched metadata
+    var email: String?
+    var fullName: String?
+    var username: String?
+    var group: String?
+    var household: String?
+    var isAdmin: Bool?
+    var groupId: String?
+    var groupSlug: String?
+    var householdId: String?
+    var householdSlug: String?
+    var canManage: Bool?
 }
 
 
@@ -46,6 +60,8 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(showCompletedAtBottom, forKey: "showCompletedAtBottom") }
     }
     
+    @Published var isEnrichingTokens: Bool = false
+    
     private let expandedSectionsKey = "expandedSectionsKey"
     private let tokensKey = "tokensKey"
     
@@ -72,11 +88,16 @@ class AppSettings: ObservableObject {
     }
     
     private func loadTokensFromUserDefaults() {
+        
         guard let data = UserDefaults.standard.data(forKey: tokensKey),
               let savedTokens = try? JSONDecoder().decode([TokenInfo].self, from: data) else {
             return
         }
         self.tokens = savedTokens
+
+        Task {
+            await ShoppingListAPI.shared.enrichTokensWithUserInfo()
+        }
     }
     
     // Convenience to add/remove tokens

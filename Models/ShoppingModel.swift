@@ -52,6 +52,7 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
     var localTokenId: UUID?
     var groupId: String?
     var userId: String?
+    var householdId: String?
     var extras: [String: String]?
     
     enum CodingKeys: String, CodingKey {
@@ -83,3 +84,16 @@ struct UpdateListRequest: Codable {
     }
 }
 
+struct UserInfoResponse: Codable {
+    let email: String
+    let fullName: String
+    let username: String
+    let group: String
+    let household: String
+    let admin: Bool
+    let groupId: String?
+    let groupSlug: String?
+    let householdId: String?
+    let householdSlug: String?
+    let canManage: Bool?
+}

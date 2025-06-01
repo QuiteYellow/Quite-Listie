@@ -4,6 +4,7 @@ struct WelcomeView: View {
     @StateObject private var viewModel = WelcomeViewModel()
     @State private var selectedListID: String? = nil
     @State private var showingSettings = false
+    @State private var isPresentingNewList = false
     @EnvironmentObject var networkMonitor: NetworkMonitor
 
     var body: some View {
@@ -16,6 +17,11 @@ struct WelcomeView: View {
                                 .foregroundColor(.red)
                                 .help("No internet connection")
                         }
+                        Button() {
+                            isPresentingNewList = true
+                        } label: {
+                            Label("Add List", systemImage: "plus")
+                        }
                         Menu {
                             Button() {
                                 showingSettings = true
@@ -23,11 +29,11 @@ struct WelcomeView: View {
                                 Label("Settings...", systemImage: "gear")
                             }
                             
-                            Button() {
+                            //Button() {
                               // do a thing
-                            } label: {
-                                Label("Label Editor (dummy)...", systemImage: "label")
-                            }
+                            //} label: {
+                            //    Label("Label Editor (dummy)...", systemImage: "label")
+                            //}
                         } label: {
                             Image(systemName: "ellipsis.circle")
                         }
@@ -55,6 +61,13 @@ struct WelcomeView: View {
                         )
                         await viewModel.loadLists()
                     }
+                }
+            }
+        }
+        .sheet(isPresented: $isPresentingNewList) {
+            NewShoppingListView {
+                Task {
+                    await viewModel.loadLists()
                 }
             }
         }

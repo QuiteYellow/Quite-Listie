@@ -348,5 +348,109 @@ class ShoppingListAPI {
             }
         }
     }
+    
+    // MARK: - Create Shopping List
+    func createShoppingList(_ list: ShoppingListSummary) async throws {
+        guard let baseURL = baseURL else {
+            throw URLError(.badURL)
+        }
+
+        guard let tokenInfo = tokenInfo(for: list.localTokenId) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        let url = baseURL.appendingPathComponent("households/shopping/lists")
+
+        struct CreateListRequest: Codable {
+            let name: String
+            let extras: [String: String]?
+            let createdAt: String
+            let update_at: String
+        }
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let payload = CreateListRequest(
+            name: list.name,
+            extras: list.extras,
+            createdAt: now,
+            update_at: now
+        )
+
+        let body = try JSONEncoder().encode(payload)
+        let request = authorizedRequest(url: url, tokenInfo: tokenInfo, method: "POST", body: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+    }
+    
+    // MARK: - Enrich Tokens With User Info
+    func enrichTokensWithUserInfo() async {
+        guard let baseURL = baseURL else { return }
+
+        DispatchQueue.main.async {
+            AppSettings.shared.isEnrichingTokens = true
+        }
+
+        defer {
+            DispatchQueue.main.async {
+                AppSettings.shared.isEnrichingTokens = false
+            }
+        }
+
+
+        var enrichedTokens: [TokenInfo] = []
+
+        for token in AppSettings.shared.tokens {
+            //print("🔄 Enriching token: \(token.identifier)")
+            let userURL = baseURL.appendingPathComponent("/users/self")
+            let request = authorizedRequest(url: userURL, tokenInfo: token)
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    print("❌ HTTP error for \(token.identifier): \(response)")
+                    enrichedTokens.append(token)
+                    continue
+                }
+
+                // Optional: print raw JSON string
+                if let json = String(data: data, encoding: .utf8) {
+                    //print("📦 Raw response for \(token.identifier): \(json)")
+                }
+
+                let info = try JSONDecoder().decode(UserInfoResponse.self, from: data)
+
+                var enriched = token
+                enriched.email = info.email
+                enriched.fullName = info.fullName
+                enriched.username = info.username
+                enriched.group = info.group
+                enriched.household = info.household
+                enriched.isAdmin = info.admin
+                enriched.groupId = info.groupId
+                enriched.groupSlug = info.groupSlug
+                enriched.householdId = info.householdId
+                enriched.householdSlug = info.householdSlug
+                enriched.canManage = info.canManage
+
+                enrichedTokens.append(enriched)
+                //print("✅ Got user info for \(token.identifier): \(info.fullName), \(info.email), \(info.group)")
+
+            } catch {
+                print("❌ Failed to decode user info for \(token.identifier): \(error.localizedDescription)")
+                enrichedTokens.append(token)
+            }
+            
+        }
+
+        DispatchQueue.main.async {
+            AppSettings.shared.tokens = enrichedTokens
+        }
+    }
 
 }
