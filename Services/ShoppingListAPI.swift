@@ -244,7 +244,7 @@ class ShoppingListAPI {
     }
     
     // MARK: - Fetch labels using all tokens concurrently
-    func fetchShoppingLabels() async throws -> [ShoppingItem.LabelWrapper] {
+    func fetchShoppingLabels() async throws -> [ShoppingLabel] {
         guard let baseURL = baseURL else {
             throw URLError(.badURL)
         }
@@ -261,7 +261,7 @@ class ShoppingListAPI {
             let items: [LabelResponse]
         }
         
-        return try await withThrowingTaskGroup(of: [ShoppingItem.LabelWrapper].self) { group in
+        return try await withThrowingTaskGroup(of: [ShoppingLabel].self) { group in
             for tokenInfo in tokens {
                 group.addTask {
                     let request = self.authorizedRequest(url: labelsURL, tokenInfo: tokenInfo)
@@ -269,14 +269,14 @@ class ShoppingListAPI {
                     let wrapper = try JSONDecoder().decode(LabelsResponseWrapper.self, from: data)
                     
                     return wrapper.items.map { label in
-                        var wrapper = ShoppingItem.LabelWrapper(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
+                        var wrapper = ShoppingLabel(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
                         wrapper.localTokenId = tokenInfo.id  // Tag the label with its token
                         return wrapper
                     }
                 }
             }
 /*
-            var allLabels: [ShoppingItem.LabelWrapper] = []
+            var allLabels: [ShoppingLabel] = []
             for try await labels in group {
                 allLabels.append(contentsOf: labels)
             }
@@ -291,13 +291,13 @@ class ShoppingListAPI {
             }
 
             // LabelKey
-            var allLabels: [ShoppingItem.LabelWrapper] = []
+            var allLabels: [ShoppingLabel] = []
             for try await labels in group {
                 allLabels.append(contentsOf: labels)
             }
 
             // Remove duplicates by (id, groupId), treating nil as ""
-            var dict = [LabelKey: ShoppingItem.LabelWrapper]()
+            var dict = [LabelKey: ShoppingLabel]()
             for label in allLabels {
                 let key = LabelKey(id: label.id, groupId: label.groupId)
                 dict[key] = label

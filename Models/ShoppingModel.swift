@@ -12,7 +12,7 @@ struct ShoppingItem: Identifiable, Codable {
     var note: String
     var checked: Bool
     var shoppingListId: String
-    var label: LabelWrapper?
+    var label: ShoppingLabel?
     var quantity: Double?
     var groupId: String?
     var householdId: String?
@@ -24,17 +24,6 @@ struct ShoppingItem: Identifiable, Codable {
     var markdownNotes: String {
         get { extras["markdownNotes"] ?? "" }
         set { extras["markdownNotes"] = newValue }
-    }
-    
-
-    struct LabelWrapper: Codable, Equatable, Hashable {
-        let id: String
-        let name: String
-        let color: String
-        let groupId: String
-        
-        var localTokenId: UUID? = nil
-        var householdId: String? = nil
     }
     
 }
@@ -97,4 +86,14 @@ struct UserInfoResponse: Codable {
     let householdId: String?
     let householdSlug: String?
     let canManage: Bool?
+}
+
+
+struct ShoppingLabel: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let color: String
+    let groupId: String
+    var localTokenId: UUID? = nil
+    var householdId: String? = nil
 }

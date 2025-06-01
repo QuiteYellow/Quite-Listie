@@ -17,8 +17,8 @@ struct AddItemView: View {
     @ObservedObject var viewModel: ShoppingListViewModel
     
     @State private var itemName = ""
-    @State private var selectedLabel: ShoppingItem.LabelWrapper? = nil
-    @State private var availableLabels: [ShoppingItem.LabelWrapper] = []
+    @State private var selectedLabel: ShoppingLabel? = nil
+    @State private var availableLabels: [ShoppingLabel] = []
     @State private var isLoading = true
     @State private var quantity: Int = 1
     @State private var showError = false
@@ -270,7 +270,7 @@ struct AddItemView: View {
                     ProgressView("Loading Labels...")
                 } else {
                     Picker("Label", selection: $selectedLabel) {
-                        Text("No Label").tag(Optional<ShoppingItem.LabelWrapper>(nil))
+                        Text("No Label").tag(Optional<ShoppingLabel>(nil))
                         
                         ForEach(availableLabels, id: \.id) { label in
                             Text(label.name.removingLabelNumberPrefix())
@@ -321,10 +321,10 @@ struct EditItemView: View {
     //let groupId: String?
 
     @State private var itemName: String = ""
-    @State private var selectedLabel: ShoppingItem.LabelWrapper? = nil
+    @State private var selectedLabel: ShoppingLabel? = nil
     @State private var quantity: Int = 1
     @State private var mdNotes: String = ""
-    @State private var availableLabels: [ShoppingItem.LabelWrapper] = []
+    @State private var availableLabels: [ShoppingLabel] = []
     @State private var isLoading = true
     @State private var showDeleteConfirmation = false
     @State private var showError = false
@@ -610,7 +610,7 @@ struct EditItemView: View {
                     ProgressView("Loading Labels...")
                 } else {
                     Picker("Label", selection: $selectedLabel) {
-                        Text("No Label").tag(Optional<ShoppingItem.LabelWrapper>(nil))
+                        Text("No Label").tag(Optional<ShoppingLabel>(nil))
                         
                         ForEach(availableLabels, id: \.id) { label in
                             Text(label.name.removingLabelNumberPrefix())
