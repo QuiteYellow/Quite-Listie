@@ -5,7 +5,7 @@ import SwiftUI
 class ShoppingListViewModel: ObservableObject {
     @Published var items: [ShoppingItem] = []
     @Published var isLoading = false
-    @Published var labels: [ShoppingItem.LabelWrapper] = []
+    @Published var labels: [ShoppingLabel] = []
     private let shoppingListId: String
     private var fetchTask: Task<Void, Never>? = nil
 
@@ -40,7 +40,7 @@ class ShoppingListViewModel: ObservableObject {
     }
 
     @MainActor
-    func addItem(note: String, label: ShoppingItem.LabelWrapper?, quantity: Double?, markdownNotes: String?) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, markdownNotes: String?) async -> Bool {
         var newItem = ShoppingItem(
             id: UUID(),
             note: note,
@@ -117,7 +117,7 @@ class ShoppingListViewModel: ObservableObject {
     func updateItem(
         _ item: ShoppingItem,
         note: String,
-        label: ShoppingItem.LabelWrapper?,
+        label: ShoppingLabel?,
         quantity: Double?,
         extras: [String: String]? = nil
     ) async -> Bool {

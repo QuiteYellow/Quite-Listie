@@ -2,7 +2,7 @@ import SwiftUI
 import SymbolPicker
 
 struct ListSettingsView: View {
-    @State private var allLabels: [ShoppingItem.LabelWrapper] = []
+    @State private var allLabels: [ShoppingLabel] = []
     @State private var hiddenLabelIDs: Set<String> = []
     let list: ShoppingListSummary
     let onSave: (String, [String: String]) -> Void
