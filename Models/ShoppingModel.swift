@@ -89,11 +89,11 @@ struct UserInfoResponse: Codable {
 }
 
 
-struct ShoppingLabel: Identifiable, Codable, Hashable {
+struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
     let id: String
-    let name: String
-    let color: String
-    let groupId: String
+    var name: String
+    var color: String
+    var groupId: String
     var localTokenId: UUID? = nil
     var householdId: String? = nil
 }

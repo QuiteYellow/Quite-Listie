@@ -7,17 +7,15 @@
 
 import SwiftUI
 
-import SwiftUI
-
 struct SectionHeaderView: View {
     let labelName: String
     let color: Color?
     let isExpanded: Bool
     let uncheckedCount: Int
     let checkedCount: Int
-    
+
     @ObservedObject var settings: AppSettings
-    
+
     var body: some View {
         Button(action: {
             withAnimation(.easeInOut) {
@@ -25,32 +23,34 @@ struct SectionHeaderView: View {
             }
         }) {
             HStack {
-                Text(labelName.removingLabelNumberPrefix())
-                    .font(.headline)
-                    .foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
-                    .padding(.horizontal, 0)
-                    .padding(.vertical, 4)
-                
-                Spacer()
-                
-                HStack() {
-                    Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)") // Show checked count instead of unchecked for Completed!
-                        .font(.subheadline)
-                        .foregroundColor(.accentColor)
-                        .padding(.horizontal, 4)
+                Rectangle()
+                    .fill((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
+                    .frame(width: 8)
+                    .cornerRadius(4)
+                    .padding(.vertical, 2)
 
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text(labelName.removingLabelNumberPrefix())
+                            .font(.headline)
+                            //.foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
+                            .foregroundColor(.primary)
+
+                        Spacer()
+                        
+                        Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
+                            .font(.subheadline)
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 4)
+                            .background(Capsule().fill(Color.clear))
+                    }
                 }
-                .padding(.vertical, 2)
-                .padding(.horizontal, 0)
-                .background(
-                        Capsule()
-                            .fill(.clear)
-                    )
+                .padding(.vertical, 4)
+                .padding(.leading, 4)
             }
-            .padding(.vertical, 1)
-            .padding(.horizontal, 0)
+            .background(.clear)
         }
-        //.buttonStyle(.plain)
+        .buttonStyle(.plain)
     }
 }
 

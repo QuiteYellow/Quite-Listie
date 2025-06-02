@@ -11,9 +11,6 @@ class WelcomeViewModel: ObservableObject {
     @Published var selectedListForSettings: ShoppingListSummary? = nil
     @Published var showingListSettings = false
     
-
-
-
     func loadLists() async {
         await MainActor.run {
             errorMessage = nil
