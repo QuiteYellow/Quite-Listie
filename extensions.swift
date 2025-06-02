@@ -20,19 +20,17 @@ extension String {
 }
 
 extension Color {
-    init?(hex: String) {
+    init(hex: String) {
         var hexFormatted = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
 
         if hexFormatted.hasPrefix("#") {
             hexFormatted.removeFirst()
         }
 
-        guard hexFormatted.count == 6 else {
-            return nil
-        }
-
         var rgbValue: UInt64 = 0
-        Scanner(string: hexFormatted).scanHexInt64(&rgbValue)
+        if hexFormatted.count == 6 {
+            Scanner(string: hexFormatted).scanHexInt64(&rgbValue)
+        }
 
         let red = Double((rgbValue & 0xFF0000) >> 16) / 255
         let green = Double((rgbValue & 0x00FF00) >> 8) / 255
@@ -40,6 +38,25 @@ extension Color {
 
         self.init(red: red, green: green, blue: blue)
     }
+    
+    func toHex() -> String {
+            #if canImport(UIKit)
+            typealias NativeColor = UIColor
+            #elseif canImport(AppKit)
+            typealias NativeColor = NSColor
+            #endif
+            
+            let nativeColor = NativeColor(self)
+            guard let components = nativeColor.cgColor.components, components.count >= 3 else {
+                return "#000000"
+            }
+            
+            let r = Int((components[0] * 255).rounded())
+            let g = Int((components[1] * 255).rounded())
+            let b = Int((components[2] * 255).rounded())
+            
+            return String(format: "#%02X%02X%02X", r, g, b)
+        }
 
     func isDarkColor(threshold: Float = 0.6) -> Bool {
         let uiColor = UIColor(self)

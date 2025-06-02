@@ -5,6 +5,8 @@ struct WelcomeView: View {
     @State private var selectedListID: String? = nil
     @State private var showingSettings = false
     @State private var isPresentingNewList = false
+    
+    @State private var showingLabelManager = false
     @EnvironmentObject var networkMonitor: NetworkMonitor
 
     var body: some View {
@@ -28,7 +30,11 @@ struct WelcomeView: View {
                             } label: {
                                 Label("Settings...", systemImage: "gear")
                             }
-                            
+                            Button {
+                                showingLabelManager = true
+                                } label: {
+                                    Label("Label Manager...", systemImage: "tag")
+                                }
                             //Button() {
                               // do a thing
                             //} label: {
@@ -71,10 +77,13 @@ struct WelcomeView: View {
                 }
             }
         }
-        
+        .sheet(isPresented: $showingLabelManager) {
+            LabelManagerView(viewModel: LabelManagerViewModel())
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
+        
         .task {
             await viewModel.loadLists()
         }

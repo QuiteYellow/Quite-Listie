@@ -452,5 +452,58 @@ class ShoppingListAPI {
             AppSettings.shared.tokens = enrichedTokens
         }
     }
+    
+    func createLabel(name: String, color: String, groupId: String, tokenInfo: TokenInfo) async throws {
+        guard let baseURL = baseURL else { throw URLError(.badURL) }
+
+        let url = baseURL.appendingPathComponent("groups/labels")
+        let payload = [
+            "name": name,
+            "color": color,
+            "groupId": groupId
+        ]
+        let body = try JSONEncoder().encode(payload)
+        let request = authorizedRequest(url: url, tokenInfo: tokenInfo, method: "POST", body: body)
+        _ = try await URLSession.shared.data(for: request)
+    }
+    
+    func updateLabel(label: ShoppingLabel, tokenInfo: TokenInfo) async throws {
+        guard let baseURL = baseURL else { throw URLError(.badURL) }
+
+        let url = baseURL.appendingPathComponent("groups/labels/\(label.id)")
+        let payload = [
+            "id": label.id,
+            "name": label.name,
+            "color": label.color,
+            "groupId": label.groupId
+        ]
+        let body = try JSONEncoder().encode(payload)
+
+        //print("📡 Sending PUT to \(url)")
+        //print("   ➤ Payload: \(payload)")
+
+        let request = authorizedRequest(url: url, tokenInfo: tokenInfo, method: "PUT", body: body)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                //print("🌐 Response Status: \(httpResponse.statusCode)")
+                if !(200...299).contains(httpResponse.statusCode) {
+                    //print("⚠️ Response Body: \(String(data: data, encoding: .utf8) ?? "Invalid UTF8")")
+                }
+            }
+        } catch {
+            print("❌ Network request failed: \(error)")
+            throw error
+        }
+    }
+    
+    func deleteLabel(label: ShoppingLabel, tokenInfo: TokenInfo) async throws {
+        guard let baseURL = baseURL else { throw URLError(.badURL) }
+
+        let url = baseURL.appendingPathComponent("groups/labels/\(label.id)")
+        let request = authorizedRequest(url: url, tokenInfo: tokenInfo, method: "DELETE")
+        _ = try await URLSession.shared.data(for: request)
+    }
 
 }
