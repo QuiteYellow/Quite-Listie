@@ -25,6 +25,11 @@ struct LabelEditorView: View {
                             Text(group.name.capitalized).tag(Optional(group.id))
                         }
                     }
+                    .onAppear {
+                        if viewModel.groupId == nil {
+                            viewModel.groupId = availableGroups.first?.id
+                        }
+                    }
                 }
             }
             .navigationTitle("Label")
