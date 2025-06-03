@@ -108,6 +108,7 @@ struct ItemRowView: View {
 }
 
 struct ShoppingListView: View {
+    @ObservedObject var welcomeViewModel: WelcomeViewModel
 
     let list: ShoppingListSummary
 
@@ -121,9 +122,16 @@ struct ShoppingListView: View {
     @State private var itemToDelete: ShoppingItem? = nil
     
 
-    init(list: ShoppingListSummary) {
-        self.list = list
-        _viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: list.id))
+    init(list: ShoppingListSummary, welcomeViewModel: WelcomeViewModel) {
+            self.list = list
+            self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: list.id))
+            self.welcomeViewModel = welcomeViewModel
+        }
+    
+    private func updateUncheckedCount(for listID: String, with count: Int) async {
+        await MainActor.run {
+            welcomeViewModel.uncheckedCounts[listID] = count
+        }
     }
     
     @ViewBuilder
@@ -160,7 +168,11 @@ struct ShoppingListView: View {
                             item: item,
                             isLast: false,
                             onTap: {
-                                Task { await viewModel.toggleChecked(for: item) }
+                                Task {
+                                    await viewModel.toggleChecked(for: item, didUpdate: { count in
+                                        await updateUncheckedCount(for: list.id, with: count)
+                                    })
+                                }
                             },
                             onTextTap: {
                                 editingItem = item
