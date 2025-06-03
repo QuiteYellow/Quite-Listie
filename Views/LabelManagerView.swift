@@ -7,13 +7,26 @@ struct LabelManagerView: View {
     @State private var selectedLabel: ShoppingLabel? = nil
     @State private var showingDeleteConfirmation = false
     
-    @State private var editorLabel: ShoppingLabel? = nil
-    @State private var isCreatingNewLabel = false
+    @State private var activeSheet: LabelEditorSheet? = nil
 
     struct UserGroup: Identifiable, Hashable {
         let id: String
         let name: String
         let tokenId: UUID
+    }
+    
+    enum LabelEditorSheet: Identifiable {
+        case new
+        case edit(ShoppingLabel)
+
+        var id: UUID {
+            switch self {
+            case .new:
+                return UUID()
+            case .edit(let label):
+                return label.localTokenId ?? UUID()
+            }
+        }
     }
 
     // MARK: - Derived Properties
@@ -51,13 +64,11 @@ struct LabelManagerView: View {
                         saveLabel(name: name, colorHex: colorHex, groupId: groupId)
                     }
                     await viewModel.loadLabels()
-                    editorLabel = nil
-                    isCreatingNewLabel = false
+                    activeSheet = nil
                 }
             },
             onCancel: {
-                editorLabel = nil
-                isCreatingNewLabel = false
+                activeSheet = nil
             }
         )
     }
@@ -66,7 +77,7 @@ struct LabelManagerView: View {
             Task {
                 await viewModel.createLabel(name: name, color: colorHex, groupId: groupId, tokenId: tokenId)
                 await viewModel.loadLabels()
-                isCreatingNewLabel = false
+                activeSheet = nil
             }
         }
     }
@@ -93,17 +104,19 @@ struct LabelManagerView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
-                            isCreatingNewLabel = true
+                            activeSheet = .new
                         } label: {
                             Image(systemName: "plus")
                         }
                     }
             }
-            .sheet(isPresented: $isCreatingNewLabel) {
-                labelEditorSheet()
-            }
-            .sheet(item: $editorLabel) { label in
-                labelEditorSheet(for: label)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .new:
+                    labelEditorSheet()
+                case .edit(let label):
+                    labelEditorSheet(for: label)
+                }
             }
             .alert("Delete Label?", isPresented: $showingDeleteConfirmation, presenting: selectedLabel) { label in
                 Button("Delete", role: .destructive) {
@@ -151,7 +164,7 @@ struct LabelManagerView: View {
         }
         .swipeActions(edge: .leading) {
             Button {
-                editorLabel = label
+                activeSheet = .edit(label)
             } label: {
                 Label("Edit", systemImage: "pencil")
             }

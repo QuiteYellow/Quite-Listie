@@ -76,6 +76,12 @@ extension Color {
         isDarkColor() ? .white : .black
     }
     
+    static func random() -> Color {
+            Color(red: .random(in: 0.2...0.9),
+                  green: .random(in: 0.2...0.9),
+                  blue: .random(in: 0.2...0.9))
+        }
+    
     func adjusted(forBackground background: Color, threshold: CGFloat = 0.6) -> Color {
             let uiSelf = UIColor(self)
             let uiBackground = UIColor(background)

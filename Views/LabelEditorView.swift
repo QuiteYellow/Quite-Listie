@@ -6,7 +6,7 @@ struct LabelEditorView: View {
 
     var availableGroups: [LabelManagerView.UserGroup]
     var onSave: (_ name: String, _ colorHex: String, _ groupId: String) -> Void
-    var onCancel: () -> Void 
+    var onCancel: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -22,19 +22,26 @@ struct LabelEditorView: View {
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.leading)
                 ) {
-                    ColorPicker("Pick a color...", selection: $viewModel.color, supportsOpacity: false)
+                    HStack {
+                            ColorPicker("Pick a color...", selection: $viewModel.color, supportsOpacity: false)
+                            Spacer()
+                            Button {
+                                viewModel.color = Color.random()
+                            } label: {
+                                Image(systemName: "shuffle")
+                            }
+                            .buttonStyle(.plain)
+                            .help("Pick a random color")
+                        }
                 }
-                
 
                 Section("Group") {
-                    Picker("Group", selection: $viewModel.groupId) {
+                    Picker("Group", selection: Binding(
+                        get: { viewModel.groupId ?? availableGroups.first?.id },
+                        set: { viewModel.groupId = $0 }
+                    )) {
                         ForEach(availableGroups, id: \.id) { group in
                             Text(group.name.capitalized).tag(Optional(group.id))
-                        }
-                    }
-                    .onAppear {
-                        if viewModel.groupId == nil {
-                            viewModel.groupId = availableGroups.first?.id
                         }
                     }
                 }
