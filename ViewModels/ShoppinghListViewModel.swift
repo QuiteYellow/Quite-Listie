@@ -91,15 +91,18 @@ class ShoppingListViewModel: ObservableObject {
         }
     }
 
-    func toggleChecked(for item: ShoppingItem) async {
+    func toggleChecked(for item: ShoppingItem, didUpdate: @escaping (Int) async -> Void) async {
         var updated = item
         updated.checked.toggle()
         do {
             try await ShoppingListAPI.shared.toggleItem(updated)
 
-            if let index = items.firstIndex(where: { $0.id == item.id }) {
+            if let index = items.firstIndex(where: { $0.id == updated.id }) {
                 items[index] = updated
             }
+
+            let count = items.filter { $0.shoppingListId == item.shoppingListId && !$0.checked }.count
+            await didUpdate(count)
         } catch {
             print("Error toggling item: \(error)")
         }
