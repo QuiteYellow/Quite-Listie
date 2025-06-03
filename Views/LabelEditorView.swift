@@ -15,9 +15,16 @@ struct LabelEditorView: View {
                     TextField("Label name", text: $viewModel.name)
                 }
 
-                Section("Color") {
-                    ColorPicker("Pick a color", selection: $viewModel.color, supportsOpacity: false)
+                Section(
+                    header: Text("Color"),
+                    footer: Text("For better visibility, colors adapt automatically to the background.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                ) {
+                    ColorPicker("Pick a color...", selection: $viewModel.color, supportsOpacity: false)
                 }
+                
 
                 Section("Group") {
                     Picker("Group", selection: $viewModel.groupId) {
