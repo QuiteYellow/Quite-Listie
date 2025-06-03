@@ -136,20 +136,17 @@ struct LabelManagerView: View {
         HStack {
             Text(label.name)
             Spacer()
-            Rectangle()
-                .fill((Color(hex: label.color)))
-                .frame(width: 8)
-                .cornerRadius(4)
-                .padding(.vertical, 2)
-            
+            Image(systemName: "tag.fill")
+                .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
         }
         .swipeActions(edge: .trailing) {
-            Button(role: .destructive) {
+            Button(role: .none) {
                 selectedLabel = label
                 showingDeleteConfirmation = true
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+            .tint(.red)
         
         }
         .swipeActions(edge: .leading) {

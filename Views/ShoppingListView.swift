@@ -22,33 +22,34 @@ struct SectionHeaderView: View {
                 settings.toggleSection(labelName)
             }
         }) {
-            HStack {
-                Rectangle()
-                    .fill((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
-                    .frame(width: 8)
-                    .cornerRadius(4)
-                    .padding(.vertical, 2)
 
-                VStack(alignment: .leading) {
+
                     HStack {
-                        Text(labelName.removingLabelNumberPrefix())
-                            .font(.headline)
-                            //.foregroundColor((color ?? .primary).adjusted(forBackground: Color(.systemBackground)))
-                            .foregroundColor(.primary)
-
-                        Spacer()
+                        Image(systemName: "tag.fill")
+                            .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
                         
-                        Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
-                            .font(.subheadline)
-                            .foregroundColor(.accentColor)
-                            .padding(.horizontal, 4)
-                            .background(Capsule().fill(Color.clear))
+                        Text(labelName.removingLabelNumberPrefix())
+                        // .font(.headline)
+                        //.foregroundColor(.primary)
+                        
+                        Spacer()
+                        HStack {
+                            Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
+                            //.font(.subheadline)
+                            //.foregroundColor(.accentColor)
+                                
+                            
+                            // Chevron
+                            Image(systemName: "chevron.down")
+                                .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                                .animation(.easeInOut, value: isExpanded)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 0)
                     }
-                }
-                .padding(.vertical, 4)
-                .padding(.leading, 4)
-            }
-            .background(.clear)
+
+            .background(Color(.systemGroupedBackground))
+            //.background(Capsule().fill(.red))
         }
         .buttonStyle(.plain)
     }
@@ -142,89 +143,86 @@ struct ShoppingListView: View {
             : uncheckedItems + checkedItems
 
         if !itemsToShow.isEmpty {
-            Section {
-                DisclosureGroup(
-                    isExpanded: isExpandedBinding,
-                    content: {
-                        ForEach(itemsToShow) { item in
-                            ItemRowView(
-                                item: item,
-                                isLast: false,
-                                onTap: {
-                                    Task { await viewModel.toggleChecked(for: item) }
-                                },
-                                onTextTap: {
-                                    editingItem = item
-                                    showingEditView = true
-                                },
-                                onIncrement: {
-                                    Task {
-                                        let newQty = (item.quantity ?? 1) + 1
-                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                    }
-                                },
-                                onDecrement: {
-                                    if (item.quantity ?? 1) <= 1 {
-                                        itemToDelete = item
-                                    } else {
-                                        Task {
-                                            let newQty = max((item.quantity ?? 1) - 1, 1)
-                                            _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                        }
-                                    }
+            Section(
+                header:
+                    SectionHeaderView(
+                        labelName: labelName,
+                        color: color,
+                        isExpanded: isExpandedBinding.wrappedValue,
+                        uncheckedCount: uncheckedItems.count,
+                        checkedCount: checkedItems.count,
+                        settings: settings
+                    )
+            ) {
+                if isExpandedBinding.wrappedValue {
+                    ForEach(itemsToShow) { item in
+                        ItemRowView(
+                            item: item,
+                            isLast: false,
+                            onTap: {
+                                Task { await viewModel.toggleChecked(for: item) }
+                            },
+                            onTextTap: {
+                                editingItem = item
+                                showingEditView = true
+                            },
+                            onIncrement: {
+                                Task {
+                                    let newQty = (item.quantity ?? 1) + 1
+                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
                                 }
-                            )
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .none) {
-                                    if (item.quantity ?? 1) < 2 {
-                                        itemToDelete = item
-                                    } else {
-                                        Task {
-                                            let newQty = max((item.quantity ?? 1) - 1, 1)
-                                            _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                        }
-                                    }
-                                } label: {
-                                    Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
-                                }
-                                .tint((item.quantity ?? 1) < 2 ? .red : .orange)
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    Task {
-                                        let newQty = (item.quantity ?? 1) + 1
-                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                    }
-                                } label: {
-                                    Label("+", systemImage: "plus")
-                                }
-                                .tint(.green)
-                            }
-                            .contextMenu {
-                                Button("Edit Item...") {
-                                    editingItem = item
-                                    showingEditView = true
-                                }
-                                Button(role: .destructive) {
+                            },
+                            onDecrement: {
+                                if (item.quantity ?? 1) <= 1 {
                                     itemToDelete = item
-                                } label: {
-                                    Label("Delete Item...", systemImage: "trash")
+                                } else {
+                                    Task {
+                                        let newQty = max((item.quantity ?? 1) - 1, 1)
+                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    }
                                 }
                             }
-                        }
-                    },
-                    label: {
-                        SectionHeaderView(
-                            labelName: labelName,
-                            color: color,
-                            isExpanded: isExpandedBinding.wrappedValue,
-                            uncheckedCount: uncheckedItems.count,
-                            checkedCount: checkedItems.count,
-                            settings: settings
                         )
-                        .padding(.vertical, 0)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .none) {
+                                if (item.quantity ?? 1) < 2 {
+                                    itemToDelete = item
+                                } else {
+                                    Task {
+                                        let newQty = max((item.quantity ?? 1) - 1, 1)
+                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    }
+                                }
+                            } label: {
+                                Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                            }
+                            .tint((item.quantity ?? 1) < 2 ? .red : .orange)
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                Task {
+                                    let newQty = (item.quantity ?? 1) + 1
+                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                }
+                            } label: {
+                                Label("+", systemImage: "plus")
+                            }
+                            .tint(.green)
+                        }
+                        .contextMenu {
+                            Button("Edit Item...") {
+                                editingItem = item
+                                showingEditView = true
+                            }
+                            Button(role: .none) {
+                                itemToDelete = item
+                            } label: {
+                                Label("Delete Item...", systemImage: "trash")
+                            }
+                            .tint(.red)
+                        }
                     }
-                )
+                }
             }
         }
     }
