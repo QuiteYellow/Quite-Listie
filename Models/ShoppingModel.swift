@@ -73,7 +73,7 @@ struct UpdateListRequest: Codable {
         set { extras["hiddenLabels"] = String(newValue) }
     }
 
-    var favouritedBy: [String] {
+    var favouritedBy: [String] { // userfavourites
         get { extras["favouritedBy"]?.split(separator: ",").map(String.init) ?? [] }
         set { extras["favouritedBy"] = newValue.joined(separator: ",") }
     }
