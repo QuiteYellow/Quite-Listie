@@ -72,6 +72,11 @@ struct UpdateListRequest: Codable {
         get { extras["hiddenLabels"].flatMap { Bool($0) } ?? false }
         set { extras["hiddenLabels"] = String(newValue) }
     }
+
+    var favouritedBy: [String] {
+        get { extras["favouritedBy"]?.split(separator: ",").map(String.init) ?? [] }
+        set { extras["favouritedBy"] = newValue.joined(separator: ",") }
+    }
 }
 
 struct UserInfoResponse: Codable {
@@ -96,4 +101,21 @@ struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
     var groupId: String
     var localTokenId: UUID? = nil
     var householdId: String? = nil
+}
+
+
+extension UpdateListRequest { //user favourite? 
+    func isFavourited(by userID: String) -> Bool {
+        favouritedBy.contains(userID)
+    }
+
+    mutating func toggleFavourite(by userID: String) {
+        var current = Set(favouritedBy)
+        if current.contains(userID) {
+            current.remove(userID)
+        } else {
+            current.insert(userID)
+        }
+        favouritedBy = Array(current)
+    }
 }

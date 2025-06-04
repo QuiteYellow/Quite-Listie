@@ -8,6 +8,8 @@ struct WelcomeView: View {
     
     @State private var showingLabelManager = false
     @EnvironmentObject var networkMonitor: NetworkMonitor
+    
+    
 
     var body: some View {
         NavigationSplitView {
@@ -105,54 +107,50 @@ struct SidebarView: View {
     }
     
     var body: some View {
-        List(selection: $selectedListID) {
-            ForEach(groupedLists.sorted(by: { $0.key < $1.key }), id: \.key) { identifier, lists in
-                Section(header: Text(identifier)) {
-                    ForEach(lists, id: \.id) { list in
-                        HStack {
-                            Image(systemName: list.extras?["listsForMealieListIcon"] ?? "list.bullet")
-                                .frame(minWidth: 30)
-                                .foregroundColor(.secondary)
-                            Text(list.name)
-                            Spacer()
-                            if let count = viewModel.uncheckedCounts[list.id], count >= 0 {
-                                Text("\(count)")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .tag(list.id)
-                        .contextMenu {
-                            Button("List Settings") {
-                                // selectedListID = list.id //this loads the list being edited.
-                                viewModel.selectedListForSettings = list
-                                viewModel.showingListSettings = true
-                            }
-                            
-                            Divider()
+        let userID = AppSettings.shared.tokens.first(where: { !$0.token.isEmpty })?.username ?? ""
 
-                            Button("Delete List", role: .destructive) {
-                                listToDelete = list
-                                showingDeleteConfirmation = true
-                            }
+        let favourites = viewModel.lists.filter {
+            $0.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false
+        }
+
+        let nonFavourites = viewModel.lists.filter {
+            !($0.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false)
+        }
+
+        let groupedNonFavourites = Dictionary(grouping: nonFavourites) { list in
+            AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
+        }
+
+        List(selection: $selectedListID) {
+            // 🔶 Favourites Section
+            if !favourites.isEmpty {
+                Section(
+                    header:
+                        Label {
+                            Text("Favourites")
+                        } icon: {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.yellow)
                         }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                viewModel.selectedListForSettings = list
-                                viewModel.showingListSettings = true
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
+                ) {
+                    ForEach(favourites, id: \.id) { list in
+                        listRow(for: list, userID: userID, showTokenCaption: true)
+                    }
+                }
+            }
+
+            // 🔷 Grouped Lists Section
+            ForEach(groupedNonFavourites.sorted(by: { $0.key < $1.key }), id: \.key) { identifier, lists in
+                Section(header:
+                            Label {
+                                Text(identifier)
+                            } icon: {
+                                Image(systemName: "person.2.fill")
+                                    //.foregroundColor(.accentColor)
                             }
-                            .tint(.accentColor)
-                        }
-                        .swipeActions(edge: .trailing) {
-                                Button(role: .none) {
-                                    listToDelete = list
-                                    showingDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                .tint(.red)
-                            }
+                ) {
+                    ForEach(lists, id: \.id) { list in
+                        listRow(for: list, userID: userID)
                     }
                 }
             }
@@ -168,7 +166,6 @@ struct SidebarView: View {
                         try await ShoppingListAPI.shared.deleteList(list)
                         await viewModel.loadLists()
 
-                        // If the deleted list was selected, clear it
                         if selectedListID == list.id {
                             selectedListID = nil
                         }
@@ -180,6 +177,70 @@ struct SidebarView: View {
             Button("Cancel", role: .cancel) {}
         } message: { list in
             Text("Are you sure you want to delete the list \"\(list.name)\"?")
+        }
+    }
+    
+    @ViewBuilder
+    private func listRow(for list: ShoppingListSummary, userID: String, showTokenCaption: Bool = false) -> some View {
+        let isFavourited = list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false
+        let tokenIdentifier = AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
+
+        HStack {
+            Image(systemName: list.extras?["listsForMealieListIcon"] ?? "list.bullet")
+                .frame(minWidth: 30)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(list.name)
+
+                if showTokenCaption {
+                    Text(tokenIdentifier)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if let count = viewModel.uncheckedCounts[list.id], count >= 0 {
+                Text("\(count)")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tag(list.id)
+        .contextMenu {
+            Button(isFavourited ? "Unfavourite" : "Favourite") {
+                Task {
+                    await viewModel.toggleFavourite(for: list, userID: userID)
+                }
+            }
+            Button("List Settings") {
+                viewModel.selectedListForSettings = list
+                viewModel.showingListSettings = true
+            }
+            Divider()
+            Button("Delete List", role: .destructive) {
+                listToDelete = list
+                showingDeleteConfirmation = true
+            }
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                viewModel.selectedListForSettings = list
+                viewModel.showingListSettings = true
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.accentColor)
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .none) {
+                listToDelete = list
+                showingDeleteConfirmation = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
         }
     }
 }
