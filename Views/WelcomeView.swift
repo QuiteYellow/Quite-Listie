@@ -99,6 +99,7 @@ struct SidebarView: View {
     @State private var listToDelete: ShoppingListSummary? = nil
     @State private var showingDeleteConfirmation = false
     
+    @State private var showFavouritesWarning: Bool = !UserDefaults.standard.bool(forKey: "hideFavouritesWarning")
     
     var groupedLists: [String: [ShoppingListSummary]] {
         Dictionary(grouping: viewModel.lists) { list in
@@ -120,7 +121,37 @@ struct SidebarView: View {
         let groupedNonFavourites = Dictionary(grouping: nonFavourites) { list in
             AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
         }
+        if !favourites.isEmpty {
+            if showFavouritesWarning {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Favourites are visible to admins and other users in your household", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundColor(.yellow)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                    HStack{
+                        Spacer()
+                        Button("Don't show again") {
+                            UserDefaults.standard.set(true, forKey: "hideFavouritesWarning")
+                            withAnimation {
+                                showFavouritesWarning = false
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        Spacer()
+                    }
+                    
+                }
+                .padding(8)
+                .background(.yellow.opacity(0.05))
+                .cornerRadius(8)
+                
 
+            }
+                
+        }
         List(selection: $selectedListID) {
             // 🔶 Favourites Section
             if !favourites.isEmpty {
