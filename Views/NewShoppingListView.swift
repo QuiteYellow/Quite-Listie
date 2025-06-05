@@ -19,44 +19,52 @@ struct NewShoppingListView: View {
     @State private var householdOptions: [HouseholdContext] = []
     @State private var selectedIndex = 0
     @State private var isSaving = false
-    
-    @State private var selectedGroupId: String?
-    @State private var selectedHouseholdId: String?
 
     var onCreate: () -> Void
 
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("List Name")) {
-                    TextField("Enter list name", text: $name)
-                }
+                Section(header: Text("Details")) {
+                    HStack {
+                        Label("Title", systemImage: "textformat")
+                        Spacer()
+                        TextField("Enter title", text: $name)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 200)
+                    }
 
-                Section(header: Text("Select Icon")) {
-                    Button {
-                        iconPickerPresented = true
-                    } label: {
-                        HStack {
-                            Text("Choose icon")
-                            Spacer()
+                    HStack {
+                        Label("Icon", systemImage: "square.grid.2x2")
+                        Spacer()
+                        Button {
+                            iconPickerPresented = true
+                        } label: {
                             Image(systemName: icon)
                                 .imageScale(.large)
+                                .foregroundColor(.accentColor)
+                        }
+                        .sheet(isPresented: $iconPickerPresented) {
+                            SymbolPicker(symbol: $icon)
                         }
                     }
-                    .sheet(isPresented: $iconPickerPresented) {
-                        SymbolPicker(symbol: $icon)
-                    }
-                }
 
-                Section(header: Text("Select Account")) {
-                    if householdOptions.isEmpty {
-                        Text("Loading accounts...")
-                    } else {
-                        Picker("Account", selection: $selectedIndex) {
-                            ForEach(householdOptions.indices, id: \.self) { i in
-                                let h = householdOptions[i]
-                                Text("\(h.tokenInfo.identifier) (\(h.tokenInfo.username ?? "Unknown"))").tag(i)
+                    HStack(alignment: .top) {
+                        Label("Account", systemImage: "person.crop.circle")
+                        Spacer()
+                        if householdOptions.isEmpty {
+                            Text("Loading...")
+                                .foregroundColor(.secondary)
+                        } else {
+                            Picker("", selection: $selectedIndex) {
+                                ForEach(householdOptions.indices, id: \.self) { i in
+                                    let h = householdOptions[i]
+                                    Text("\(h.tokenInfo.identifier) (\(h.tokenInfo.username ?? "Unknown"))")
+                                        .tag(i)
+                                }
                             }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 200)
                         }
                     }
                 }
@@ -65,9 +73,7 @@ struct NewShoppingListView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        Task {
-                            await createList()
-                        }
+                        Task { await createList() }
                     }
                     .disabled(name.isEmpty || householdOptions.isEmpty || isSaving)
                 }
