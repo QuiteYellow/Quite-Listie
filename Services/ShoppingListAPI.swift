@@ -330,7 +330,6 @@ class ShoppingListAPI {
             groupId: groupId,
             userId: userId,
             listItems: items
-            
         )
 
         let body = try JSONEncoder().encode(payload)
@@ -507,3 +506,4 @@ class ShoppingListAPI {
     }
 
 }
+
