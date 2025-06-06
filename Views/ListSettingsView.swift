@@ -14,6 +14,15 @@ struct ListSettingsView: View {
     
     @State private var isFavourited: Bool = false
     let userID = AppSettings.shared.tokens.first(where: { !$0.token.isEmpty })?.username ?? ""
+    
+    enum ListStorageType: String {
+        case remote = "Saved to Mealie"
+        case local = "On This Device"
+    }
+    
+    var storageType: ListStorageType {
+        list.isLocal ? .local : .remote
+    }
 
     var body: some View {
         NavigationView {
@@ -42,6 +51,7 @@ struct ListSettingsView: View {
                                 //.foregroundColor(.accentColor)
                         }
                     }
+                    
                     .sheet(isPresented: $iconPickerPresented) {
                         SymbolPicker(symbol: $icon)
                     }
@@ -51,6 +61,11 @@ struct ListSettingsView: View {
                         Label("Mark as Favourite", systemImage: "star.fill")
                             
                     }
+                    Label {
+                            Text(storageType.rawValue)
+                        } icon: {
+                            Image(systemName: storageType == .local ? "internaldrive" : "icloud")
+                        }
                 }
 
                 Section(header: Text("Shown Labels")) {
@@ -111,7 +126,7 @@ struct ListSettingsView: View {
         }
         .onAppear {
             name = list.name
-            icon = list.extras?["listsForMealieListIcon"] ?? ""
+            icon = list.extras?["listsForMealieListIcon"].flatMap { $0.isEmpty ? nil : $0 } ?? "checklist"
 
             // Extract hidden label IDs
             if let hidden = list.extras?["hiddenLabels"] {
@@ -126,14 +141,7 @@ struct ListSettingsView: View {
             // Load labels
             Task {
                 do {
-                    let all = try await ShoppingListAPI.shared.fetchShoppingLabels()
-                    if let groupId = list.groupId {
-                        allLabels = all.filter { $0.groupId == groupId }
-                    } else if let localTokenId = list.localTokenId {
-                        allLabels = all.filter { $0.localTokenId == localTokenId }
-                    } else {
-                        allLabels = all
-                    }
+                    allLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
                 } catch {
                     print("Failed to load labels: \(error)")
                 }

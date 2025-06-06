@@ -221,3 +221,27 @@ extension Sequence {
         return filter { seen.insert(key($0)).inserted }
     }
 }
+
+extension ShoppingListSummary {
+    var isLocal: Bool {
+        id.hasPrefix("local-")
+    }
+}
+
+extension ShoppingItem {
+    var isLocal: Bool {
+        shoppingListId.hasPrefix("local-")
+    }
+}
+
+extension String {
+    var isLocalListId: Bool {
+        self.hasPrefix("local-")
+    }
+}
+
+extension ShoppingLabel {
+    var isLocal: Bool {
+        localTokenId != nil && groupId == nil
+    }
+}

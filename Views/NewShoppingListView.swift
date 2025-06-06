@@ -8,6 +8,16 @@ struct NewShoppingListView: View {
     @State private var icon: String = "checklist"
     @State private var iconPickerPresented = false
 
+    // 🔹 Add Local/Remote picker
+    enum ListStorageType: String, CaseIterable, Identifiable {
+        case remote = "Save to Mealie"
+        case local = "On This Device"
+
+        var id: String { rawValue }
+    }
+
+    @State private var selectedStorage: ListStorageType = .remote
+
     struct HouseholdContext: Identifiable {
         let id: String // householdId
         let groupId: String
@@ -25,6 +35,15 @@ struct NewShoppingListView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section(header: Text("Storage Location")) {
+                    Picker("Storage", selection: $selectedStorage) {
+                        ForEach(ListStorageType.allCases) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section(header: Text("Details")) {
                     HStack {
                         Label("Title", systemImage: "textformat")
@@ -49,22 +68,25 @@ struct NewShoppingListView: View {
                         }
                     }
 
-                    HStack(alignment: .top) {
-                        Label("Account", systemImage: "person.crop.circle")
-                        Spacer()
-                        if householdOptions.isEmpty {
-                            Text("Loading...")
-                                .foregroundColor(.secondary)
-                        } else {
-                            Picker("", selection: $selectedIndex) {
-                                ForEach(householdOptions.indices, id: \.self) { i in
-                                    let h = householdOptions[i]
-                                    Text("\(h.tokenInfo.identifier) (\(h.tokenInfo.username ?? "Unknown"))")
-                                        .tag(i)
+                    // 🔹 Only show account selection for remote lists
+                    if selectedStorage == .remote {
+                        HStack(alignment: .top) {
+                            Label("Account", systemImage: "person.crop.circle")
+                            Spacer()
+                            if householdOptions.isEmpty {
+                                Text("Loading...")
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Picker("", selection: $selectedIndex) {
+                                    ForEach(householdOptions.indices, id: \.self) { i in
+                                        let h = householdOptions[i]
+                                        Text("\(h.tokenInfo.identifier) (\(h.tokenInfo.username ?? "Unknown"))")
+                                            .tag(i)
+                                    }
                                 }
+                                .pickerStyle(.menu)
+                                .frame(maxWidth: 200)
                             }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 200)
                         }
                     }
                 }
@@ -75,7 +97,7 @@ struct NewShoppingListView: View {
                     Button("Create") {
                         Task { await createList() }
                     }
-                    .disabled(name.isEmpty || householdOptions.isEmpty || isSaving)
+                    .disabled(name.isEmpty || (selectedStorage == .remote && householdOptions.isEmpty) || isSaving)
                 }
 
                 ToolbarItem(placement: .cancellationAction) {
@@ -117,22 +139,26 @@ struct NewShoppingListView: View {
         isSaving = true
         defer { isSaving = false }
 
-        let selected = householdOptions[selectedIndex]
+        let listId = selectedStorage == .local ? "local-\(UUID().uuidString)" : UUID().uuidString
 
         let newList = ShoppingListSummary(
-            id: UUID().uuidString,
+            id: listId,
             name: name,
-            localTokenId: selected.tokenInfo.id,
-            groupId: selected.groupId,
+            localTokenId: selectedStorage == .local ? nil : householdOptions[selectedIndex].tokenInfo.id,
+            groupId: selectedStorage == .local ? nil : householdOptions[selectedIndex].groupId,
             userId: nil,
-            householdId: selected.id,
+            householdId: selectedStorage == .local ? nil : householdOptions[selectedIndex].id,
             extras: [
                 "listsForMealieListIcon": icon
             ]
         )
 
         do {
-            try await ShoppingListAPI.shared.createShoppingList(newList)
+            if selectedStorage == .local {
+                try await LocalShoppingListStore.shared.createList(newList)
+            } else {
+                try await CombinedShoppingListProvider.shared.createList(newList)
+            }
             onCreate()
             dismiss()
         } catch {

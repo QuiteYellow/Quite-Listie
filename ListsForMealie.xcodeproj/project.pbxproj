@@ -39,6 +39,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		CB0685102DF345D1006415E1 /* Local */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Local;
+			sourceTree = "<group>";
+		};
 		CBEFA7AD2DE31318002F4B13 /* ListsForMealie */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ListsForMealie;
@@ -103,6 +108,7 @@
 		CBEFA7A22DE31318002F4B13 = {
 			isa = PBXGroup;
 			children = (
+				CB0685102DF345D1006415E1 /* Local */,
 				CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */,
 				CBEFABE52DE35848002F4B13 /* extensions.swift */,
 				CBEFA7D92DE313C2002F4B13 /* Views */,
@@ -141,6 +147,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				CB0685102DF345D1006415E1 /* Local */,
 				CBEFA7AD2DE31318002F4B13 /* ListsForMealie */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
 				CBEFA7D72DE313B0002F4B13 /* Services */,

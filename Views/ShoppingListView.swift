@@ -123,10 +123,10 @@ struct ShoppingListView: View {
     
 
     init(list: ShoppingListSummary, welcomeViewModel: WelcomeViewModel) {
-            self.list = list
-            self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(shoppingListId: list.id))
-            self.welcomeViewModel = welcomeViewModel
-        }
+        self.list = list
+        self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: list))
+        self.welcomeViewModel = welcomeViewModel
+    }
     
     private func updateUncheckedCount(for listID: String, with count: Int) async {
         await MainActor.run {
