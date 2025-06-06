@@ -299,7 +299,7 @@ class ShoppingListAPI {
             // Remove duplicates by (id, groupId), treating nil as ""
             var dict = [LabelKey: ShoppingLabel]()
             for label in allLabels {
-                let key = LabelKey(id: label.id, groupId: label.groupId)
+                let key = LabelKey(id: label.id, groupId: label.groupId ?? "unknown")
                 dict[key] = label
             }
 

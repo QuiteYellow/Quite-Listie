@@ -6,11 +6,12 @@ class ShoppingListViewModel: ObservableObject {
     @Published var items: [ShoppingItem] = []
     @Published var isLoading = false
     @Published var labels: [ShoppingLabel] = []
-    private let shoppingListId: String
+    let list: ShoppingListSummary
+    var shoppingListId: String { list.id }
     private var fetchTask: Task<Void, Never>? = nil
 
-    init(shoppingListId: String) {
-        self.shoppingListId = shoppingListId
+    init(list: ShoppingListSummary) {
+        self.list = list
     }
 
     func loadItems() async {
@@ -18,8 +19,8 @@ class ShoppingListViewModel: ObservableObject {
         fetchTask = Task {
             isLoading = true
             do {
-                let allItems = try await ShoppingListAPI.shared.fetchItems()
-                items = allItems.filter { $0.shoppingListId == shoppingListId }
+                let allItems = try await CombinedShoppingListProvider.shared.fetchItems(for: shoppingListId)
+                items = allItems
             } catch {
                 if (error as NSError).code != NSURLErrorCancelled {
                     print("Error loading items: \(error)")
@@ -33,7 +34,7 @@ class ShoppingListViewModel: ObservableObject {
     
     func loadLabels() async {
         do {
-            labels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+            labels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
         } catch {
             print("Error loading labels: \(error)")
         }
@@ -55,7 +56,7 @@ class ShoppingListViewModel: ObservableObject {
         }
 
         do {
-            try await ShoppingListAPI.shared.addItem(newItem, to: shoppingListId)
+            try await CombinedShoppingListProvider.shared.addItem(newItem, to: shoppingListId)
             await loadItems()
             return true
         } catch {
@@ -67,7 +68,7 @@ class ShoppingListViewModel: ObservableObject {
         for index in offsets {
             let item = items[index]
             do {
-                try await ShoppingListAPI.shared.deleteItem(item)  // Pass full item for token lookup
+                try await CombinedShoppingListProvider.shared.deleteItem(item)  // Pass full item for token lookup
             } catch {
                 print("Error deleting item: \(error)")
             }
@@ -78,7 +79,7 @@ class ShoppingListViewModel: ObservableObject {
     @MainActor
     func deleteItem(_ item: ShoppingItem) async -> Bool {
         do {
-            try await ShoppingListAPI.shared.deleteItem(item)
+            try await CombinedShoppingListProvider.shared.deleteItem(item)
             
             if let index = items.firstIndex(where: { $0.id == item.id }) {
                 items.remove(at: index)
@@ -95,7 +96,7 @@ class ShoppingListViewModel: ObservableObject {
         var updated = item
         updated.checked.toggle()
         do {
-            try await ShoppingListAPI.shared.toggleItem(updated)
+            try await CombinedShoppingListProvider.shared.toggleItem(updated)
 
             if let index = items.firstIndex(where: { $0.id == updated.id }) {
                 items[index] = updated
@@ -133,7 +134,7 @@ class ShoppingListViewModel: ObservableObject {
         }
 
         do {
-            try await ShoppingListAPI.shared.toggleItem(updatedItem)
+            try await CombinedShoppingListProvider.shared.toggleItem(updatedItem)
 
             if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
                 items[index] = updatedItem

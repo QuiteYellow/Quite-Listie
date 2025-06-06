@@ -46,12 +46,14 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
     var extras: [String: String]?
     
     enum CodingKeys: String, CodingKey {
-            case id
-            case name
-            case groupId
-            case userId
-            case extras
-        }
+        case id
+        case name
+        case groupId
+        case userId
+        case householdId
+        case extras
+        case localTokenId
+    }
 
 }
 
@@ -98,7 +100,7 @@ struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
     let id: String
     var name: String
     var color: String
-    var groupId: String
+    var groupId: String?
     var localTokenId: UUID? = nil
     var householdId: String? = nil
 }
@@ -118,4 +120,17 @@ extension UpdateListRequest { //user favourite?
         }
         favouritedBy = Array(current)
     }
+}
+
+protocol ShoppingListProvider {
+    func fetchShoppingLists() async throws -> [ShoppingListSummary]
+    func fetchItems(for listId: String) async throws -> [ShoppingItem]
+    func addItem(_ item: ShoppingItem, to listId: String) async throws
+    func deleteItem(_ item: ShoppingItem) async throws
+    func createList(_ list: ShoppingListSummary) async throws
+    func deleteList(_ list: ShoppingListSummary) async throws
+    func toggleItem(_ item: ShoppingItem) async throws
+    func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws
+    func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel]
+
 }

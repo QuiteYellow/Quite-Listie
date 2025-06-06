@@ -133,3 +133,18 @@ class AppSettings: ObservableObject {
         }
     }
 }
+
+extension AppSettings {
+    var localTokenId: UUID {
+        let key = "localTokenId"
+
+        if let saved = UserDefaults.standard.string(forKey: key),
+           let uuid = UUID(uuidString: saved) {
+            return uuid
+        }
+
+        let newID = UUID()
+        UserDefaults.standard.set(newID.uuidString, forKey: key)
+        return newID
+    }
+}

@@ -194,7 +194,7 @@ struct SidebarView: View {
             Button("Delete", role: .destructive) {
                 Task {
                     do {
-                        try await ShoppingListAPI.shared.deleteList(list)
+                        try await CombinedShoppingListProvider.shared.deleteList(list)
                         await viewModel.loadLists()
 
                         if selectedListID == list.id {
