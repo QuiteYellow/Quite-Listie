@@ -100,7 +100,7 @@ struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
     let id: String
     var name: String
     var color: String
-    var groupId: String?
+    var groupId: String
     var localTokenId: UUID? = nil
     var householdId: String? = nil
 }
@@ -131,6 +131,5 @@ protocol ShoppingListProvider {
     func deleteList(_ list: ShoppingListSummary) async throws
     func toggleItem(_ item: ShoppingItem) async throws
     func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws
-    func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel]
 
 }

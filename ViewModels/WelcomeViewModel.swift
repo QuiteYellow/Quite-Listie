@@ -10,13 +10,41 @@ class WelcomeViewModel: ObservableObject {
 
     @Published var selectedListForSettings: ShoppingListSummary? = nil
     @Published var showingListSettings = false
+    
+    private var exampleList: ShoppingListSummary {
+        ShoppingListSummary(
+            id: "example-welcome-list",
+            name: "Welcome!",
+            localTokenId: TokenInfo.localDeviceToken.id,
+            groupId: nil,
+            userId: nil,
+            householdId: nil,
+            extras: ["mdNotes": "some example"]
+        )
+    }
 
     func loadLists() async {
         isLoading = true
         errorMessage = nil
 
+
         do {
-            let fetchedLists = try await CombinedShoppingListProvider.shared.fetchShoppingLists()
+            var fetchedLists = try await CombinedShoppingListProvider.shared.fetchShoppingLists()
+            print("✅ Loaded \(fetchedLists.count) total lists")
+            print("🟩 Local token ID: \(TokenInfo.localDeviceToken.id)")
+
+            for list in fetchedLists {
+                print("• \(list.name) – localTokenId: \(String(describing: list.localTokenId))")
+            }
+            for token in AppSettings.shared.tokens {
+                print("🆔 Token: \(token.identifier) – \(token.id)")
+            }
+
+            if fetchedLists.isEmpty {
+                print("📭 No lists found, showing example list.")
+                fetchedLists = [exampleList]
+            }
+
             let sortedLists = fetchedLists.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
@@ -25,6 +53,9 @@ class WelcomeViewModel: ObservableObject {
             self.uncheckedCounts = await loadUncheckedCounts(for: sortedLists)
         } catch {
             self.errorMessage = "Failed to load lists: \(error.localizedDescription)"
+            print("❌ \(error.localizedDescription) — falling back to example list")
+            self.lists = [exampleList]
+            self.uncheckedCounts = await loadUncheckedCounts(for: [exampleList])
         }
 
         isLoading = false

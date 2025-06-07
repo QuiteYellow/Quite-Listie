@@ -7,6 +7,8 @@ struct NewShoppingListView: View {
     @State private var name: String = ""
     @State private var icon: String = "checklist"
     @State private var iconPickerPresented = false
+    
+    @StateObject private var networkMonitor = NetworkMonitor()
 
     // 🔹 Add Local/Remote picker
     enum ListStorageType: String, CaseIterable, Identifiable {
@@ -25,6 +27,16 @@ struct NewShoppingListView: View {
         let householdName: String
         let tokenInfo: TokenInfo
     }
+    
+    private var shouldDisableStoragePicker: Bool {
+        AppSettings.shared.serverURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !networkMonitor.isConnected
+    }
+    
+    private var shouldForceLocal: Bool {
+        AppSettings.shared.serverURLString
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty || !networkMonitor.isConnected
+    }
 
     @State private var householdOptions: [HouseholdContext] = []
     @State private var selectedIndex = 0
@@ -37,11 +49,11 @@ struct NewShoppingListView: View {
             Form {
                 Section(header: Text("Storage Location")) {
                     Picker("Storage", selection: $selectedStorage) {
-                        ForEach(ListStorageType.allCases) { type in
-                            Text(type.rawValue).tag(type)
-                        }
+                        Text(ListStorageType.remote.rawValue).tag(ListStorageType.remote)
+                        Text(ListStorageType.local.rawValue).tag(ListStorageType.local)
                     }
                     .pickerStyle(.segmented)
+                    .disabled(shouldDisableStoragePicker)
                 }
 
                 Section(header: Text("Details")) {
@@ -109,6 +121,20 @@ struct NewShoppingListView: View {
             .onAppear {
                 Task {
                     await loadHouseholds()
+
+                    if shouldForceLocal {
+                        selectedStorage = .local
+                    }
+                }
+            }
+            .onChange(of: networkMonitor.isConnected) {
+                if shouldForceLocal {
+                    selectedStorage = .local
+                }
+            }
+            .onChange(of: AppSettings.shared.serverURLString) {
+                if shouldForceLocal {
+                    selectedStorage = .local
                 }
             }
         }
@@ -133,6 +159,10 @@ struct NewShoppingListView: View {
                 tokenInfo: token
             )
         }
+        
+        if !householdOptions.isEmpty {
+                selectedIndex = 0
+            }
     }
 
     private func createList() async {
@@ -144,10 +174,16 @@ struct NewShoppingListView: View {
         let newList = ShoppingListSummary(
             id: listId,
             name: name,
-            localTokenId: selectedStorage == .local ? nil : householdOptions[selectedIndex].tokenInfo.id,
-            groupId: selectedStorage == .local ? nil : householdOptions[selectedIndex].groupId,
+            localTokenId: selectedStorage == .local
+                ? TokenInfo.localDeviceToken.id
+                : householdOptions[selectedIndex].tokenInfo.id,
+            groupId: selectedStorage == .local
+                ? nil
+                : householdOptions[selectedIndex].groupId,
             userId: nil,
-            householdId: selectedStorage == .local ? nil : householdOptions[selectedIndex].id,
+            householdId: selectedStorage == .local
+                ? nil
+                : householdOptions[selectedIndex].id,
             extras: [
                 "listsForMealieListIcon": icon
             ]

@@ -12,6 +12,7 @@ struct ListSettingsView: View {
     @State private var icon: String = "pencil"
     @State private var iconPickerPresented = false
     
+    
     @State private var isFavourited: Bool = false
     let userID = AppSettings.shared.tokens.first(where: { !$0.token.isEmpty })?.username ?? ""
     

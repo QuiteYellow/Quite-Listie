@@ -5,8 +5,8 @@ class LabelEditorViewModel: ObservableObject {
     @Published var color: Color
     @Published var groupId: String?
 
-    var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty && groupId != nil
+    var isNameValid: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     init() {
