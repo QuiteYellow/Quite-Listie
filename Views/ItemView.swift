@@ -531,10 +531,10 @@ struct EditItemView: View {
                 do {
                     let allLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
 
-                    print("🧪 [EditItemView] allLabels.count: \(allLabels.count)")
-                    print("🧪 [EditItemView] First few labels:")
+                    //print("🧪 [EditItemView] allLabels.count: \(allLabels.count)")
+                    //print("🧪 [EditItemView] First few labels:")
                     for label in allLabels.prefix(5) {
-                        print("→ \(label.name) | id: \(label.id) | group: \(label.groupId ?? "nil")")
+                        //print("→ \(label.name) | id: \(label.id) | group: \(label.groupId ?? "nil")")
                     }
                     // Extract hidden label IDs
                     let hiddenLabelIDs: Set<String> = {

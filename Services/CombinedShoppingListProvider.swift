@@ -92,10 +92,10 @@ class CombinedShoppingListProvider: ShoppingListProvider {
     
     func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel] {
         if list.isLocal {
-            print("📦 [Labels] Fetching LOCAL ONLY for: \(list.name) (\(list.id))")
+           // print("📦 [Labels] Fetching LOCAL ONLY for: \(list.name) (\(list.id))")
             return try await local.fetchLabels(for: list)
         } else {
-            print("📦 [Labels] Fetching REMOTE ONLY for: \(list.name) (\(list.id))")
+           // print("📦 [Labels] Fetching REMOTE ONLY for: \(list.name) (\(list.id))")
             do {
                 return try await api.fetchShoppingLabels()
             } catch {

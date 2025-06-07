@@ -148,7 +148,7 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     var itemsGroupedByLabel: [String: [ShoppingItem]] {
-        Dictionary(grouping: items.filter { !$0.checked }) { item in
+        Dictionary(grouping: items) { item in
             item.label?.name ?? "No Label"
         }
     }

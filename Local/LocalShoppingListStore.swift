@@ -30,7 +30,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     // MARK: - Data Persistence
 
     private func loadData() async {
-        print("📂 [Local Load] Starting to load local data...")
+        //print("📂 [Local Load] Starting to load local data...")
 
         // Load Lists
         if FileManager.default.fileExists(atPath: listsFileURL.path) {
@@ -38,7 +38,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
                 let data = try Data(contentsOf: listsFileURL)
                 let decoded = try JSONDecoder().decode([ShoppingListSummary].self, from: data)
                 self.lists = decoded
-                print("✅ [Local Load] Loaded \(decoded.count) shopping lists")
+                //print("✅ [Local Load] Loaded \(decoded.count) shopping lists")
             } catch {
                 print("❌ [Local Load] Failed to load lists:", error)
             }
@@ -52,7 +52,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
                 let data = try Data(contentsOf: itemsFileURL)
                 let decoded = try JSONDecoder().decode([ShoppingItem].self, from: data)
                 self.items = decoded
-                print("✅ [Local Load] Loaded \(decoded.count) shopping items")
+                //print("✅ [Local Load] Loaded \(decoded.count) shopping items")
             } catch {
                 print("❌ [Local Load] Failed to load items:", error)
             }
@@ -64,7 +64,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
                 let data = try Data(contentsOf: labelsFileURL)
                 let decoded = try JSONDecoder().decode([ShoppingLabel].self, from: data)
                 self.labels = decoded
-                print("✅ [Local Load] Loaded \(decoded.count) shopping labels")
+                //print("✅ [Local Load] Loaded \(decoded.count) shopping labels")
             } catch {
                 print("❌ [Local Load] Failed to load labels:", error)
             }
@@ -73,24 +73,24 @@ actor LocalShoppingListStore: ShoppingListProvider {
 
     private func save() async {
         do {
-            print("💾 [Local Save] Saving data...")
+            //print("💾 [Local Save] Saving data...")
 
             let listData = try JSONEncoder().encode(lists)
             let itemData = try JSONEncoder().encode(items)
             let labelData = try JSONEncoder().encode(labels)
 
-            print("📦 [Local Save] List count: \(lists.count)")
-            print("📦 [Local Save] Item count: \(items.count)")
-            print("📦 [Local Save] Label count: \(labels.count)")
+            //print("📦 [Local Save] List count: \(lists.count)")
+            //print("📦 [Local Save] Item count: \(items.count)")
+            //print("📦 [Local Save] Label count: \(labels.count)")
 
             try listData.write(to: listsFileURL)
             try itemData.write(to: itemsFileURL)
             try labelData.write(to: labelsFileURL)
 
-            print("✅ [Local Save] Save successful to:")
-            print("   - Lists: \(listsFileURL.lastPathComponent)")
-            print("   - Items: \(itemsFileURL.lastPathComponent)")
-            print("   - Labels: \(labelsFileURL.lastPathComponent)")
+            //print("✅ [Local Save] Save successful to:")
+            //print("   - Lists: \(listsFileURL.lastPathComponent)")
+            //print("   - Items: \(itemsFileURL.lastPathComponent)")
+            //print("   - Labels: \(labelsFileURL.lastPathComponent)")
         } catch {
             print("❌ [Local Save] Save failed:", error)
         }
@@ -103,7 +103,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func createList(_ list: ShoppingListSummary) async throws {
-        print("📝 [Local] Creating list: \(list.name)")
+        //print("📝 [Local] Creating list: \(list.name)")
         lists.append(list)
         await save()
     }
@@ -167,9 +167,9 @@ actor LocalShoppingListStore: ShoppingListProvider {
     func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel] {
         let matchingLabels = labels.filter { $0.localTokenId == list.localTokenId }
 
-        print("📦 [Labels] Returning \(matchingLabels.count) labels for list \(list.name) (\(list.id))")
+        //print("📦 [Labels] Returning \(matchingLabels.count) labels for list \(list.name) (\(list.id))")
         for label in matchingLabels {
-            print("• Label: [\(label.id)] \(label.name), groupId: \(label.groupId ?? "nil")")
+           // print("• Label: [\(label.id)] \(label.name), groupId: \(label.groupId ?? "nil")")
         }
 
         return matchingLabels

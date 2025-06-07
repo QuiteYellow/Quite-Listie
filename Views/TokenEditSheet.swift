@@ -4,6 +4,11 @@ struct TokenEditSheet: View {
     let tokenInfo: TokenInfo?
     @Binding var tokenIdentifier: String
     @Binding var tokenString: String
+    
+    @State private var tokens = AppSettings.shared.tokens
+    @State private var tokenToDelete: TokenInfo? = nil
+    @State private var showingDeleteConfirmation = false
+    
     var onSave: () -> Void
     var onCancel: () -> Void
 

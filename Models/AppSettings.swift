@@ -85,9 +85,9 @@ class AppSettings: ObservableObject {
                 saveTokensToUserDefaults()
             }
 
-            print("📋 Tokens after init:")
+           // print("📋 Tokens after init:")
             for token in tokens {
-                print("🆔 \(token.identifier) – \(token.id)")
+              //  print("🆔 \(token.identifier) – \(token.id)")
             }
         
        

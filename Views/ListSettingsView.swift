@@ -14,7 +14,11 @@ struct ListSettingsView: View {
     
     
     @State private var isFavourited: Bool = false
-    let userID = AppSettings.shared.tokens.first(where: { !$0.token.isEmpty })?.username ?? ""
+    var userID: String {
+        AppSettings.shared.tokens
+            .first(where: { $0.id == list.localTokenId && !($0.username ?? "").isEmpty })?
+            .username ?? "local"
+    }
     
     enum ListStorageType: String {
         case remote = "Saved to Mealie"
