@@ -10,6 +10,14 @@ struct WelcomeView: View {
     @EnvironmentObject var networkMonitor: NetworkMonitor
     
     
+    private var selectedListIsReadOnly: Bool {
+        if let id = selectedListID,
+           let list = viewModel.lists.first(where: { $0.id == id }) {
+            return list.isReadOnlyExample
+        }
+        return false
+    }
+    
 
     var body: some View {
         NavigationSplitView {
@@ -67,7 +75,10 @@ struct WelcomeView: View {
                             newName: updatedName,
                             extras: updatedExtras
                         )
+                        print("👋 WelcomeView task triggered")
                         await viewModel.loadLists()
+                        
+                        
                     }
                 }
             }
@@ -103,7 +114,14 @@ struct SidebarView: View {
     
     var groupedLists: [String: [ShoppingListSummary]] {
         Dictionary(grouping: viewModel.lists) { list in
-            AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
+            if let tokenId = list.localTokenId,
+               let token = AppSettings.shared.tokens.first(where: { $0.id == tokenId }) {
+                return token.identifier
+            } else if list.isLocal {
+                return TokenInfo.localDeviceToken.identifier // "This Device"
+            } else {
+                return "Unknown"
+            }
         }
     }
     
@@ -194,7 +212,7 @@ struct SidebarView: View {
             Button("Delete", role: .destructive) {
                 Task {
                     do {
-                        try await ShoppingListAPI.shared.deleteList(list)
+                        try await CombinedShoppingListProvider.shared.deleteList(list)
                         await viewModel.loadLists()
 
                         if selectedListID == list.id {
@@ -208,6 +226,14 @@ struct SidebarView: View {
             Button("Cancel", role: .cancel) {}
         } message: { list in
             Text("Are you sure you want to delete the list \"\(list.name)\"?")
+        }
+        .onAppear {
+            print("👀 AppSettings.shared.tokens:")
+            for token in AppSettings.shared.tokens {
+                print("🆔 \(token.identifier) – \(token.id)")
+            }
+            print("🟩 Expected local token ID: \(TokenInfo.localDeviceToken.id)")
+
         }
     }
     
@@ -240,38 +266,50 @@ struct SidebarView: View {
         }
         .tag(list.id)
         .contextMenu {
-            Button(isFavourited ? "Unfavourite" : "Favourite") {
-                Task {
-                    await viewModel.toggleFavourite(for: list, userID: userID)
+            if !list.isReadOnlyExample {
+                Button(isFavourited ? "Unfavourite" : "Favourite") {
+                    Task {
+                        await viewModel.toggleFavourite(for: list, userID: userID)
+                    }
                 }
-            }
-            Button("List Settings") {
-                viewModel.selectedListForSettings = list
-                viewModel.showingListSettings = true
-            }
-            Divider()
-            Button("Delete List", role: .destructive) {
-                listToDelete = list
-                showingDeleteConfirmation = true
+
+                Button("List Settings") {
+                    viewModel.selectedListForSettings = list
+                    viewModel.showingListSettings = true
+                }
+
+                Divider()
+
+                Button("Delete List", role: .destructive) {
+                    listToDelete = list
+                    showingDeleteConfirmation = true
+                }
+            } else {
+                Text("Read-only list").foregroundColor(.gray)
             }
         }
         .swipeActions(edge: .leading) {
-            Button {
-                viewModel.selectedListForSettings = list
-                viewModel.showingListSettings = true
-            } label: {
-                Label("Edit", systemImage: "pencil")
+            if !list.isReadOnlyExample {
+                Button {
+                    viewModel.selectedListForSettings = list
+                    viewModel.showingListSettings = true
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .tint(.accentColor)
             }
-            .tint(.accentColor)
         }
+
         .swipeActions(edge: .trailing) {
-            Button(role: .none) {
-                listToDelete = list
-                showingDeleteConfirmation = true
-            } label: {
-                Label("Delete", systemImage: "trash")
+            if !list.isReadOnlyExample {
+                Button(role: .none) {
+                    listToDelete = list
+                    showingDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .tint(.red)
             }
-            .tint(.red)
         }
     }
 }
