@@ -90,7 +90,7 @@ struct AddItemView: View {
             }
             .task {
                 do {
-                    let allLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+                    let allLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
 
                     // Extract hidden label IDs
                     let hiddenLabelIDs: Set<String> = {
@@ -361,31 +361,33 @@ struct EditItemView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItemGroup(placement: .confirmationAction) {
-                        Button("Delete") {
-                            showDeleteConfirmation = true
-                        }
-                        .foregroundColor(.red)
-                        
-                        Button("Save") {
-                            Task {
-                                let updates = ["markdownNotes": mdNotes]
-                                let updatedExtras = item.updatedExtras(with: updates)
-                                
-                                let success = await viewModel.updateItem(
-                                    item,
-                                    note: itemName,
-                                    label: selectedLabel,
-                                    quantity: Double(quantity),
-                                    extras: updatedExtras
-                                )
-                                if success {
-                                    dismiss()
-                                } else {
-                                    showError = true
+                        if !list.isReadOnlyExample {
+                            Button("Delete") {
+                                showDeleteConfirmation = true
+                            }
+                            .foregroundColor(.red)
+                            
+                            Button("Save") {
+                                Task {
+                                    let updates = ["markdownNotes": mdNotes]
+                                    let updatedExtras = item.updatedExtras(with: updates)
+                                    
+                                    let success = await viewModel.updateItem(
+                                        item,
+                                        note: itemName,
+                                        label: selectedLabel,
+                                        quantity: Double(quantity),
+                                        extras: updatedExtras
+                                    )
+                                    if success {
+                                        dismiss()
+                                    } else {
+                                        showError = true
+                                    }
                                 }
                             }
+                            .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                        .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                     
                     ToolbarItem(placement: .cancellationAction) {
@@ -527,8 +529,13 @@ struct EditItemView: View {
             }
             .task {
                 do {
-                    let allLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+                    let allLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
 
+                    print("🧪 [EditItemView] allLabels.count: \(allLabels.count)")
+                    print("🧪 [EditItemView] First few labels:")
+                    for label in allLabels.prefix(5) {
+                        print("→ \(label.name) | id: \(label.id) | group: \(label.groupId ?? "nil")")
+                    }
                     // Extract hidden label IDs
                     let hiddenLabelIDs: Set<String> = {
                         if let hidden = list.extras?["hiddenLabels"] {

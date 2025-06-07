@@ -9,11 +9,12 @@ class ShoppingListAPI {
     }
     
     private var tokens: [TokenInfo] {
-        AppSettings.shared.tokens.filter { !$0.token.isEmpty }
+        AppSettings.shared.tokens.filter { !$0.token.isEmpty && !$0.isLocal }
     }
     
     // MARK: - Create authorized request with token info
     private func authorizedRequest(url: URL, tokenInfo: TokenInfo, method: String = "GET", body: Data? = nil) -> URLRequest {
+        precondition(!tokenInfo.isLocal, "🚫 Local token used in authorizedRequest. This should never happen.")
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -299,7 +300,7 @@ class ShoppingListAPI {
             // Remove duplicates by (id, groupId), treating nil as ""
             var dict = [LabelKey: ShoppingLabel]()
             for label in allLabels {
-                let key = LabelKey(id: label.id, groupId: label.groupId)
+                let key = LabelKey(id: label.id, groupId: label.groupId ?? "unknown")
                 dict[key] = label
             }
 
@@ -386,7 +387,7 @@ class ShoppingListAPI {
     }
     
     // MARK: - Enrich Tokens With User Info
-    func enrichTokensWithUserInfo() async {
+    func enrichTokensWithUserInfo(tokens: [TokenInfo]) async {
         guard let baseURL = baseURL else { return }
 
         DispatchQueue.main.async {
@@ -399,11 +400,15 @@ class ShoppingListAPI {
             }
         }
 
-
         var enrichedTokens: [TokenInfo] = []
 
-        for token in AppSettings.shared.tokens {
-            //print("🔄 Enriching token: \(token.identifier)")
+        for token in tokens {
+            // Skip enriching the local device token
+            if token.id == TokenInfo.localDeviceToken.id {
+                enrichedTokens.append(token)
+                continue
+            }
+
             let userURL = baseURL.appendingPathComponent("/users/self")
             let request = authorizedRequest(url: userURL, tokenInfo: token)
 
@@ -415,11 +420,6 @@ class ShoppingListAPI {
                     print("❌ HTTP error for \(token.identifier): \(response)")
                     enrichedTokens.append(token)
                     continue
-                }
-
-                // Optional: print raw JSON string
-                if let json = String(data: data, encoding: .utf8) {
-                    //print("📦 Raw response for \(token.identifier): \(json)")
                 }
 
                 let info = try JSONDecoder().decode(UserInfoResponse.self, from: data)
@@ -438,17 +438,25 @@ class ShoppingListAPI {
                 enriched.canManage = info.canManage
 
                 enrichedTokens.append(enriched)
-                //print("✅ Got user info for \(token.identifier): \(info.fullName), \(info.email), \(info.group)")
 
             } catch {
                 print("❌ Failed to decode user info for \(token.identifier): \(error.localizedDescription)")
                 enrichedTokens.append(token)
             }
-            
         }
 
         DispatchQueue.main.async {
-            AppSettings.shared.tokens = enrichedTokens
+            var updated = AppSettings.shared.tokens
+
+            for enriched in enrichedTokens {
+                if let index = updated.firstIndex(where: { $0.id == enriched.id }) {
+                    updated[index] = enriched
+                } else {
+                    updated.append(enriched)
+                }
+            }
+
+            AppSettings.shared.tokens = updated
         }
     }
     
