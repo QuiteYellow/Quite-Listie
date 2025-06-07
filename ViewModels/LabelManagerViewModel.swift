@@ -7,7 +7,9 @@ class LabelManagerViewModel: ObservableObject {
     
     func loadLabels() async {
         do {
-            let labels = try await ShoppingListAPI.shared.fetchShoppingLabels()
+            let labels = try await CombinedShoppingListProvider.shared.fetchAllLabels()
+            print("📦 [LabelManager] Loaded \(labels.count) total labels")
+            
             await MainActor.run {
                 withAnimation {
                     allLabels = labels
@@ -31,11 +33,11 @@ class LabelManagerViewModel: ObservableObject {
     func updateLabel(_ label: ShoppingLabel) async {
         guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else { return }
         print("🔄 Updating label:")
-           print("ID: \(label.id)")
-           print("Name: \(label.name)")
-           print("Color: \(label.color)")
-           print("Group ID: \(label.groupId)")
-           print("Token ID: \(tokenInfo.id)")
+        print("ID: \(label.id)")
+        print("Name: \(label.name)")
+        print("Color: \(label.color)")
+        print("Group ID: \(label.groupId ?? "nil")")
+        print("Token ID: \(tokenInfo.id)")
         do {
             try await ShoppingListAPI.shared.updateLabel(label: label, tokenInfo: tokenInfo)
             await loadLabels()

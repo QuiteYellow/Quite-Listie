@@ -18,15 +18,7 @@ struct ShoppingListApp: App {
             WelcomeView()
                 .environmentObject(networkMonitor)
                 .environmentObject(settings)
-                .onAppear {
-                    if settings.serverURLString.isEmpty || settings.tokens.allSatisfy({ $0.token.isEmpty }) {
-                        showSettingsOnLaunch = true
-                    }
-                }
-                .sheet(isPresented: $showSettingsOnLaunch) {
-                    SettingsView()
-                        .environmentObject(settings)
-                }
+                
         }
     }
 }
