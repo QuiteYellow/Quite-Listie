@@ -10,56 +10,85 @@ class WelcomeViewModel: ObservableObject {
 
     @Published var selectedListForSettings: ShoppingListSummary? = nil
     @Published var showingListSettings = false
+    
+    private var exampleList: ShoppingListSummary {
+        ShoppingListSummary(
+            id: "example-welcome-list",
+            name: "Welcome!",
+            localTokenId: TokenInfo.localDeviceToken.id,
+            groupId: nil,
+            userId: nil,
+            householdId: nil,
+            extras: ["mdNotes": "some example"]
+        )
+    }
 
     func loadLists() async {
         isLoading = true
         errorMessage = nil
 
+
         do {
-            let fetchedLists = try await ShoppingListAPI.shared.fetchShoppingLists()
-            lists = fetchedLists.sorted {
+            var fetchedLists = try await CombinedShoppingListProvider.shared.fetchShoppingLists()
+            print("✅ Loaded \(fetchedLists.count) total lists")
+            print("🟩 Local token ID: \(TokenInfo.localDeviceToken.id)")
+
+            for list in fetchedLists {
+                print("• \(list.name) – localTokenId: \(String(describing: list.localTokenId))")
+            }
+            for token in AppSettings.shared.tokens {
+                print("🆔 Token: \(token.identifier) – \(token.id)")
+            }
+
+            if fetchedLists.isEmpty {
+                print("📭 No lists found, showing example list.")
+                fetchedLists = [exampleList]
+            }
+
+            let sortedLists = fetchedLists.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
 
-            let counts = await loadUncheckedCounts()
-            uncheckedCounts = counts
-        } catch is CancellationError {
-            print("Load lists task was cancelled")
+            self.lists = sortedLists
+            self.uncheckedCounts = await loadUncheckedCounts(for: sortedLists)
         } catch {
-            errorMessage = "Failed to load lists: \(error.localizedDescription)"
-            print("⭐️ Failed to load lists: \(error)")
+            self.errorMessage = "Failed to load lists: \(error.localizedDescription)"
+            print("❌ \(error.localizedDescription) — falling back to example list")
+            self.lists = [exampleList]
+            self.uncheckedCounts = await loadUncheckedCounts(for: [exampleList])
         }
 
         isLoading = false
     }
 
-    func loadUncheckedCounts() async -> [String: Int] {
-        do {
-            let allItems = try await ShoppingListAPI.shared.fetchItems()
-            let groupedItems = Dictionary(grouping: allItems, by: \.shoppingListId)
+    func loadUncheckedCounts(for lists: [ShoppingListSummary]) async -> [String: Int] {
+        var result: [String: Int] = [:]
 
-            return lists.reduce(into: [:]) { result, list in
-                let unchecked = groupedItems[list.id]?.filter { !$0.checked }.count ?? 0
-                result[list.id] = unchecked
+        for list in lists {
+            do {
+                let items = try await CombinedShoppingListProvider.shared.fetchItems(for: list.id)
+                let count = items.filter { !$0.checked }.count
+                result[list.id] = count
+            } catch {
+                result[list.id] = 0
             }
-        } catch {
-            return Dictionary(uniqueKeysWithValues: lists.map { ($0.id, 0) })
         }
+
+        return result
     }
 
     func updateListName(listID: String, newName: String, extras: [String: String]) async {
         guard let index = lists.firstIndex(where: { $0.id == listID }) else { return }
+        let list = lists[index]
 
         do {
-            let list = lists[index]
-            let allItems = try await ShoppingListAPI.shared.fetchItems()
-            let listItems = allItems.filter { $0.shoppingListId == list.id }
+            let items = try await CombinedShoppingListProvider.shared.fetchItems(for: list.id)
 
-            try await ShoppingListAPI.shared.updateShoppingListName(
-                list: list,
-                newName: newName,
-                items: listItems,
-                extras: extras
+            try await CombinedShoppingListProvider.shared.updateList(
+                list,
+                with: newName,
+                extras: extras,
+                items: items
             )
 
             lists[index].name = newName
@@ -86,14 +115,13 @@ class WelcomeViewModel: ObservableObject {
         ])
 
         do {
-            let allItems = try await ShoppingListAPI.shared.fetchItems()
-            let listItems = allItems.filter { $0.shoppingListId == list.id }
+            let items = try await CombinedShoppingListProvider.shared.fetchItems(for: list.id)
 
-            try await ShoppingListAPI.shared.updateShoppingListName(
-                list: list,
-                newName: list.name,
-                items: listItems,
-                extras: updatedExtras
+            try await CombinedShoppingListProvider.shared.updateList(
+                list,
+                with: list.name,
+                extras: updatedExtras,
+                items: items
             )
 
             await loadLists()

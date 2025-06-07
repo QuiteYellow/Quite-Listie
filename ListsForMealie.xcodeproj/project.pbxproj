@@ -39,6 +39,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		CB0685102DF345D1006415E1 /* Local */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Local;
+			sourceTree = "<group>";
+		};
 		CBEFA7AD2DE31318002F4B13 /* ListsForMealie */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ListsForMealie;
@@ -103,6 +108,7 @@
 		CBEFA7A22DE31318002F4B13 = {
 			isa = PBXGroup;
 			children = (
+				CB0685102DF345D1006415E1 /* Local */,
 				CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */,
 				CBEFABE52DE35848002F4B13 /* extensions.swift */,
 				CBEFA7D92DE313C2002F4B13 /* Views */,
@@ -141,6 +147,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				CB0685102DF345D1006415E1 /* Local */,
 				CBEFA7AD2DE31318002F4B13 /* ListsForMealie */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
 				CBEFA7D72DE313B0002F4B13 /* Services */,
@@ -437,9 +444,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				"INFOPLIST_FILE[sdk=*]" = "";
-				INFOPLIST_KEY_CFBundleDisplayName = "Lists for Mealie";
+				INFOPLIST_KEY_CFBundleDisplayName = "Quite Listie";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.shopping";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs access to your local network to communicate with devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -460,7 +467,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.4;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.ListsForMealie;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.quitelistie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
@@ -486,9 +493,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				"INFOPLIST_FILE[sdk=*]" = "";
-				INFOPLIST_KEY_CFBundleDisplayName = "Lists for Mealie";
+				INFOPLIST_KEY_CFBundleDisplayName = "Quite Listie";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.shopping";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs access to your local network to communicate with devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -509,7 +516,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.4;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.ListsForMealie;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.quitelistie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;

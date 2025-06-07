@@ -6,7 +6,6 @@ struct LabelManagerView: View {
 
     @State private var selectedLabel: ShoppingLabel? = nil
     @State private var showingDeleteConfirmation = false
-    
     @State private var activeSheet: LabelEditorSheet? = nil
 
     struct UserGroup: Identifiable, Hashable {
@@ -14,7 +13,9 @@ struct LabelManagerView: View {
         let name: String
         let tokenId: UUID
     }
-    
+
+
+
     enum LabelEditorSheet: Identifiable {
         case new
         case edit(ShoppingLabel)
@@ -29,11 +30,6 @@ struct LabelManagerView: View {
         }
     }
 
-    // MARK: - Derived Properties
-
-    private var groupedLabels: [String: [ShoppingLabel]] {
-        Dictionary(grouping: viewModel.allLabels) { $0.groupId}
-    }
 
     private var availableGroups: [UserGroup] {
         AppSettings.shared.tokens
@@ -44,25 +40,92 @@ struct LabelManagerView: View {
             .uniqueBy(\.id)
     }
     
+    private var remoteLabels: [ShoppingLabel] {
+        viewModel.allLabels.filter { !$0.isLocal }
+    }
+
+    private var localLabels: [ShoppingLabel] {
+        viewModel.allLabels.filter { $0.isLocal }
+    }
+
+    private var remoteGroupedLabels: [String: [ShoppingLabel]] {
+        Dictionary(grouping: remoteLabels) { $0.groupId ?? "unknown" }
+    }
+    
+    private func sectionTitle(for groupId: String) -> String {
+        if let group = availableGroups.first(where: { $0.id == groupId }) {
+            return group.name.capitalized
+        }
+
+        // Fallbacks
+        if groupId == "unknown" {
+            return "Unknown Group"
+        } else if groupId == "local" || groupId == "local-group" {
+            return "Local"
+        } else {
+            return groupId.capitalized
+        }
+    }
+    
+    @ViewBuilder
+    private func labelRow(_ label: ShoppingLabel) -> some View {
+        HStack {
+            Text(label.name)
+            Spacer()
+            Image(systemName: "tag.fill")
+                .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                selectedLabel = label
+                showingDeleteConfirmation = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                activeSheet = .edit(label)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.accentColor)
+        }
+    }
+
     private func labelEditorSheet(for label: ShoppingLabel? = nil) -> some View {
         let vm = label == nil ? LabelEditorViewModel() : LabelEditorViewModel(from: label!)
-        
+
         return LabelEditorView(
             viewModel: vm,
             availableGroups: availableGroups,
-            onSave: { name, colorHex, groupId in
+            availableLocalTokens: AppSettings.shared.tokens,
+            onSaveRemote: { name, colorHex, groupId in
                 Task {
                     if let label {
-                        // Edit
                         var updated = label
                         updated.name = name
                         updated.color = colorHex
                         updated.groupId = groupId
                         await viewModel.updateLabel(updated)
                     } else {
-                        // New
                         saveLabel(name: name, colorHex: colorHex, groupId: groupId)
                     }
+                    await viewModel.loadLabels()
+                    activeSheet = nil
+                }
+            },
+            onSaveLocal: { name, colorHex, tokenId in
+                Task {
+                    let label = ShoppingLabel(
+                        id: "local-\(UUID().uuidString)",
+                        name: name,
+                        color: colorHex,
+                        groupId: "local-group",
+                        localTokenId: TokenInfo.localDeviceToken.id
+                    )
+                    try? await LocalShoppingListStore.shared.saveLabel(label)
                     await viewModel.loadLabels()
                     activeSheet = nil
                 }
@@ -72,6 +135,7 @@ struct LabelManagerView: View {
             }
         )
     }
+
     private func saveLabel(name: String, colorHex: String, groupId: String) {
         if let tokenId = availableGroups.first(where: { $0.id == groupId })?.tokenId {
             Task {
@@ -82,16 +146,22 @@ struct LabelManagerView: View {
         }
     }
 
-    // MARK: - Body
-
     var body: some View {
         NavigationView {
             List {
-                ForEach(groupedLabels.sorted(by: { $0.key < $1.key }), id: \.key) { groupId, labels in
+                // 🔹 Remote label sections, grouped by groupId
+                ForEach(remoteGroupedLabels.sorted(by: { $0.key < $1.key }), id: \.key) { groupId, labels in
                     Section(header: Text(sectionTitle(for: groupId))) {
-                        ForEach(labels.sorted {
-                            $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                        }) { label in
+                        ForEach(labels.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending })) { label in
+                            labelRow(label)
+                        }
+                    }
+                }
+
+                // 🔸 Local labels section
+                if !localLabels.isEmpty {
+                    Section(header: Text("On This Device")) {
+                        ForEach(localLabels.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending })) { label in
                             labelRow(label)
                         }
                     }
@@ -103,12 +173,12 @@ struct LabelManagerView: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            activeSheet = .new
-                        } label: {
-                            Image(systemName: "plus")
-                        }
+                    Button {
+                        activeSheet = .new
+                    } label: {
+                        Image(systemName: "plus")
                     }
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -130,45 +200,11 @@ struct LabelManagerView: View {
             } message: { label in
                 Text("Are you sure you want to delete the label \"\(label.name)\"?")
             }
-        }
-        .task {
-            await viewModel.loadLabels()
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func sectionTitle(for groupId: String) -> String {
-        let groupName = availableGroups.first(where: { $0.id == groupId })?.name.capitalized ?? "Unknown"
-        let tokens = AppSettings.shared.tokens.filter { $0.groupId == groupId }
-        let identifiers = tokens.map(\.identifier).sorted().joined(separator: ", ")
-        return identifiers.isEmpty ? groupName : "\(groupName) (\(identifiers))"
-    }
-
-    private func labelRow(_ label: ShoppingLabel) -> some View {
-        HStack {
-            Text(label.name)
-            Spacer()
-            Image(systemName: "tag.fill")
-                .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
-        }
-        .swipeActions(edge: .trailing) {
-            Button(role: .none) {
-                selectedLabel = label
-                showingDeleteConfirmation = true
-            } label: {
-                Label("Delete", systemImage: "trash")
+            .task(id: viewModel.allLabels.count) {
+                if viewModel.allLabels.isEmpty {
+                    await viewModel.loadLabels()
+                }
             }
-            .tint(.red)
-        
-        }
-        .swipeActions(edge: .leading) {
-            Button {
-                activeSheet = .edit(label)
-            } label: {
-                Label("Edit", systemImage: "pencil")
-            }
-            .tint(.accentColor)
         }
     }
 }

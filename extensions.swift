@@ -221,3 +221,33 @@ extension Sequence {
         return filter { seen.insert(key($0)).inserted }
     }
 }
+
+extension ShoppingListSummary {
+    var isLocal: Bool {
+        id.hasPrefix("local-")
+    }
+    var isReadOnlyExample: Bool {
+            id == "example-welcome-list"
+        }
+}
+
+extension ShoppingItem {
+    var isLocal: Bool {
+        shoppingListId.hasPrefix("local-")
+    }
+    var isFromReadOnlyList: Bool {
+            shoppingListId == "example-welcome-list"
+        }
+}
+
+extension String {
+    var isLocalListId: Bool {
+        self.hasPrefix("local-")
+    }
+}
+
+extension ShoppingLabel {
+    var isLocal: Bool {
+        id.hasPrefix("local-")
+    }
+}
