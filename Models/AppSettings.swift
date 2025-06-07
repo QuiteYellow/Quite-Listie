@@ -77,9 +77,26 @@ class AppSettings: ObservableObject {
         self.cfAccessClientSecret = UserDefaults.standard.string(forKey: "cfAccessClientSecret") ?? ""
         self.tokens = []
         loadTokensFromUserDefaults()
+        
+        // 🛡️ Only add local token if others exist and it’s missing
+            if !tokens.contains(where: { $0.id == TokenInfo.localDeviceToken.id }) {
+                print("➕ Appending missing local token")
+                tokens.append(TokenInfo.localDeviceToken)
+                saveTokensToUserDefaults()
+            }
+
+            print("📋 Tokens after init:")
+            for token in tokens {
+                print("🆔 \(token.identifier) – \(token.id)")
+            }
+        
+       
     }
     
+    
     // MARK: - Multiple tokens persistence
+    
+    
     
     private func saveTokensToUserDefaults() {
         if let data = try? JSONEncoder().encode(tokens) {
@@ -88,15 +105,25 @@ class AppSettings: ObservableObject {
     }
     
     private func loadTokensFromUserDefaults() {
-        
         guard let data = UserDefaults.standard.data(forKey: tokensKey),
               let savedTokens = try? JSONDecoder().decode([TokenInfo].self, from: data) else {
+            print("⚠️ No tokens found in UserDefaults")
+            self.tokens = [TokenInfo.localDeviceToken] // ← fallback to local only
+            saveTokensToUserDefaults()
             return
         }
-        self.tokens = savedTokens
+
+        self.tokens = savedTokens // ✅ SET FIRST
+
+        if !self.tokens.contains(where: { $0.id == TokenInfo.localDeviceToken.id }) {
+            print("➕ Appending missing local token")
+            self.tokens.append(TokenInfo.localDeviceToken)
+            self.saveTokensToUserDefaults()
+        }
 
         Task {
-            await ShoppingListAPI.shared.enrichTokensWithUserInfo()
+            let remoteTokens = AppSettings.shared.tokens.filter { !$0.isLocal }
+            await ShoppingListAPI.shared.enrichTokensWithUserInfo(tokens: remoteTokens)
         }
     }
     
@@ -109,7 +136,7 @@ class AppSettings: ObservableObject {
         tokens.removeAll { $0 == token }
     }
     
-    // Existing methods...
+
     func toggleSection(_ label: String) {
         withAnimation {
             if let isExpanded = expandedSections[label] {
@@ -124,7 +151,7 @@ class AppSettings: ObservableObject {
         var didChange = false
         for label in labels {
             if expandedSections[label] == nil {
-                expandedSections[label] = false
+                expandedSections[label] = true // DEFAULT FOR EXPANDED SECTIONS!
                 didChange = true
             }
         }
@@ -146,5 +173,29 @@ extension AppSettings {
         let newID = UUID()
         UserDefaults.standard.set(newID.uuidString, forKey: key)
         return newID
+    }
+}
+
+
+extension TokenInfo {
+    static let localDeviceToken = TokenInfo(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!, // stable UUID
+        token: "local",
+        identifier: "This Device",
+        email: nil,
+        fullName: nil,
+        username: nil,
+        group: nil,
+        household: nil,
+        isAdmin: nil,
+        groupId: nil,
+        groupSlug: nil,
+        householdId: nil,
+        householdSlug: nil,
+        canManage: nil
+    )
+    
+    var isLocal: Bool {
+        return id == TokenInfo.localDeviceToken.id
     }
 }

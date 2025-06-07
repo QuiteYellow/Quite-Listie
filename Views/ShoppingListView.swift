@@ -64,6 +64,7 @@ struct ItemRowView: View {
     let onTextTap: () -> Void
     let onIncrement: (() -> Void)?
     let onDecrement: (() -> Void)?
+    let isReadOnly: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -91,15 +92,17 @@ struct ItemRowView: View {
             Spacer()
 
             // Checkbox tap area
-            Button(action: {
-                onTap()
-            }) {
-                Image(systemName: item.checked ? "inset.filled.circle" : "circle")
-                    .foregroundColor(item.checked ? .gray : .accentColor)
-                    .imageScale(.large)
-                
+            if !isReadOnly {
+                Button(action: {
+                    onTap()
+                }) {
+                    Image(systemName: item.checked ? "inset.filled.circle" : "circle")
+                        .foregroundColor(item.checked ? .gray : .accentColor)
+                        .imageScale(.large)
+                    
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.vertical, 0)
         .padding(.horizontal, 0)
@@ -193,45 +196,55 @@ struct ShoppingListView: View {
                                         _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
                                     }
                                 }
-                            }
+                            },
+                            isReadOnly: list.isReadOnlyExample
                         )
                         .swipeActions(edge: .trailing) {
-                            Button(role: .none) {
-                                if (item.quantity ?? 1) < 2 {
-                                    itemToDelete = item
-                                } else {
-                                    Task {
-                                        let newQty = max((item.quantity ?? 1) - 1, 1)
-                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                            if !list.isReadOnlyExample {
+                                Button(role: .none) {
+                                    if (item.quantity ?? 1) < 2 {
+                                        itemToDelete = item
+                                    } else {
+                                        Task {
+                                            let newQty = max((item.quantity ?? 1) - 1, 1)
+                                            _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                        }
                                     }
+                                } label: {
+                                    Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
                                 }
-                            } label: {
-                                Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                                .tint((item.quantity ?? 1) < 2 ? .red : .orange)
                             }
-                            .tint((item.quantity ?? 1) < 2 ? .red : .orange)
                         }
                         .swipeActions(edge: .leading) {
-                            Button {
-                                Task {
-                                    let newQty = (item.quantity ?? 1) + 1
-                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                            if !list.isReadOnlyExample {
+                                Button {
+                                    Task {
+                                        let newQty = (item.quantity ?? 1) + 1
+                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    }
+                                } label: {
+                                    Label("+", systemImage: "plus")
                                 }
-                            } label: {
-                                Label("+", systemImage: "plus")
+                                .tint(.green)
                             }
-                            .tint(.green)
                         }
                         .contextMenu {
-                            Button("Edit Item...") {
-                                editingItem = item
-                                showingEditView = true
+                            if !list.isReadOnlyExample {
+                                Button("Edit Item...") {
+                                    editingItem = item
+                                    showingEditView = true
+                                }
+                                
+                                Button(role: .none) {
+                                    itemToDelete = item
+                                } label: {
+                                    Label("Delete Item...", systemImage: "trash")
+                                }
+                                .tint(.red)
+                            } else {
+                                Text("Read-only example list").foregroundColor(.gray)
                             }
-                            Button(role: .none) {
-                                itemToDelete = item
-                            } label: {
-                                Label("Delete Item...", systemImage: "trash")
-                            }
-                            .tint(.red)
                         }
                     }
                 }
@@ -267,14 +280,14 @@ struct ShoppingListView: View {
                 }
                 Button { showingAddView = true } label: {
                     Image(systemName: "plus")
-                }
+                }.disabled(list.isReadOnlyExample)
                 Button {
                     withAnimation(.easeInOut) {
                         settings.showCompletedAtBottom.toggle()
                     }
                 } label: {
                     Image(systemName: settings.showCompletedAtBottom ? "circle.badge.checkmark.fill" : "circle.badge.xmark")
-                }
+                }.disabled(list.isReadOnlyExample)
             }
         }
  
