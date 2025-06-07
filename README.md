@@ -1,8 +1,8 @@
-# Lists for Mealie — iOS, iPadOS and macOS
+# Quite Listie — iOS, iPadOS and macOS
 
-A native Swift app for iOS, iPadOS and macOS (designed for iPad), for managing shopping lists from your Mealie server (self-hosted).  
+A native Swift app for iOS, iPadOS and macOS (designed for iPad), for managing local shopping lists and lists from your Mealie server (self-hosted).  
 
-Connect to multiple households, effectively allowing for family and personal lists.
+Connect to multiple households, effectively allowing for family, personal and private lists.
 
 [View in TestFlight](https://testflight.apple.com/join/d7h9AqV6)
 
