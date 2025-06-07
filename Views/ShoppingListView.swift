@@ -30,20 +30,20 @@ struct SectionHeaderView: View {
                         
                         Text(labelName.removingLabelNumberPrefix())
                         // .font(.headline)
-                        //.foregroundColor(.primary)
+                        .foregroundColor(.primary)
                         
                         Spacer()
                         HStack {
                             Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
                             //.font(.subheadline)
-                            //.foregroundColor(.accentColor)
+                            .foregroundColor(.primary)
                                 
                             
                             // Chevron
                             Image(systemName: "chevron.down")
                                 .rotationEffect(.degrees(isExpanded ? 0 : -90))
                                 .animation(.easeInOut, value: isExpanded)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.primary)
                         }
                         .padding(.horizontal, 0)
                     }
@@ -139,13 +139,7 @@ struct ShoppingListView: View {
     
     @ViewBuilder
     private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
-        let isExpandedBinding = Binding<Bool>(
-            get: { settings.expandedSections[labelName] ?? true },
-            set: { newValue in
-                settings.expandedSections[labelName] = newValue
-            }
-        )
-        
+        let isExpanded = settings.expandedSections[labelName] ?? true
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
 
@@ -153,117 +147,92 @@ struct ShoppingListView: View {
             ? uncheckedItems
             : uncheckedItems + checkedItems
 
-        if !itemsToShow.isEmpty {
-            Section(
-                header:
-                    SectionHeaderView(
-                        labelName: labelName,
-                        color: color,
-                        isExpanded: isExpandedBinding.wrappedValue,
-                        uncheckedCount: uncheckedItems.count,
-                        checkedCount: checkedItems.count,
-                        settings: settings
-                    )
-            ) {
-                if isExpandedBinding.wrappedValue {
-                    ForEach(itemsToShow) { item in
-                        ItemRowView(
-                            item: item,
-                            isLast: false,
-                            onTap: {
+        Section {
+            if isExpanded {
+                ForEach(itemsToShow) { item in
+                    ItemRowView(
+                        item: item,
+                        isLast: false,
+                        onTap: {
+                            Task {
+                                await viewModel.toggleChecked(for: item, didUpdate: { count in
+                                    await updateUncheckedCount(for: list.id, with: count)
+                                })
+                            }
+                        },
+                        onTextTap: {
+                            editingItem = item
+                            showingEditView = true
+                        },
+                        onIncrement: {
+                            Task {
+                                let newQty = (item.quantity ?? 1) + 1
+                                _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                            }
+                        },
+                        onDecrement: {
+                            if (item.quantity ?? 1) <= 1 {
+                                itemToDelete = item
+                            } else {
                                 Task {
-                                    await viewModel.toggleChecked(for: item, didUpdate: { count in
-                                        await updateUncheckedCount(for: list.id, with: count)
-                                    })
-                                }
-                            },
-                            onTextTap: {
-                                editingItem = item
-                                showingEditView = true
-                            },
-                            onIncrement: {
-                                Task {
-                                    let newQty = (item.quantity ?? 1) + 1
+                                    let newQty = max((item.quantity ?? 1) - 1, 1)
                                     _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
                                 }
-                            },
-                            onDecrement: {
-                                if (item.quantity ?? 1) <= 1 {
-                                    itemToDelete = item
-                                } else {
-                                    Task {
-                                        let newQty = max((item.quantity ?? 1) - 1, 1)
-                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                    }
-                                }
-                            },
-                            isReadOnly: list.isReadOnlyExample
-                        )
-                        .swipeActions(edge: .trailing) {
-                            if !list.isReadOnlyExample {
-                                Button(role: .none) {
-                                    if (item.quantity ?? 1) < 2 {
-                                        itemToDelete = item
-                                    } else {
-                                        Task {
-                                            let newQty = max((item.quantity ?? 1) - 1, 1)
-                                            _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                        }
-                                    }
-                                } label: {
-                                    Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
-                                }
-                                .tint((item.quantity ?? 1) < 2 ? .red : .orange)
                             }
-                        }
-                        .swipeActions(edge: .leading) {
-                            if !list.isReadOnlyExample {
-                                Button {
-                                    Task {
-                                        let newQty = (item.quantity ?? 1) + 1
-                                        _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                    }
-                                } label: {
-                                    Label("+", systemImage: "plus")
-                                }
-                                .tint(.green)
-                            }
-                        }
-                        .contextMenu {
-                            if !list.isReadOnlyExample {
-                                Button("Edit Item...") {
-                                    editingItem = item
-                                    showingEditView = true
-                                }
-                                
-                                Button(role: .none) {
-                                    itemToDelete = item
-                                } label: {
-                                    Label("Delete Item...", systemImage: "trash")
-                                }
-                                .tint(.red)
-                            } else {
-                                Text("Read-only example list").foregroundColor(.gray)
-                            }
-                        }
-                    }
+                        },
+                        isReadOnly: list.isReadOnlyExample
+                    )
                 }
             }
+        } header: {
+            SectionHeaderView(
+                labelName: labelName,
+                color: color,
+                isExpanded: isExpanded,
+                uncheckedCount: uncheckedItems.count,
+                checkedCount: checkedItems.count,
+                settings: settings
+            )
         }
     }
 
     var body: some View {
         
         List {
-            ForEach(viewModel.sortedLabelKeys, id: \.self) { labelName in
-                let items = viewModel.itemsGroupedByLabel[labelName] ?? []
-                let color = viewModel.colorForLabel(name: labelName)
-                renderSection(labelName: labelName, items: items, color: color)
-            }
-            
             if settings.showCompletedAtBottom {
+                // Only unchecked items per label
+                ForEach(
+                    viewModel.sortedLabelKeys.filter { labelName in
+                        guard labelName != "Completed" else { return false }
+                        let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                        if settings.showCompletedAtBottom {
+                            return items.contains(where: { !$0.checked }) // show only if there are unchecked items
+                        } else {
+                            return !items.isEmpty // show if there are any items
+                        }
+                    },
+                    id: \.self
+                ) { labelName in
+                    let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                    let color = viewModel.colorForLabel(name: labelName)
+                    renderSection(labelName: labelName, items: items, color: color)
+                }
+
+                // Checked items go in "Completed" section
                 let completedItems = viewModel.items.filter { $0.checked }
-                renderSection(labelName: "Completed", items: completedItems, color: .primary)
+                if !completedItems.isEmpty {
+                    renderSection(labelName: "Completed", items: completedItems, color: .primary)
+                }
+
+            } else {
+                // All items per label — skip "Completed" label key
+                ForEach(viewModel.sortedLabelKeys.filter { $0 != "Completed" }, id: \.self) { labelName in
+                    let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                    if !items.isEmpty {
+                        let color = viewModel.colorForLabel(name: labelName)
+                        renderSection(labelName: labelName, items: items, color: color)
+                    }
+                }
             }
         }
         .listStyle(.insetGrouped)

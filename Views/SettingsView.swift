@@ -32,7 +32,13 @@ struct SettingsView: View {
     @State private var editingToken: TokenInfo? = nil
     @State private var showAddTokenSheet = false
     
-    
+    @State private var tokenToDelete: TokenInfo? = nil
+    @State private var showingDeleteConfirmation = false
+
+    private func confirmDelete(_ token: TokenInfo) {
+        tokenToDelete = token
+        showingDeleteConfirmation = true
+    }
     
     var body: some View {
         NavigationView {
@@ -53,52 +59,67 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     if settings.tokens.isEmpty {
                         Text("No tokens added yet.")
                             .foregroundColor(.secondary)
                     } else {
                         ForEach(settings.tokens) { tokenInfo in
+                            let isLocal = tokenInfo.id == TokenInfo.localDeviceToken.id
+
                             HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(tokenInfo.identifier)
-                                        .font(.headline)
-                                    
-                                    // Optional metadata display
-                                    if let email = tokenInfo.email {
-                                        HStack {
-                                            Image(systemName: "envelope")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                            Text(email)
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
+                                Text(tokenInfo.identifier)
+                                    .font(.headline)
+                                    .foregroundStyle(isLocal ? .secondary : .primary)
 
                                 Spacer()
 
-                                Button(role: .destructive) {
-                                    withAnimation {
-                                        settings.removeToken(tokenInfo)
+                                if let email = tokenInfo.email {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "envelope")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        Text(email)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
                                     }
-                                } label: {
-                                    Image(systemName: "trash")
                                 }
-                                .buttonStyle(BorderlessButtonStyle())
                             }
                             .contentShape(Rectangle())
-                            .onTapGesture {
-                                editingToken = tokenInfo
-                                newTokenIdentifier = tokenInfo.identifier
-                                newTokenString = tokenInfo.token
-                                showAddTokenSheet = true
+                            .if(!isLocal) { view in
+                                view.onTapGesture {
+                                    editingToken = tokenInfo
+                                    newTokenIdentifier = tokenInfo.identifier
+                                    newTokenString = tokenInfo.token
+                                    showAddTokenSheet = true
+                                }
                             }
-
+                            .swipeActions {
+                                if !isLocal {
+                                    Button(role: .none) {
+                                        confirmDelete(tokenInfo)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    .tint(.red)
+                                }
+                                    
+                            }
+                            .contextMenu {
+                                if !isLocal {
+                                    Button(role: .none) {
+                                        confirmDelete(tokenInfo)
+                                    } label: {
+                                        Label("Delete...", systemImage: "trash")
+                                    }
+                                } else {
+                                    Text("This Device token cannot be deleted")
+                                        .foregroundColor(.gray)
+                                }
+                            }
                         }
                     }
-                    
+
                     Button(action: {
                         editingToken = nil
                         newTokenIdentifier = ""
@@ -174,7 +195,23 @@ struct SettingsView: View {
             .id(editingToken?.id)
         
         }
+        .alert("Delete Token?", isPresented: $showingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                if let token = tokenToDelete {
+                    settings.removeToken(token)
+                }
+                tokenToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                tokenToDelete = nil
+            }
+        } message: {
+            if let token = tokenToDelete {
+                Text("Are you sure you want to delete the token for “\(token.identifier)”?")
+            }
+        }
     }
+    
 }
 
 struct TokenEditView: View {

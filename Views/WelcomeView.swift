@@ -75,7 +75,7 @@ struct WelcomeView: View {
                             newName: updatedName,
                             extras: updatedExtras
                         )
-                        print("👋 WelcomeView task triggered")
+                        //print("👋 WelcomeView task triggered")
                         await viewModel.loadLists()
                         
                         
@@ -126,7 +126,9 @@ struct SidebarView: View {
     }
     
     var body: some View {
-        let userID = AppSettings.shared.tokens.first(where: { !$0.token.isEmpty })?.username ?? ""
+        let userID = AppSettings.shared.tokens.first(where: {
+            !($0.username ?? "").isEmpty
+        })?.username ?? ""
 
         let favourites = viewModel.lists.filter {
             $0.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false
@@ -228,11 +230,11 @@ struct SidebarView: View {
             Text("Are you sure you want to delete the list \"\(list.name)\"?")
         }
         .onAppear {
-            print("👀 AppSettings.shared.tokens:")
+            //print("👀 AppSettings.shared.tokens:")
             for token in AppSettings.shared.tokens {
-                print("🆔 \(token.identifier) – \(token.id)")
+                //print("🆔 \(token.identifier) – \(token.id)")
             }
-            print("🟩 Expected local token ID: \(TokenInfo.localDeviceToken.id)")
+            //print("🟩 Expected local token ID: \(TokenInfo.localDeviceToken.id)")
 
         }
     }
@@ -269,6 +271,12 @@ struct SidebarView: View {
             if !list.isReadOnlyExample {
                 Button(isFavourited ? "Unfavourite" : "Favourite") {
                     Task {
+                       // print("userID: \(userID)")
+                       // print("Before: \(list.extras?["favouritedBy"] ?? "")")
+                        //print("All tokens:")
+                        for token in AppSettings.shared.tokens {
+                           // print("  • \(token.identifier) (\(token.username ?? "no username")) — \(token.id)")
+                        }
                         await viewModel.toggleFavourite(for: list, userID: userID)
                     }
                 }

@@ -30,18 +30,18 @@ class WelcomeViewModel: ObservableObject {
 
         do {
             var fetchedLists = try await CombinedShoppingListProvider.shared.fetchShoppingLists()
-            print("✅ Loaded \(fetchedLists.count) total lists")
-            print("🟩 Local token ID: \(TokenInfo.localDeviceToken.id)")
+            //("✅ Loaded \(fetchedLists.count) total lists")
+            //print("🟩 Local token ID: \(TokenInfo.localDeviceToken.id)")
 
             for list in fetchedLists {
-                print("• \(list.name) – localTokenId: \(String(describing: list.localTokenId))")
+                //print("• \(list.name) – localTokenId: \(String(describing: list.localTokenId))")
             }
             for token in AppSettings.shared.tokens {
-                print("🆔 Token: \(token.identifier) – \(token.id)")
+              //  print("🆔 Token: \(token.identifier) – \(token.id)")
             }
 
             if fetchedLists.isEmpty {
-                print("📭 No lists found, showing example list.")
+              //  print("📭 No lists found, showing example list.")
                 fetchedLists = [exampleList]
             }
 
