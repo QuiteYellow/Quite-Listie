@@ -169,6 +169,11 @@ struct SettingsView: View {
                             if let index = settings.tokens.firstIndex(where: { $0.id == editingToken.id }) {
                                 settings.tokens[index].token = newTokenString
                                 settings.tokens[index].identifier = newTokenIdentifier
+                                
+                                let updatedToken = settings.tokens[index]
+                                Task {
+                                    await ShoppingListAPI.shared.enrichTokensWithUserInfo(tokens: [updatedToken])
+                                }
                             }
                             showAddTokenSheet = false
                         },
@@ -184,6 +189,11 @@ struct SettingsView: View {
                         onSave: {
                             let newToken = TokenInfo(token: newTokenString, identifier: newTokenIdentifier)
                             settings.addToken(newToken)
+                            
+                            Task {
+                                await ShoppingListAPI.shared.enrichTokensWithUserInfo(tokens: [newToken])
+                            }
+                            
                             showAddTokenSheet = false
                         },
                         onCancel: {
