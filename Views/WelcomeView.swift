@@ -11,6 +11,9 @@ struct WelcomeView: View {
     @EnvironmentObject var networkMonitor: NetworkMonitor
     
     
+    @State private var listRefreshID = UUID()
+    
+    
     private var selectedListIsReadOnly: Bool {
         if let id = selectedListID,
            let list = viewModel.lists.first(where: { $0.id == id }) {
