@@ -13,41 +13,41 @@ struct SectionHeaderView: View {
     let isExpanded: Bool
     let uncheckedCount: Int
     let checkedCount: Int
-
+    
     @ObservedObject var settings: AppSettings
-
+    
     var body: some View {
         Button(action: {
             withAnimation(.easeInOut) {
                 settings.toggleSection(labelName)
             }
         }) {
-
-
-                    HStack {
-                        Image(systemName: "tag.fill")
-                            .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
-                        
-                        Text(labelName.removingLabelNumberPrefix())
-                        // .font(.headline)
+            
+            
+            HStack {
+                Image(systemName: "tag.fill")
+                    .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
+                
+                Text(labelName.removingLabelNumberPrefix())
+                // .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                HStack {
+                    Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
+                    //.font(.subheadline)
                         .foregroundColor(.primary)
-                        
-                        Spacer()
-                        HStack {
-                            Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
-                            //.font(.subheadline)
-                            .foregroundColor(.primary)
-                                
-                            
-                            // Chevron
-                            Image(systemName: "chevron.down")
-                                .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                                .animation(.easeInOut, value: isExpanded)
-                                .foregroundColor(.primary)
-                        }
-                        .padding(.horizontal, 0)
-                    }
-
+                    
+                    
+                    // Chevron
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                        .animation(.easeInOut, value: isExpanded)
+                        .foregroundColor(.primary)
+                }
+                .padding(.horizontal, 0)
+            }
+            
             .background(Color(.systemGroupedBackground))
             //.background(Capsule().fill(.red))
         }
@@ -65,7 +65,7 @@ struct ItemRowView: View {
     let onIncrement: (() -> Void)?
     let onDecrement: (() -> Void)?
     let isReadOnly: Bool
-
+    
     var body: some View {
         HStack(spacing: 12) {
             if item.quantity ?? 0 > 1 {
@@ -75,11 +75,11 @@ struct ItemRowView: View {
                                    color: (item.checked ? .gray : .primary))
                     .foregroundColor(
                         (item.quantity ?? 0) < 2 ? Color.clear :
-                        (item.checked ? .gray : .primary)
+                            (item.checked ? .gray : .primary)
                     )
                     .frame(minWidth: 12, alignment: .leading)
             }
-
+            
             // tap gesture for note text
             Text(item.note)
                 .font(.subheadline)
@@ -88,9 +88,9 @@ struct ItemRowView: View {
                 .onTapGesture {
                     onTextTap()
                 }
-
+            
             Spacer()
-
+            
             // Checkbox tap area
             if !isReadOnly {
                 Button(action: {
@@ -112,19 +112,20 @@ struct ItemRowView: View {
 
 struct ShoppingListView: View {
     @ObservedObject var welcomeViewModel: WelcomeViewModel
-
+    
     let list: ShoppingListSummary
-
+    var onListChanged: (() async -> Void)? = nil
+    
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
     @ObservedObject private var settings = AppSettings.shared
     @EnvironmentObject var networkMonitor: NetworkMonitor
-
+    
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
     
-
+    
     init(list: ShoppingListSummary, welcomeViewModel: WelcomeViewModel) {
         self.list = list
         self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: list))
@@ -142,11 +143,11 @@ struct ShoppingListView: View {
         let isExpanded = settings.expandedSections[labelName] ?? true
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
-
+        
         let itemsToShow = settings.showCompletedAtBottom && labelName != "Completed"
-            ? uncheckedItems
-            : uncheckedItems + checkedItems
-
+        ? uncheckedItems
+        : uncheckedItems + checkedItems
+        
         Section {
             if isExpanded {
                 ForEach(itemsToShow) { item in
@@ -157,6 +158,9 @@ struct ShoppingListView: View {
                             Task {
                                 await viewModel.toggleChecked(for: item, didUpdate: { count in
                                     await updateUncheckedCount(for: list.id, with: count)
+                                    if list.isLocal {
+                                        await onListChanged?()
+                                    }
                                 })
                             }
                         },
@@ -168,6 +172,9 @@ struct ShoppingListView: View {
                             Task {
                                 let newQty = (item.quantity ?? 1) + 1
                                 _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                if list.isLocal {
+                                    await onListChanged?()
+                                }
                             }
                         },
                         onDecrement: {
@@ -177,11 +184,52 @@ struct ShoppingListView: View {
                                 Task {
                                     let newQty = max((item.quantity ?? 1) - 1, 1)
                                     _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    if list.isLocal {
+                                        await onListChanged?()
+                                    }
                                 }
                             }
                         },
                         isReadOnly: list.isReadOnlyExample
                     )
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .none) {
+                            if (item.quantity ?? 1) < 2 {
+                                itemToDelete = item
+                            } else {
+                                Task {
+                                    let newQty = max((item.quantity ?? 1) - 1, 1)
+                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                }
+                            }
+                        } label: {
+                            Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                        }
+                        .tint((item.quantity ?? 1) < 2 ? .red : .orange)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            Task {
+                                let newQty = (item.quantity ?? 1) + 1
+                                _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                            }
+                        } label: {
+                            Label("+", systemImage: "plus")
+                        }
+                        .tint(.green)
+                    }
+                    .contextMenu {
+                        Button("Edit Item...") {
+                            editingItem = item
+                            showingEditView = true
+                        }
+                        Button(role: .none) {
+                            itemToDelete = item
+                        } label: {
+                            Label("Delete Item...", systemImage: "trash")
+                        }
+                        .tint(.red)
+                    }
                 }
             }
         } header: {
@@ -195,7 +243,7 @@ struct ShoppingListView: View {
             )
         }
     }
-
+    
     var body: some View {
         
         List {
@@ -217,13 +265,13 @@ struct ShoppingListView: View {
                     let color = viewModel.colorForLabel(name: labelName)
                     renderSection(labelName: labelName, items: items, color: color)
                 }
-
+                
                 // Checked items go in "Completed" section
                 let completedItems = viewModel.items.filter { $0.checked }
                 if !completedItems.isEmpty {
                     renderSection(labelName: "Completed", items: completedItems, color: .primary)
                 }
-
+                
             } else {
                 // All items per label — skip "Completed" label key
                 ForEach(viewModel.sortedLabelKeys.filter { $0 != "Completed" }, id: \.self) { labelName in
@@ -238,9 +286,9 @@ struct ShoppingListView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
-
+        
         .toolbar {
-
+            
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 
                 if !networkMonitor.isConnected {
@@ -259,7 +307,7 @@ struct ShoppingListView: View {
                 }.disabled(list.isReadOnlyExample)
             }
         }
- 
+        
         .refreshable {
             await viewModel.loadItems()
             settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
@@ -270,9 +318,23 @@ struct ShoppingListView: View {
         }
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(list: list, viewModel: viewModel)
+                .onDisappear {
+                    if list.isLocal {
+                        Task {
+                            await onListChanged?()
+                        }
+                    }
+                }
         }
         .fullScreenCover(item: $editingItem) { item in
             EditItemView(viewModel: viewModel, item: item, list: list)
+                .onDisappear {
+                    if list.isLocal {
+                        Task {
+                            await onListChanged?()
+                        }
+                    }
+                }
         }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },
@@ -283,6 +345,9 @@ struct ShoppingListView: View {
                     Task {
                         await viewModel.deleteItem(item)
                         await MainActor.run { itemToDelete = nil }
+                        if list.isLocal {
+                            await onListChanged?()
+                        }
                     }
                 }
             }
