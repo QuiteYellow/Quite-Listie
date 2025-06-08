@@ -1,9 +1,3 @@
-//
-//  CombinedShoppingListProvider.swift
-//  ListsForMealie
-//
-//  Created by Jack Weekes on 06/06/2025.
-//
 import Foundation
 
 class CombinedShoppingListProvider: ShoppingListProvider {
@@ -14,20 +8,22 @@ class CombinedShoppingListProvider: ShoppingListProvider {
 
     func fetchShoppingLists() async throws -> [ShoppingListSummary] {
         var remoteLists: [ShoppingListSummary] = []
-        do {
-            remoteLists = try await api.fetchShoppingLists()
-        } catch {
-            print("⚠️ Failed to fetch remote lists: \(error.localizedDescription)")
+
+        // ✅ Only fetch remote if a valid server URL is configured
+        if AppSettings.shared.validatedServerURL != nil {
+            do {
+                remoteLists = try await api.fetchShoppingLists()
+            } catch {
+                print("⚠️ Failed to fetch remote lists: \(error.localizedDescription)")
+            }
+        } else {
+            print("ℹ️ No valid API URL configured — skipping remote list fetch.")
         }
 
         let localLists = (try? await local.fetchShoppingLists()) ?? []
         let allLists = remoteLists + localLists
 
-        if allLists.isEmpty {
-            return [ExampleData.welcomeList]
-        }
-
-        return allLists
+        return allLists.isEmpty ? [ExampleData.welcomeList] : allLists
     }
 
     func fetchItems(for listId: String) async throws -> [ShoppingItem] {
@@ -89,13 +85,11 @@ class CombinedShoppingListProvider: ShoppingListProvider {
             try await api.updateShoppingListName(list: list, newName: name, items: items, extras: extras)
         }
     }
-    
+
     func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel] {
         if list.isLocal {
-           // print("📦 [Labels] Fetching LOCAL ONLY for: \(list.name) (\(list.id))")
             return try await local.fetchLabels(for: list)
         } else {
-           // print("📦 [Labels] Fetching REMOTE ONLY for: \(list.name) (\(list.id))")
             do {
                 return try await api.fetchShoppingLabels()
             } catch {
@@ -104,40 +98,43 @@ class CombinedShoppingListProvider: ShoppingListProvider {
             }
         }
     }
-    
+
     func fetchAllLabels() async throws -> [ShoppingLabel] {
         let remoteLabels: [ShoppingLabel]
-        do {
-            remoteLabels = try await ShoppingListAPI.shared.fetchShoppingLabels()
-        } catch {
-            print("⚠️ Failed to fetch remote labels: \(error.localizedDescription)")
+        if AppSettings.shared.validatedServerURL != nil {
+            do {
+                remoteLabels = try await api.fetchShoppingLabels()
+            } catch {
+                print("⚠️ Failed to fetch remote labels: \(error.localizedDescription)")
+                remoteLabels = []
+            }
+        } else {
             remoteLabels = []
         }
 
-        let localLabels = try await LocalShoppingListStore.shared.fetchAllLocalLabels()
+        let localLabels = try await local.fetchAllLocalLabels()
         return remoteLabels + localLabels
     }
-    
+
     func deleteLabel(_ label: ShoppingLabel) async throws {
         if label.isLocal {
-            try await LocalShoppingListStore.shared.deleteLabel(label)
+            try await local.deleteLabel(label)
         } else {
             guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else {
                 throw NSError(domain: "MissingToken", code: 0, userInfo: nil)
             }
-            try await ShoppingListAPI.shared.deleteLabel(label: label, tokenInfo: tokenInfo)
+            try await api.deleteLabel(label: label, tokenInfo: tokenInfo)
         }
     }
-    
+
     func updateLabel(_ label: ShoppingLabel) async throws {
         if label.isLocal {
-            try await LocalShoppingListStore.shared.updateLabel(label)
+            try await local.updateLabel(label)
         } else {
             guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else {
                 throw NSError(domain: "MissingTokenInfo", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing tokenInfo for label: \(label.name)"])
             }
-            try await ShoppingListAPI.shared.updateLabel(label: label, tokenInfo: tokenInfo)
+            try await api.updateLabel(label: label, tokenInfo: tokenInfo)
         }
     }
 }
-

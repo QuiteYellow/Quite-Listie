@@ -26,6 +26,9 @@ struct SettingsView: View {
     @StateObject private var settings = AppSettings.shared
     @Environment(\.dismiss) private var dismiss
     
+    @State private var isServerReachable: Bool? = nil
+    @State private var reachabilityTask: Task<Void, Never>? = nil
+    
     // Local state for adding/editing tokens
     @State private var newTokenString = ""
     @State private var newTokenIdentifier = ""
@@ -40,15 +43,59 @@ struct SettingsView: View {
         showingDeleteConfirmation = true
     }
     
+    func checkReachability() {
+        reachabilityTask?.cancel()
+        reachabilityTask = Task {
+            guard let url = AppSettings.shared.validatedServerURL else {
+                DispatchQueue.main.async {
+                    isServerReachable = false
+                    AppSettings.shared.lastReachabilityError = "Invalid server URL"
+                }
+                return
+            }
+
+            let reachable = await ShoppingListAPI.shared.isMealieServerReachable(at: url)
+            
+            if !Task.isCancelled {
+                withAnimation {
+                    isServerReachable = reachable
+                }
+            }
+        }
+    }
+    
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Server URL")) {
-                    TextField("Server URL", text: $settings.serverURLString)
-                        .disableAutocorrection(true)
-                        .autocapitalization(.none)
-                        .keyboardType(.URL)
+                Section(
+                    header: Text("Server URL"),
+                    footer: settings.lastReachabilityError.map { error in
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundColor(.red)
+                    }
+                ) {
+                    HStack {
+                        TextField("Server URL (example: https∶//demo.mealie.io)", text: $settings.serverURLString)
+                            .disableAutocorrection(true)
+                            .autocapitalization(.none)
+                            .keyboardType(.URL)
+
+                        if let reachable = isServerReachable {
+                            Image(systemName: reachable ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(reachable ? .green : .red)
+                                .transition(.scale.combined(with: .opacity))
+                                .help(reachable ? "Server reachable" : "Server unreachable")
+                        } else {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .transition(.opacity)
+                                .help("Checking…")
+                        }
+                    }
                 }
+                
+                
                 
                 Section(header: Text("API Tokens")) {
                     if settings.isEnrichingTokens {
@@ -130,6 +177,7 @@ struct SettingsView: View {
                     }
                 }
                 
+                
                 Section(header: Text("Cloudflare Access")) {
                     Toggle("Enable Cloudflare Access", isOn: $settings.cloudflareAccessEnabled)
 
@@ -149,6 +197,13 @@ struct SettingsView: View {
                             .textContentType(.password)
                     }
                 }
+            }
+            .onChange(of: settings.serverURLString) { checkReachability() }
+            .onChange(of: settings.cfAccessClientId) { checkReachability() }
+            .onChange(of: settings.cfAccessClientSecret) { checkReachability() }
+            .onChange(of: settings.cloudflareAccessEnabled) { checkReachability() }
+            .task {
+                checkReachability()
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

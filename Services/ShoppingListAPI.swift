@@ -4,12 +4,82 @@ class ShoppingListAPI {
     static let shared = ShoppingListAPI()
     
     private var baseURL: URL? {
-        guard let url = URL(string: AppSettings.shared.serverURLString) else { return nil }
+        guard let url = AppSettings.shared.validatedServerURL else {
+            print("❌ baseURL is nil because validatedServerURL is nil")
+            return nil
+        }
         return url.appendingPathComponent("api")
     }
     
     private var tokens: [TokenInfo] {
         AppSettings.shared.tokens.filter { !$0.token.isEmpty && !$0.isLocal }
+    }
+    
+    func isMealieServerReachable(at baseURL: URL) async -> Bool {
+        let fullURL = baseURL.appendingPathComponent("api/app/about")
+        //print("🌐 Checking reachability for: \(fullURL)")
+
+        var request = URLRequest(url: fullURL)
+        request.timeoutInterval = 5
+
+        // ✅ Add Cloudflare headers if configured
+        let settings = AppSettings.shared
+        if settings.cloudflareAccessEnabled {
+            if !settings.cfAccessClientId.isEmpty {
+                request.setValue(settings.cfAccessClientId, forHTTPHeaderField: "CF-Access-Client-Id")
+            }
+            if !settings.cfAccessClientSecret.isEmpty {
+                request.setValue(settings.cfAccessClientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
+            }
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Not an HTTP response")
+                return false
+            }
+
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "unknown"
+            //print("📡 Content-Type: \(contentType)")
+            //print("🔍 Status Code: \(httpResponse.statusCode)")
+
+            // Detect Cloudflare Access fallback page
+            if contentType.contains("text/html") {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                if body.contains("Cloudflare Access") || body.contains("cloudflare") {
+                    //print("⚠️ Cloudflare Access page detected — check token settings")
+                    DispatchQueue.main.async {
+                        AppSettings.shared.lastReachabilityError = "Cloudflare Access is required for this server."
+                    }
+                    return false
+                }
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                print("❌ Unexpected status code: \(httpResponse.statusCode)")
+                return false
+            }
+
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let version = json["version"] as? String {
+                //print("✅ Mealie version: \(version)")
+                DispatchQueue.main.async {
+                    AppSettings.shared.lastReachabilityError = nil
+                }
+                return true
+            }
+
+            print("❌ 'version' not found in JSON")
+            return false
+
+        } catch {
+            print("❌ Network error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                AppSettings.shared.lastReachabilityError = error.localizedDescription
+            }
+            return false
+        }
     }
     
     // MARK: - Create authorized request with token info

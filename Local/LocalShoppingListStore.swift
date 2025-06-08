@@ -112,6 +112,10 @@ actor LocalShoppingListStore: ShoppingListProvider {
         if let index = lists.firstIndex(where: { $0.id == list.id }) {
             lists[index].name = name
             lists[index].extras = extras
+            
+            self.items.removeAll { $0.shoppingListId == list.id }
+            self.items.append(contentsOf: items)
+            
             await save()
         }
     }

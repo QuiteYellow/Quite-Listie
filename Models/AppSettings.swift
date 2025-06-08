@@ -66,6 +66,8 @@ class AppSettings: ObservableObject {
     private let tokensKey = "tokensKey"
     
     static let shared = AppSettings()
+    
+    @Published var lastReachabilityError: String? = nil
         
     private init() {
         self.showCompletedAtBottom = UserDefaults.standard.bool(forKey: "showCompletedAtBottom")
@@ -197,5 +199,20 @@ extension TokenInfo {
     
     var isLocal: Bool {
         return id == TokenInfo.localDeviceToken.id
+    }
+}
+
+extension AppSettings {
+    var validatedServerURL: URL? {
+        let trimmed = serverURLString
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/")) // remove trailing slashes
+
+        // Auto-add https:// if missing
+        let fixed = trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://")
+            ? trimmed
+            : "https://\(trimmed)"
+
+        return URL(string: fixed)
     }
 }

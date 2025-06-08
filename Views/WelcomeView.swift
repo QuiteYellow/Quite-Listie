@@ -107,104 +107,88 @@ struct WelcomeView: View {
 struct SidebarView: View {
     @ObservedObject var viewModel: WelcomeViewModel
     @Binding var selectedListID: String?
-    
+
     @EnvironmentObject var settings: AppSettings
-    
+
     @State private var listToDelete: ShoppingListSummary? = nil
     @State private var showingDeleteConfirmation = false
-    
+
     @State private var showFavouritesWarning: Bool = !UserDefaults.standard.bool(forKey: "hideFavouritesWarning")
-    
+
     var groupedLists: [String: [ShoppingListSummary]] {
         Dictionary(grouping: viewModel.lists) { list in
             if let tokenId = list.localTokenId,
                let token = AppSettings.shared.tokens.first(where: { $0.id == tokenId }) {
                 return token.identifier
             } else if list.isLocal {
-                return TokenInfo.localDeviceToken.identifier // "This Device"
+                return TokenInfo.localDeviceToken.identifier
             } else {
                 return "Unknown"
             }
         }
     }
-    
-    var body: some View {
-        let userID = AppSettings.shared.tokens.first(where: {
-            !($0.username ?? "").isEmpty
-        })?.username ?? ""
 
-        let favourites = viewModel.lists.filter {
-            $0.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false
+    var body: some View {
+        let favourites = viewModel.lists.filter { list in
+            let userIDForList = list.isLocal
+                ? TokenInfo.localDeviceToken.identifier
+                : AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.username ?? "unknown-user"
+
+            return list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userIDForList) ?? false
         }
 
-        let nonFavourites = viewModel.lists.filter {
-            !($0.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false)
+        let nonFavourites = viewModel.lists.filter { list in
+            let userIDForList = list.isLocal
+                ? TokenInfo.localDeviceToken.identifier
+                : AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.username ?? "unknown-user"
+
+            return !(list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userIDForList) ?? false)
         }
 
         let groupedNonFavourites = Dictionary(grouping: nonFavourites) { list in
             AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
         }
-        if !favourites.isEmpty {
-            if showFavouritesWarning {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Favourites are visible to admins and other users in your household", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundColor(.yellow)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-                    HStack{
-                        Spacer()
-                        Button("Don't show again") {
-                            UserDefaults.standard.set(true, forKey: "hideFavouritesWarning")
-                            withAnimation {
-                                showFavouritesWarning = false
-                            }
-                        }
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        Spacer()
-                    }
-                    
-                }
-                .padding(8)
-                .background(.yellow.opacity(0.05))
-                .cornerRadius(8)
-                
 
+        if !favourites.isEmpty && showFavouritesWarning {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Favourites are visible to admins and other users in your household", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(.yellow)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+
+                HStack {
+                    Spacer()
+                    Button("Don't show again") {
+                        UserDefaults.standard.set(true, forKey: "hideFavouritesWarning")
+                        withAnimation {
+                            showFavouritesWarning = false
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    Spacer()
+                }
             }
-                
+            .padding(8)
+            .background(.yellow.opacity(0.05))
+            .cornerRadius(8)
         }
+
         List(selection: $selectedListID) {
-            // 🔶 Favourites Section
             if !favourites.isEmpty {
-                Section(
-                    header:
-                        Label {
-                            Text("Favourites")
-                        } icon: {
-                            Image(systemName: "star.fill")
-                                .foregroundColor(.yellow)
-                        }
-                ) {
+                Section(header: Label("Favourites", systemImage: "star.fill").foregroundColor(.yellow)) {
                     ForEach(favourites, id: \.id) { list in
-                        listRow(for: list, userID: userID, showTokenCaption: true)
+                        listRow(for: list, showTokenCaption: true)
                     }
                 }
             }
 
-            // 🔷 Grouped Lists Section
             ForEach(groupedNonFavourites.sorted(by: { $0.key < $1.key }), id: \.key) { identifier, lists in
-                Section(header:
-                            Label {
-                                Text(identifier)
-                            } icon: {
-                                Image(systemName: "person.2.fill")
-                                    //.foregroundColor(.accentColor)
-                            }
-                ) {
+                Section(header: Label(identifier, systemImage: "person.2.fill")) {
                     ForEach(lists, id: \.id) { list in
-                        listRow(for: list, userID: userID)
+                        listRow(for: list)
                     }
                 }
             }
@@ -219,7 +203,6 @@ struct SidebarView: View {
                     do {
                         try await CombinedShoppingListProvider.shared.deleteList(list)
                         await viewModel.loadLists()
-
                         if selectedListID == list.id {
                             selectedListID = nil
                         }
@@ -237,19 +220,15 @@ struct SidebarView: View {
                 await viewModel.loadLists()
             }
         }
-        .onAppear {
-            //print("👀 AppSettings.shared.tokens:")
-            for token in AppSettings.shared.tokens {
-                //print("🆔 \(token.identifier) – \(token.id)")
-            }
-            //print("🟩 Expected local token ID: \(TokenInfo.localDeviceToken.id)")
-
-        }
     }
-    
+
     @ViewBuilder
-    private func listRow(for list: ShoppingListSummary, userID: String, showTokenCaption: Bool = false) -> some View {
-        let isFavourited = list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userID) ?? false
+    private func listRow(for list: ShoppingListSummary, showTokenCaption: Bool = false) -> some View {
+        let userIDForList = list.isLocal
+            ? TokenInfo.localDeviceToken.identifier
+            : AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.username ?? "unknown-user"
+
+        let isFavourited = list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userIDForList) ?? false
         let tokenIdentifier = AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
 
         HStack {
@@ -279,13 +258,7 @@ struct SidebarView: View {
             if !list.isReadOnlyExample {
                 Button(isFavourited ? "Unfavourite" : "Favourite") {
                     Task {
-                       // print("userID: \(userID)")
-                       // print("Before: \(list.extras?["favouritedBy"] ?? "")")
-                        //print("All tokens:")
-                        for token in AppSettings.shared.tokens {
-                           // print("  • \(token.identifier) (\(token.username ?? "no username")) — \(token.id)")
-                        }
-                        await viewModel.toggleFavourite(for: list, userID: userID)
+                        await viewModel.toggleFavourite(for: list)
                     }
                 }
 
@@ -315,7 +288,6 @@ struct SidebarView: View {
                 .tint(.accentColor)
             }
         }
-
         .swipeActions(edge: .trailing) {
             if !list.isReadOnlyExample {
                 Button(role: .none) {
