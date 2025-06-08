@@ -4,7 +4,7 @@
 //
 //  Created by Jack Weekes on 06/06/2025.
 //
-
+import Foundation
 
 class CombinedShoppingListProvider: ShoppingListProvider {
     static let shared = CombinedShoppingListProvider()
@@ -116,6 +116,28 @@ class CombinedShoppingListProvider: ShoppingListProvider {
 
         let localLabels = try await LocalShoppingListStore.shared.fetchAllLocalLabels()
         return remoteLabels + localLabels
+    }
+    
+    func deleteLabel(_ label: ShoppingLabel) async throws {
+        if label.isLocal {
+            try await LocalShoppingListStore.shared.deleteLabel(label)
+        } else {
+            guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else {
+                throw NSError(domain: "MissingToken", code: 0, userInfo: nil)
+            }
+            try await ShoppingListAPI.shared.deleteLabel(label: label, tokenInfo: tokenInfo)
+        }
+    }
+    
+    func updateLabel(_ label: ShoppingLabel) async throws {
+        if label.isLocal {
+            try await LocalShoppingListStore.shared.updateLabel(label)
+        } else {
+            guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else {
+                throw NSError(domain: "MissingTokenInfo", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing tokenInfo for label: \(label.name)"])
+            }
+            try await ShoppingListAPI.shared.updateLabel(label: label, tokenInfo: tokenInfo)
+        }
     }
 }
 
