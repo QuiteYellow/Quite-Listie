@@ -31,7 +31,6 @@ class LabelManagerViewModel: ObservableObject {
     }
 
     func updateLabel(_ label: ShoppingLabel) async {
-        guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else { return }
        // print("🔄 Updating label:")
        // print("ID: \(label.id)")
        // print("Name: \(label.name)")
@@ -39,7 +38,7 @@ class LabelManagerViewModel: ObservableObject {
        // print("Group ID: \(label.groupId ?? "nil")")
       //  print("Token ID: \(tokenInfo.id)")
         do {
-            try await ShoppingListAPI.shared.updateLabel(label: label, tokenInfo: tokenInfo)
+            try await CombinedShoppingListProvider.shared.updateLabel(label)
             await loadLabels()
         } catch {
             print("❌ Failed to update label: \(error)")
@@ -47,12 +46,11 @@ class LabelManagerViewModel: ObservableObject {
     }
 
     func deleteLabel(_ label: ShoppingLabel) async {
-        guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == label.localTokenId }) else { return }
         do {
-            try await ShoppingListAPI.shared.deleteLabel(label: label, tokenInfo: tokenInfo)
+            try await CombinedShoppingListProvider.shared.deleteLabel(label)
             await loadLabels()
         } catch {
-            print("❌ Failed to delete label: \(error)")
+            print("❌ Could not delete label: \(error)")
         }
     }
 }

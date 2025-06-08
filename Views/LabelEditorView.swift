@@ -29,13 +29,20 @@ struct LabelEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Storage Location") {
+                Section(
+                    header: Text("Storage Location"),
+                    footer: viewModel.isEditing
+                        ? Text("Labels cannot be moved between local and remote.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                        : nil
+                ) {
                     Picker("Storage", selection: $selectedStorage) {
                         Text(LabelStorageType.remote.rawValue).tag(LabelStorageType.remote)
                         Text(LabelStorageType.local.rawValue).tag(LabelStorageType.local)
                     }
                     .pickerStyle(.segmented)
-                    .disabled(shouldForceLocal)
+                    .disabled(viewModel.isEditing || shouldForceLocal)
                 }
 
                 Section("Name") {
@@ -108,7 +115,9 @@ struct LabelEditorView: View {
                 }
             }
             .onAppear {
-                if shouldForceLocal {
+                if viewModel.isEditing, viewModel.label?.isLocal == true {
+                    selectedStorage = .local
+                } else if shouldForceLocal {
                     selectedStorage = .local
                 } else if selectedStorage == .remote && viewModel.groupId == nil {
                     viewModel.groupId = availableGroups.first?.id

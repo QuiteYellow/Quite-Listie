@@ -1,7 +1,7 @@
 import Network
 import Combine
 
-class NetworkMonitor: ObservableObject {
+class NetworkMonitor: ObservableObject {    
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "NetworkMonitor")
 

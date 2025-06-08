@@ -75,6 +75,20 @@ struct LabelManagerView: View {
             Image(systemName: "tag.fill")
                 .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
         }
+        .contextMenu {
+                Button {
+                    activeSheet = .edit(label)
+                } label: {
+                    Label("Edit...", systemImage: "pencil")
+                }
+
+                Button(role: .destructive) {
+                    selectedLabel = label
+                    showingDeleteConfirmation = true
+                } label: {
+                    Label("Delete...", systemImage: "trash")
+                }
+            }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 selectedLabel = label
@@ -118,14 +132,23 @@ struct LabelManagerView: View {
             },
             onSaveLocal: { name, colorHex, tokenId in
                 Task {
-                    let label = ShoppingLabel(
-                        id: "local-\(UUID().uuidString)",
-                        name: name,
-                        color: colorHex,
-                        groupId: "local-group",
-                        localTokenId: TokenInfo.localDeviceToken.id
-                    )
-                    try? await LocalShoppingListStore.shared.saveLabel(label)
+                    if let label {
+                        var updated = label
+                        updated.name = name
+                        updated.color = colorHex
+                        updated.localTokenId = tokenId
+                        try? await LocalShoppingListStore.shared.updateLabel(updated) // ← use `updateLabel`!
+                    } else {
+                        let newLabel = ShoppingLabel(
+                            id: "local-\(UUID().uuidString)",
+                            name: name,
+                            color: colorHex,
+                            groupId: "local-group",
+                            localTokenId: tokenId
+                        )
+                        try? await LocalShoppingListStore.shared.saveLabel(newLabel)
+                    }
+
                     await viewModel.loadLabels()
                     activeSheet = nil
                 }
@@ -189,7 +212,7 @@ struct LabelManagerView: View {
                 }
             }
             .alert("Delete Label?", isPresented: $showingDeleteConfirmation, presenting: selectedLabel) { label in
-                Button("Delete", role: .destructive) {
+                Button("Delete", role: .none) {
                     Task {
                         await viewModel.deleteLabel(label)
                         await viewModel.loadLabels()
