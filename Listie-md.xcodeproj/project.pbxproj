@@ -44,9 +44,9 @@
 			path = Local;
 			sourceTree = "<group>";
 		};
-		CBEFA7AD2DE31318002F4B13 /* ListsForMealie */ = {
+		CB8EED9B2DF5E5BA0057124E /* Listie-md */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ListsForMealie;
+			path = "Listie-md";
 			sourceTree = "<group>";
 		};
 		CBEFA7D62DE313A5002F4B13 /* Models */ = {
@@ -101,6 +101,7 @@
 		CB3015E22DE9D43700CCFCC8 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				CB8EED9B2DF5E5BA0057124E /* Listie-md */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -115,7 +116,6 @@
 				CBEFA7D82DE313B7002F4B13 /* ViewModels */,
 				CBEFA7D72DE313B0002F4B13 /* Services */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
-				CBEFA7AD2DE31318002F4B13 /* ListsForMealie */,
 				CB3015E22DE9D43700CCFCC8 /* Frameworks */,
 				CBEFA7AC2DE31318002F4B13 /* Products */,
 			);
@@ -148,7 +148,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				CB0685102DF345D1006415E1 /* Local */,
-				CBEFA7AD2DE31318002F4B13 /* ListsForMealie */,
+				CB8EED9B2DF5E5BA0057124E /* Listie-md */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
 				CBEFA7D72DE313B0002F4B13 /* Services */,
 				CBEFA7D82DE313B7002F4B13 /* ViewModels */,
@@ -226,7 +226,7 @@
 					};
 				};
 			};
-			buildConfigurationList = CBEFA7A62DE31318002F4B13 /* Build configuration list for PBXProject "ListsForMealie" */;
+			buildConfigurationList = CBEFA7A62DE31318002F4B13 /* Build configuration list for PBXProject "Listie-md" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -436,7 +436,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = ListsForMealie/ListsForMealie.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
@@ -469,6 +470,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.listiemd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -485,7 +487,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = ListsForMealie/ListsForMealie.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
@@ -518,6 +521,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.listiemd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -622,7 +626,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		CBEFA7A62DE31318002F4B13 /* Build configuration list for PBXProject "ListsForMealie" */ = {
+		CBEFA7A62DE31318002F4B13 /* Build configuration list for PBXProject "Listie-md" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CBEFA7CB2DE3131A002F4B13 /* Debug */,
