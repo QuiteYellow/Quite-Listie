@@ -97,17 +97,29 @@ class WelcomeViewModel: ObservableObject {
         }
     }
 
-    func toggleFavourite(for list: ShoppingListSummary, userID: String) async {
+    func toggleFavourite(for list: ShoppingListSummary) async {
+        let userIDForList: String = {
+            if list.isLocal {
+                return TokenInfo.localDeviceToken.identifier
+            }
+            if let tokenId = list.localTokenId,
+               let token = AppSettings.shared.tokens.first(where: { $0.id == tokenId }),
+               let username = token.username {
+                return username
+            }
+            return "unknown-user"
+        }()
+
         var favourites = list.extras?["favouritedBy"]?
             .components(separatedBy: ",")
             .filter { !$0.isEmpty } ?? []
 
-        let isFavourited = favourites.contains(userID)
+        let isFavourited = favourites.contains(userIDForList)
 
         if isFavourited {
-            favourites.removeAll { $0 == userID }
+            favourites.removeAll { $0 == userIDForList }
         } else {
-            favourites.append(userID)
+            favourites.append(userIDForList)
         }
 
         let updatedExtras = list.updatedExtras(with: [

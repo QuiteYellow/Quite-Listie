@@ -15,9 +15,13 @@ struct ListSettingsView: View {
     
     @State private var isFavourited: Bool = false
     var userID: String {
-        AppSettings.shared.tokens
+        if list.isLocal {
+            return TokenInfo.localDeviceToken.identifier
+        }
+
+        return AppSettings.shared.tokens
             .first(where: { $0.id == list.localTokenId && !($0.username ?? "").isEmpty })?
-            .username ?? "local"
+            .username ?? "unknown-user"
     }
     
     enum ListStorageType: String {
@@ -119,6 +123,7 @@ struct ListSettingsView: View {
                         extras["favouritedBy"] = favourites.joined(separator: ",")
 
                         onSave(name, extras)
+                        print("Saving favourites: \(extras["favouritedBy"] ?? "nil")")
                         dismiss()
                     }
                 }
