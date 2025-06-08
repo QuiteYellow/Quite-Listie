@@ -5,6 +5,7 @@ struct WelcomeView: View {
     @State private var selectedListID: String? = nil
     @State private var showingSettings = false
     @State private var isPresentingNewList = false
+    @EnvironmentObject var settings: AppSettings
     
     @State private var showingLabelManager = false
     @EnvironmentObject var networkMonitor: NetworkMonitor
@@ -106,6 +107,8 @@ struct WelcomeView: View {
 struct SidebarView: View {
     @ObservedObject var viewModel: WelcomeViewModel
     @Binding var selectedListID: String?
+    
+    @EnvironmentObject var settings: AppSettings
     
     @State private var listToDelete: ShoppingListSummary? = nil
     @State private var showingDeleteConfirmation = false
@@ -228,6 +231,11 @@ struct SidebarView: View {
             Button("Cancel", role: .cancel) {}
         } message: { list in
             Text("Are you sure you want to delete the list \"\(list.name)\"?")
+        }
+        .onChange(of: settings.tokens) { _ in
+            Task {
+                await viewModel.loadLists()
+            }
         }
         .onAppear {
             //print("👀 AppSettings.shared.tokens:")

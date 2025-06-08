@@ -4,11 +4,6 @@ struct TokenEditSheet: View {
     let tokenInfo: TokenInfo?
     @Binding var tokenIdentifier: String
     @Binding var tokenString: String
-    
-    @State private var tokens = AppSettings.shared.tokens
-    @State private var tokenToDelete: TokenInfo? = nil
-    @State private var showingDeleteConfirmation = false
-    
     var onSave: () -> Void
     var onCancel: () -> Void
 
@@ -27,8 +22,8 @@ struct TokenEditSheet: View {
                 }
 
                     Section {
+                        if let tokenInfo = tokenInfo {
                         DisclosureGroup("Details") {
-                            if let tokenInfo = tokenInfo {
                                 if let fullName = tokenInfo.fullName {
                                     Label(fullName, systemImage: "person.fill")
                                 }
@@ -56,10 +51,6 @@ struct TokenEditSheet: View {
                                 if let canManage = tokenInfo.canManage {
                                     Label("Can Manage: \(canManage ? "Yes" : "No")", systemImage: "gear")
                                 }
-                            } else {
-                                Text("Loading details…")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                             }
                         }
                     

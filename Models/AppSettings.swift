@@ -66,7 +66,7 @@ class AppSettings: ObservableObject {
     private let tokensKey = "tokensKey"
     
     static let shared = AppSettings()
-    
+        
     private init() {
         self.showCompletedAtBottom = UserDefaults.standard.bool(forKey: "showCompletedAtBottom")
         self.serverURLString = UserDefaults.standard.string(forKey: "serverURLString") ?? ""
