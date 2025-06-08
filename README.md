@@ -1,4 +1,4 @@
-# Quite Listie — iOS, iPadOS and macOS
+# Listie.md — iOS, iPadOS and macOS
 
 A native Swift app for iOS, iPadOS and macOS (designed for iPad), for managing local shopping lists and lists from your Mealie server (self-hosted).  
 
