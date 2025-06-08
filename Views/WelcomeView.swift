@@ -149,32 +149,6 @@ struct SidebarView: View {
             AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
         }
 
-        if !favourites.isEmpty && showFavouritesWarning {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Favourites are visible to admins and other users in your household", systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundColor(.yellow)
-                    .padding(.horizontal)
-                    .padding(.top, 4)
-
-                HStack {
-                    Spacer()
-                    Button("Don't show again") {
-                        UserDefaults.standard.set(true, forKey: "hideFavouritesWarning")
-                        withAnimation {
-                            showFavouritesWarning = false
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                    Spacer()
-                }
-            }
-            .padding(8)
-            .background(.yellow.opacity(0.05))
-            .cornerRadius(8)
-        }
 
         List(selection: $selectedListID) {
             if !favourites.isEmpty {
@@ -184,6 +158,34 @@ struct SidebarView: View {
                     }
                 }
             }
+            
+            if !favourites.isEmpty && showFavouritesWarning {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Favourites for Mealie lists are visible to admins and other users in your household.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundColor(.yellow)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+
+                    HStack {
+                        Spacer()
+                        Button("Don't show again") {
+                            UserDefaults.standard.set(true, forKey: "hideFavouritesWarning")
+                            withAnimation {
+                                showFavouritesWarning = false
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        Spacer()
+                    }
+                }
+                .padding(8)
+                .background(.yellow.opacity(0.05))
+                .cornerRadius(8)
+            }
+            
 
             ForEach(groupedNonFavourites.sorted(by: { $0.key < $1.key }), id: \.key) { identifier, lists in
                 Section(header: Label(identifier, systemImage: "person.2.fill")) {
@@ -192,6 +194,7 @@ struct SidebarView: View {
                     }
                 }
             }
+
         }
         .navigationTitle("All Lists")
         .refreshable {
