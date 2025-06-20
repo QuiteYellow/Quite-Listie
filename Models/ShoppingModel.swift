@@ -129,7 +129,7 @@ protocol ShoppingListProvider {
     func deleteItem(_ item: ShoppingItem) async throws
     func createList(_ list: ShoppingListSummary) async throws
     func deleteList(_ list: ShoppingListSummary) async throws
-    func toggleItem(_ item: ShoppingItem) async throws
+    func updateItem(_ item: ShoppingItem) async throws
     func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws
 
 }

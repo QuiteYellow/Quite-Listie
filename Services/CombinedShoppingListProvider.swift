@@ -70,11 +70,11 @@ class CombinedShoppingListProvider: ShoppingListProvider {
         }
     }
 
-    func toggleItem(_ item: ShoppingItem) async throws {
+    func updateItem(_ item: ShoppingItem) async throws {
         if item.isLocal {
-            try await local.toggleItem(item)
+            try await local.updateItem(item)
         } else {
-            try await api.toggleItem(item)
+            try await api.updateItem(item)
         }
     }
 

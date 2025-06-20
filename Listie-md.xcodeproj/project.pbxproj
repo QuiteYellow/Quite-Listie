@@ -31,9 +31,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		CBEFA7AB2DE31318002F4B13 /* ListsForMealie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ListsForMealie.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		CBEFA7B92DE3131A002F4B13 /* ListsForMealieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ListsForMealieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		CBEFA7C32DE3131A002F4B13 /* ListsForMealieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ListsForMealieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBEFA7AB2DE31318002F4B13 /* Listie.md.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listie.md.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBEFA7B92DE3131A002F4B13 /* Listie.mdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listie.mdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBEFA7C32DE3131A002F4B13 /* Listie.mdUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listie.mdUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFABE52DE35848002F4B13 /* extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extensions.swift; sourceTree = "<group>"; };
 		CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -124,9 +124,9 @@
 		CBEFA7AC2DE31318002F4B13 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				CBEFA7AB2DE31318002F4B13 /* ListsForMealie.app */,
-				CBEFA7B92DE3131A002F4B13 /* ListsForMealieTests.xctest */,
-				CBEFA7C32DE3131A002F4B13 /* ListsForMealieUITests.xctest */,
+				CBEFA7AB2DE31318002F4B13 /* Listie.md.app */,
+				CBEFA7B92DE3131A002F4B13 /* Listie.mdTests.xctest */,
+				CBEFA7C32DE3131A002F4B13 /* Listie.mdUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -134,9 +134,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		CBEFA7AA2DE31318002F4B13 /* ListsForMealie */ = {
+		CBEFA7AA2DE31318002F4B13 /* Listie.md */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CBEFA7CD2DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "ListsForMealie" */;
+			buildConfigurationList = CBEFA7CD2DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "Listie.md" */;
 			buildPhases = (
 				CBEFA7A72DE31318002F4B13 /* Sources */,
 				CBEFA7A82DE31318002F4B13 /* Frameworks */,
@@ -154,18 +154,18 @@
 				CBEFA7D82DE313B7002F4B13 /* ViewModels */,
 				CBEFA7D92DE313C2002F4B13 /* Views */,
 			);
-			name = ListsForMealie;
+			name = Listie.md;
 			packageProductDependencies = (
 				CB260D882DE4B7E900D05618 /* MarkdownUI */,
 				CB3015E32DE9D43700CCFCC8 /* SymbolPicker */,
 			);
 			productName = ListsForMealie;
-			productReference = CBEFA7AB2DE31318002F4B13 /* ListsForMealie.app */;
+			productReference = CBEFA7AB2DE31318002F4B13 /* Listie.md.app */;
 			productType = "com.apple.product-type.application";
 		};
-		CBEFA7B82DE3131A002F4B13 /* ListsForMealieTests */ = {
+		CBEFA7B82DE3131A002F4B13 /* Listie.mdTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CBEFA7D02DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "ListsForMealieTests" */;
+			buildConfigurationList = CBEFA7D02DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "Listie.mdTests" */;
 			buildPhases = (
 				CBEFA7B52DE3131A002F4B13 /* Sources */,
 				CBEFA7B62DE3131A002F4B13 /* Frameworks */,
@@ -176,16 +176,16 @@
 			dependencies = (
 				CBEFA7BB2DE3131A002F4B13 /* PBXTargetDependency */,
 			);
-			name = ListsForMealieTests;
+			name = Listie.mdTests;
 			packageProductDependencies = (
 			);
 			productName = ListsForMealieTests;
-			productReference = CBEFA7B92DE3131A002F4B13 /* ListsForMealieTests.xctest */;
+			productReference = CBEFA7B92DE3131A002F4B13 /* Listie.mdTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		CBEFA7C22DE3131A002F4B13 /* ListsForMealieUITests */ = {
+		CBEFA7C22DE3131A002F4B13 /* Listie.mdUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CBEFA7D32DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "ListsForMealieUITests" */;
+			buildConfigurationList = CBEFA7D32DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "Listie.mdUITests" */;
 			buildPhases = (
 				CBEFA7BF2DE3131A002F4B13 /* Sources */,
 				CBEFA7C02DE3131A002F4B13 /* Frameworks */,
@@ -196,11 +196,11 @@
 			dependencies = (
 				CBEFA7C52DE3131A002F4B13 /* PBXTargetDependency */,
 			);
-			name = ListsForMealieUITests;
+			name = Listie.mdUITests;
 			packageProductDependencies = (
 			);
 			productName = ListsForMealieUITests;
-			productReference = CBEFA7C32DE3131A002F4B13 /* ListsForMealieUITests.xctest */;
+			productReference = CBEFA7C32DE3131A002F4B13 /* Listie.mdUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -244,9 +244,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				CBEFA7AA2DE31318002F4B13 /* ListsForMealie */,
-				CBEFA7B82DE3131A002F4B13 /* ListsForMealieTests */,
-				CBEFA7C22DE3131A002F4B13 /* ListsForMealieUITests */,
+				CBEFA7AA2DE31318002F4B13 /* Listie.md */,
+				CBEFA7B82DE3131A002F4B13 /* Listie.mdTests */,
+				CBEFA7C22DE3131A002F4B13 /* Listie.mdUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -304,12 +304,12 @@
 /* Begin PBXTargetDependency section */
 		CBEFA7BB2DE3131A002F4B13 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CBEFA7AA2DE31318002F4B13 /* ListsForMealie */;
+			target = CBEFA7AA2DE31318002F4B13 /* Listie.md */;
 			targetProxy = CBEFA7BA2DE3131A002F4B13 /* PBXContainerItemProxy */;
 		};
 		CBEFA7C52DE3131A002F4B13 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CBEFA7AA2DE31318002F4B13 /* ListsForMealie */;
+			target = CBEFA7AA2DE31318002F4B13 /* Listie.md */;
 			targetProxy = CBEFA7C42DE3131A002F4B13 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -635,7 +635,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CBEFA7CD2DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "ListsForMealie" */ = {
+		CBEFA7CD2DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "Listie.md" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CBEFA7CE2DE3131A002F4B13 /* Debug */,
@@ -644,7 +644,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CBEFA7D02DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "ListsForMealieTests" */ = {
+		CBEFA7D02DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "Listie.mdTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CBEFA7D12DE3131A002F4B13 /* Debug */,
@@ -653,7 +653,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CBEFA7D32DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "ListsForMealieUITests" */ = {
+		CBEFA7D32DE3131A002F4B13 /* Build configuration list for PBXNativeTarget "Listie.mdUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CBEFA7D42DE3131A002F4B13 /* Debug */,

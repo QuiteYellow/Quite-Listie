@@ -151,7 +151,13 @@ struct ListSettingsView: View {
             // Load labels
             Task {
                 do {
-                    allLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
+                    let fetchedLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
+                    
+                    if let groupId = list.groupId {
+                        allLabels = fetchedLabels.filter { $0.groupId == groupId }
+                    } else {
+                        allLabels = fetchedLabels
+                    }
                 } catch {
                     print("Failed to load labels: \(error)")
                 }

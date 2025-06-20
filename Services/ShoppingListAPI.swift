@@ -232,7 +232,7 @@ class ShoppingListAPI {
     }
     
     // MARK: - Toggle Item uses token associated with the item
-    func toggleItem(_ item: ShoppingItem) async throws {
+    func updateItem(_ item: ShoppingItem) async throws {
         guard let baseURL = baseURL else {
             throw URLError(.badURL)
         }

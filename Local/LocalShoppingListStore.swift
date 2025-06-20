@@ -142,11 +142,18 @@ actor LocalShoppingListStore: ShoppingListProvider {
         await save()
     }
 
-    func toggleItem(_ item: ShoppingItem) async throws {
-        if let index = items.firstIndex(where: { $0.id == item.id }) {
-            items[index].checked.toggle()
-            await save()
+    func updateItem(_ item: ShoppingItem) async throws {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else {
+            throw NSError(domain: "Item not found", code: 1, userInfo: nil)
         }
+
+        // Update the item with all fields from the input
+        var updatedItem = item
+            //updatedItem.checked.toggle() // Toggle checked value
+
+        items[index] = updatedItem
+
+        await save()
     }
 
     // MARK: - Labels
