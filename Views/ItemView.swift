@@ -379,6 +379,7 @@ struct EditItemView: View {
                                         quantity: Double(quantity),
                                         extras: updatedExtras
                                     )
+       
                                     if success {
                                         dismiss()
                                     } else {
@@ -420,7 +421,6 @@ struct EditItemView: View {
                                                 .padding(8)
                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                                 .padding(15)
-                                                .frame(minHeight: usableHeight)
                                         }
                                         
                                     }
@@ -470,18 +470,11 @@ struct EditItemView: View {
                             NavigationView {
                                 Form {
                                     Section(header: Text("Edit Markdown Notes")) {
-                                        TextEditor(text: $mdNotes)
-                                            .frame(minHeight: 400)
-                                            .autocapitalization(.sentences)
-                                            .disableAutocorrection(false)
-                                            .toolbar {
-                                                ToolbarItemGroup(placement: .keyboard) {
-                                                    Button("**Bold**") { mdNotes += "**bold text**" }
-                                                    Button("_Italic_") { mdNotes += "_italic text_" }
-                                                    Button("Link") { mdNotes += "[text](LINK)" }
-                                                    Button("Image") { mdNotes += "![altText](LINK)" }
-                                                }
-                                            }
+                                        CustomTextEditor(text: $mdNotes)
+                                            .padding(8)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            .padding(15)
+                                            .frame(minHeight:300)
                                     }
                                     
                                     
@@ -657,18 +650,42 @@ struct EditItemView: View {
     }
 }
 
+// MARK: - The Text Editor
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
-        textView.backgroundColor = .clear // Transparent background
+        textView.backgroundColor = .clear
         textView.isScrollEnabled = true
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         textView.autocorrectionType = .yes
         textView.autocapitalizationType = .sentences
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        // Create SwiftUI toolbar view and host it in UIKit
+        let toolbarView = SnippetToolbarView { snippet in
+            // Insert snippet at current cursor position
+            if let range = textView.selectedTextRange {
+                textView.replace(range, withText: snippet)
+            }
+        }
+
+        let hostingController = UIHostingController(rootView: toolbarView)
+        context.coordinator.toolbarController = hostingController // retain it
+
+        // Ensure layout works correctly
+        hostingController.view.backgroundColor = UIColor.systemGroupedBackground
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        hostingController.view.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44)
+
+        textView.inputAccessoryView = hostingController.view
+
         return textView
     }
 
@@ -678,12 +695,9 @@ struct CustomTextEditor: UIViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: CustomTextEditor
+        var toolbarController: UIHostingController<SnippetToolbarView>? // Retained!
 
         init(_ parent: CustomTextEditor) {
             self.parent = parent
@@ -691,6 +705,33 @@ struct CustomTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
+        }
+    }
+}
+
+struct SnippetToolbarView: View {
+    var onInsert: (String) -> Void
+
+    private let snippets = ["**bold**", "*italic*", "[LinkTitle](URL)", "![ImageTitle](URL)", "`code`", "- item", "> quote"]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(snippets, id: \.self) { snippet in
+                    Button {
+                        onInsert(snippet)
+                    } label: {
+                        Text(snippet)
+                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.secondary.opacity(0.2))
+                            .cornerRadius(8)
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
         }
     }
 }

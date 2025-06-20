@@ -96,7 +96,7 @@ class ShoppingListViewModel: ObservableObject {
         var updated = item
         updated.checked.toggle()
         do {
-            try await CombinedShoppingListProvider.shared.toggleItem(updated)
+            try await CombinedShoppingListProvider.shared.updateItem(updated)
 
             if let index = items.firstIndex(where: { $0.id == updated.id }) {
                 items[index] = updated
@@ -134,7 +134,7 @@ class ShoppingListViewModel: ObservableObject {
         }
 
         do {
-            try await CombinedShoppingListProvider.shared.toggleItem(updatedItem)
+            try await CombinedShoppingListProvider.shared.updateItem(updatedItem)
 
             if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
                 items[index] = updatedItem
