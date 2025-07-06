@@ -54,6 +54,9 @@ class ShoppingListViewModel: ObservableObject {
         if let mdNotes = markdownNotes {
             newItem.markdownNotes = mdNotes  // This sets extras["markdownNotes"]
         }
+        
+        //  Copy the token ID from the list
+            newItem.localTokenId = list.localTokenId
 
         do {
             try await CombinedShoppingListProvider.shared.addItem(newItem, to: shoppingListId)

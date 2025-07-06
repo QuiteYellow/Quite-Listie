@@ -148,7 +148,7 @@ class ShoppingListAPI {
             for try await items in group {
                 allItems.append(contentsOf: items)
             }
-            
+            //print("⭐️ items: \(allItems)")
             return allItems
         }
     }
@@ -162,9 +162,12 @@ class ShoppingListAPI {
     // MARK: - Add Item uses any token
     func addItem(_ item: ShoppingItem, to shoppingListId: String) async throws {
         guard let baseURL = baseURL else {
+            print("[AddItem] ❌ Invalid base URL")
             throw URLError(.badURL)
         }
+        
         let itemsURL = baseURL.appendingPathComponent("households/shopping/items")
+        print("[AddItem] 📝 Items URL: \(itemsURL.absoluteString)")
         
         struct ShoppingItemCreateRequest: Codable {
             let note: String
@@ -184,19 +187,42 @@ class ShoppingListAPI {
             labelId: item.label?.id,
             quantity: item.quantity,
             extras: item.extras,
-            groupId: item.groupId ?? "",
-            householdId: item.householdId ?? ""
+            groupId: item.groupId,
+            householdId: item.householdId
         )
         
-        let body = try JSONEncoder().encode(createPayload)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let body = try encoder.encode(createPayload)
         
-        // Use first token for add by default
-        guard let tokenInfo = tokens.first else {
+        if let jsonString = String(data: body, encoding: .utf8) {
+            print("[AddItem] 📦 Request Body:\n\(jsonString)")
+        }
+        
+        guard let tokenInfo = tokenInfo(for: item.localTokenId) else {
+            print("[AddItem] ❌ No matching token for item.localTokenId = \(item.localTokenId?.uuidString ?? "nil")")
             throw URLError(.userAuthenticationRequired)
         }
         
+        print("[AddItem] 🔑 Using token for authorization")
+        
         let request = authorizedRequest(url: itemsURL, tokenInfo: tokenInfo, method: "POST", body: body)
-        _ = try await URLSession.shared.data(for: request)
+        print("[AddItem] 📡 Sending request to \(request.url?.absoluteString ?? "unknown URL")")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[AddItem] ✅ Response Status Code: \(httpResponse.statusCode)")
+            }
+            
+            if let responseBody = String(data: data, encoding: .utf8) {
+                print("[AddItem] 📥 Response Body:\n\(responseBody)")
+            }
+        } catch {
+            print("[AddItem] ❌ Error adding item: \(error.localizedDescription)")
+            throw error
+        }
     }
     
     // MARK: - Delete Item uses token associated with the item
