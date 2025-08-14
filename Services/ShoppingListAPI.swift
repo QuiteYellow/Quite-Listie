@@ -112,44 +112,83 @@ class ShoppingListAPI {
         }
         let itemsURL = baseURL.appendingPathComponent("households/shopping/items")
         
-        // Define a struct for API response wrapper (items array)
         struct ShoppingItemResponse: Codable {
             let items: [ShoppingItem]
+            let page: Int
+            let total_pages: Int
         }
         
-        // Use Task Group to fetch concurrently for all tokens
-        return try await withThrowingTaskGroup(of: [ShoppingItem].self) { group in
-            
-            // For each token, add a fetch task
+        return try await withThrowingTaskGroup(of: [ShoppingItem].self) { tokenGroup in
             for tokenInfo in tokens {
-                group.addTask {
-                    let request = self.authorizedRequest(url: itemsURL, tokenInfo: tokenInfo)
-                    let (data, response) = try await URLSession.shared.data(for: request)
+                tokenGroup.addTask {
+                    // First, fetch page 1 to know total_pages
+                    var components = URLComponents(url: itemsURL, resolvingAgainstBaseURL: false)!
+                    components.queryItems = [URLQueryItem(name: "page", value: "1")]
+                    let firstURL = components.url!
                     
-                    //                    if let httpResponse = response as? HTTPURLResponse {
-                    //                        print("⭐️ [Token \(tokenInfo.id)] Status code:", httpResponse.statusCode)
-                    //                    }
+                    let firstRequest = self.authorizedRequest(url: firstURL, tokenInfo: tokenInfo)
+                    let (firstData, firstResponse) = try await URLSession.shared.data(for: firstRequest)
                     
-                    let responseWrapper = try JSONDecoder().decode(ShoppingItemResponse.self, from: data)
+                    /*
+                    if let httpResponse = firstResponse as? HTTPURLResponse {
+                        print("⭐️ [Token \(tokenInfo.id)] Page 1 Status:", httpResponse.statusCode)
+                    }
+                    print("📦 Raw JSON for token \(tokenInfo.id), page 1:",
+                          String(data: firstData, encoding: .utf8) ?? "<invalid utf8>")
+                    */
                     
-                    // Tag each item with the tokenId it came from
-                    return responseWrapper.items.map { item in
-                        
+                    let firstResponseWrapper = try JSONDecoder().decode(ShoppingItemResponse.self, from: firstData)
+                    
+                    var allItems = firstResponseWrapper.items.map { item in
                         var taggedItem = item
-                        //print("🏷️ taggedItem: \(taggedItem)")
                         taggedItem.localTokenId = tokenInfo.id
                         return taggedItem
                     }
+                    
+                    let totalPages = firstResponseWrapper.total_pages
+                    
+                    if totalPages > 1 {
+                        // Fetch remaining pages concurrently
+                        try await withThrowingTaskGroup(of: [ShoppingItem].self) { pageGroup in
+                            for page in 2...totalPages {
+                                pageGroup.addTask {
+                                    var comps = URLComponents(url: itemsURL, resolvingAgainstBaseURL: false)!
+                                    comps.queryItems = [URLQueryItem(name: "page", value: "\(page)")]
+                                    let pagedURL = comps.url!
+                                    
+                                    let request = self.authorizedRequest(url: pagedURL, tokenInfo: tokenInfo)
+                                    let (data, response) = try await URLSession.shared.data(for: request)
+                                    /*
+                                    if let httpResponse = response as? HTTPURLResponse {
+                                        print("⭐️ [Token \(tokenInfo.id)] Page \(page) Status:", httpResponse.statusCode)
+                                    }
+                                    print("📦 Raw JSON for token \(tokenInfo.id), page \(page):",
+                                          String(data: data, encoding: .utf8) ?? "<invalid utf8>")
+                                    */
+                                    let responseWrapper = try JSONDecoder().decode(ShoppingItemResponse.self, from: data)
+                                    return responseWrapper.items.map { item in
+                                        var taggedItem = item
+                                        taggedItem.localTokenId = tokenInfo.id
+                                        return taggedItem
+                                    }
+                                }
+                            }
+                            
+                            for try await pageItems in pageGroup {
+                                allItems.append(contentsOf: pageItems)
+                            }
+                        }
+                    }
+                    
+                    return allItems
                 }
             }
             
-            var allItems: [ShoppingItem] = []
-            // Collect all results from concurrent tasks
-            for try await items in group {
-                allItems.append(contentsOf: items)
+            var allItemsAcrossTokens: [ShoppingItem] = []
+            for try await tokenItems in tokenGroup {
+                allItemsAcrossTokens.append(contentsOf: tokenItems)
             }
-            //print("⭐️ items: \(allItems)")
-            return allItems
+            return allItemsAcrossTokens
         }
     }
     
@@ -309,34 +348,60 @@ class ShoppingListAPI {
         
         struct ShoppingListsResponse: Codable {
             let items: [ShoppingListSummary]
+            let page: Int
+            let total_pages: Int
         }
         
-        return try await withThrowingTaskGroup(of: [ShoppingListSummary].self) { group in
+        return try await withThrowingTaskGroup(of: [ShoppingListSummary].self) { tokenGroup in
             for tokenInfo in tokens {
-                group.addTask {
-                    let request = self.authorizedRequest(url: listsURL, tokenInfo: tokenInfo)
-                    let (data, response) = try await URLSession.shared.data(for: request)
+                tokenGroup.addTask {
+                    // Fetch the first page to know how many total pages there are
+                    var request = self.authorizedRequest(url: listsURL, tokenInfo: tokenInfo)
+                    request.url = URL(string: "\(listsURL)?page=1")
+                    let (firstData, _) = try await URLSession.shared.data(for: request)
+                    let firstPageResponse = try JSONDecoder().decode(ShoppingListsResponse.self, from: firstData)
                     
-                    //                    if let httpResponse = response as? HTTPURLResponse {
-                    //                        print("⭐️ [Token \(tokenInfo.id)] Status code:", httpResponse.statusCode)
-                    //                    }
-                    
-                    let responseWrapper = try JSONDecoder().decode(ShoppingListsResponse.self, from: data)
-                    
-                    // Tagging shopping lists with localTokenId is possible if needed here
-                    return responseWrapper.items.map { list in
+                    // Tag items with tokenId
+                    var allLists: [ShoppingListSummary] = firstPageResponse.items.map { list in
                         var taggedList = list
                         taggedList.localTokenId = tokenInfo.id
                         return taggedList
                     }
+                    
+                    // If more pages, fetch concurrently
+                    if firstPageResponse.total_pages > 1 {
+                        try await withThrowingTaskGroup(of: [ShoppingListSummary].self) { pageGroup in
+                            for page in 2...firstPageResponse.total_pages {
+                                pageGroup.addTask {
+                                    var pageRequest = self.authorizedRequest(url: listsURL, tokenInfo: tokenInfo)
+                                    pageRequest.url = URL(string: "\(listsURL)?page=\(page)")
+                                    let (data, _) = try await URLSession.shared.data(for: pageRequest)
+                                    let pageResponse = try JSONDecoder().decode(ShoppingListsResponse.self, from: data)
+                                    
+                                    return pageResponse.items.map { list in
+                                        var taggedList = list
+                                        taggedList.localTokenId = tokenInfo.id
+                                        return taggedList
+                                    }
+                                }
+                            }
+                            
+                            for try await lists in pageGroup {
+                                allLists.append(contentsOf: lists)
+                            }
+                        }
+                    }
+                    
+                    return allLists
                 }
             }
             
-            var allLists: [ShoppingListSummary] = []
-            for try await lists in group {
-                allLists.append(contentsOf: lists)
+            var combinedLists: [ShoppingListSummary] = []
+            for try await lists in tokenGroup {
+                combinedLists.append(contentsOf: lists)
             }
-            return allLists
+            
+            return combinedLists
         }
     }
     
@@ -353,53 +418,75 @@ class ShoppingListAPI {
             let color: String
             let groupId: String
         }
-        
         struct LabelsResponseWrapper: Decodable {
             let items: [LabelResponse]
+            let page: Int
+            let total_pages: Int
         }
         
-        return try await withThrowingTaskGroup(of: [ShoppingLabel].self) { group in
+        return try await withThrowingTaskGroup(of: [ShoppingLabel].self) { tokenGroup in
             for tokenInfo in tokens {
-                group.addTask {
-                    let request = self.authorizedRequest(url: labelsURL, tokenInfo: tokenInfo)
-                    let (data, _) = try await URLSession.shared.data(for: request)
-                    let wrapper = try JSONDecoder().decode(LabelsResponseWrapper.self, from: data)
+                tokenGroup.addTask {
+                    // Page 1
+                    var comps = URLComponents(url: labelsURL, resolvingAgainstBaseURL: false)!
+                    comps.queryItems = [URLQueryItem(name: "page", value: "1")]
+                    let firstRequest = self.authorizedRequest(url: comps.url!, tokenInfo: tokenInfo)
+                    let (firstData, _) = try await URLSession.shared.data(for: firstRequest)
                     
-                    return wrapper.items.map { label in
-                        var wrapper = ShoppingLabel(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
-                        wrapper.localTokenId = tokenInfo.id  // Tag the label with its token
-                        return wrapper
+                    let firstWrapper = try JSONDecoder().decode(LabelsResponseWrapper.self, from: firstData)
+                    
+                    var allLabels = firstWrapper.items.map { label in
+                        var wrapped = ShoppingLabel(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
+                        wrapped.localTokenId = tokenInfo.id
+                        return wrapped
                     }
+                    
+                    let totalPages = firstWrapper.total_pages
+                    
+                    if totalPages > 1 {
+                        try await withThrowingTaskGroup(of: [ShoppingLabel].self) { pageGroup in
+                            for page in 2...totalPages {
+                                pageGroup.addTask {
+                                    var comps = URLComponents(url: labelsURL, resolvingAgainstBaseURL: false)!
+                                    comps.queryItems = [URLQueryItem(name: "page", value: "\(page)")]
+                                    let request = self.authorizedRequest(url: comps.url!, tokenInfo: tokenInfo)
+                                    let (data, _) = try await URLSession.shared.data(for: request)
+                                    let wrapper = try JSONDecoder().decode(LabelsResponseWrapper.self, from: data)
+                                    
+                                    return wrapper.items.map { label in
+                                        var wrapped = ShoppingLabel(id: label.id, name: label.name, color: label.color, groupId: label.groupId)
+                                        wrapped.localTokenId = tokenInfo.id
+                                        return wrapped
+                                    }
+                                }
+                            }
+                            
+                            for try await pageLabels in pageGroup {
+                                allLabels.append(contentsOf: pageLabels)
+                            }
+                        }
+                    }
+                    
+                    return allLabels
                 }
             }
-/*
-            var allLabels: [ShoppingLabel] = []
-            for try await labels in group {
-                allLabels.append(contentsOf: labels)
+            
+            var mergedLabels: [ShoppingLabel] = []
+            for try await labels in tokenGroup {
+                mergedLabels.append(contentsOf: labels)
             }
-            return allLabels
             
- */
-            
-            // Define a Hashable struct for the dictionary key to stopp hashable error
+            // Deduplicate by (id, groupId)
             struct LabelKey: Hashable {
                 let id: String
                 let groupId: String
             }
-
-            // LabelKey
-            var allLabels: [ShoppingLabel] = []
-            for try await labels in group {
-                allLabels.append(contentsOf: labels)
-            }
-
-            // Remove duplicates by (id, groupId), treating nil as ""
             var dict = [LabelKey: ShoppingLabel]()
-            for label in allLabels {
+            for label in mergedLabels {
                 let key = LabelKey(id: label.id, groupId: label.groupId ?? "unknown")
                 dict[key] = label
             }
-
+            
             return Array(dict.values)
         }
     }
