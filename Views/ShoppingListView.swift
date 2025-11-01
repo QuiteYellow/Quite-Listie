@@ -288,23 +288,71 @@ struct ShoppingListView: View {
         .navigationBarTitleDisplayMode(.large)
         
         .toolbar {
-            
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 
+                // Network status indicator
                 if !networkMonitor.isConnected {
                     Image(systemName: "wifi.slash")
                         .foregroundColor(.red)
                 }
-                Button { showingAddView = true } label: {
-                    Image(systemName: "plus")
-                }.disabled(list.isReadOnlyExample)
+                
+                // Add item button
                 Button {
-                    withAnimation(.easeInOut) {
-                        settings.showCompletedAtBottom.toggle()
-                    }
+                    showingAddView = true
                 } label: {
-                    Image(systemName: settings.showCompletedAtBottom ? "circle.badge.checkmark.fill" : "circle.badge.xmark")
-                }.disabled(list.isReadOnlyExample)
+                    Image(systemName: "plus")
+                }
+                .disabled(list.isReadOnlyExample)
+                
+                // Menu with list actions
+                Menu {
+                    // Submenu for bulk marking
+                    Menu("Mark All Items As…") {
+                        Button {
+                            Task {
+                                await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
+                                    await updateUncheckedCount(for: list.id, with: count)
+                                    if list.isLocal {
+                                        await onListChanged?()
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Completed", systemImage: "inset.filled.circle")
+                        }
+                        .disabled(list.isReadOnlyExample)
+
+                        Button {
+                            Task {
+                                await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
+                                    await updateUncheckedCount(for: list.id, with: count)
+                                    if list.isLocal {
+                                        await onListChanged?()
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Active", systemImage: "circle")
+                        }
+                        .disabled(list.isReadOnlyExample)
+                    }
+
+                    // Show/Hide Completed
+                    Button {
+                        withAnimation(.easeInOut) {
+                            settings.showCompletedAtBottom.toggle()
+                        }
+                    } label: {
+                        Label(
+                            settings.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                            systemImage: settings.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
+                        )
+                    }
+                    .disabled(list.isReadOnlyExample)
+
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
             }
         }
         
