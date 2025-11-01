@@ -112,6 +112,29 @@ class ShoppingListViewModel: ObservableObject {
         }
     }
     
+    func setAllItems(for listId: String, toCompleted completed: Bool, didUpdate: @escaping (Int) async -> Void) async {
+        var updatedItems: [ShoppingItem] = []
+
+        for var item in items where item.shoppingListId == listId {
+            if item.checked != completed {
+                item.checked = completed
+                do {
+                    try await CombinedShoppingListProvider.shared.updateItem(item)
+                    if let index = items.firstIndex(where: { $0.id == item.id }) {
+                        items[index] = item
+                    }
+                    updatedItems.append(item)
+                } catch {
+                    print("Error updating item: \(error)")
+                }
+            }
+        }
+
+        // Count unchecked (active) items in this list
+        let count = items.filter { $0.shoppingListId == listId && !$0.checked }.count
+        await didUpdate(count)
+    }
+    
     func colorForLabel(name: String) -> Color? {
         if let item = items.first(where: { $0.label?.name == name }),
            let hex = item.label?.color {
