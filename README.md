@@ -1,26 +1,17 @@
 # Listie.md — iOS, iPadOS and macOS
 
-A native Swift app for iOS, iPadOS and macOS (designed for iPad), for managing local shopping lists and lists from your Mealie server (self-hosted).  
-
-Connect to multiple households, effectively allowing for family, personal and private lists.
-
-[View in TestFlight](https://testflight.apple.com/join/RAH3X13U)
+A native Swift app for iOS, iPadOS and macOS (designed for iPad), for managing local shopping lists and cloud syncing shopping lists.  
 
 <img width="1310" alt="Screenshot 2025-05-31 at 16 20 24" src="https://github.com/user-attachments/assets/c4ea3a65-4db1-4d05-903d-cd8a9708a0f7" />
 
 ## Features
 
-### Setup
-- Add a Mealie server URL.
-- Add your API tokens, one per household.
-- Optional: add your Cloudflare Access Headers.
 
 ### General
 - Modern two pane navigation support.
-- Lists are organised by household (under custom titles).
+- Lists are organised by X (under custom titles).
 
 ### Shopping List
-- Connected directly to the Mealie’s shopping list API.
 - Add, edit and delete items.
 - Right click support on macOS.
 - Support for Mealie labels including colours (contrast is automatically adjusted to ensure readability).
@@ -42,11 +33,8 @@ Connect to multiple households, effectively allowing for family, personal and pr
 ## Requirements
 
 - iOS 18+  
-- Mealie Server 2.8.0+
 
 ---
-
-If you want an iOS Mealie app that supports recipes, check out [Walfrosch92/Mealie-Recipes-iOS-APP](https://github.com/Walfrosch92/Mealie-Recipes-iOS-APP)!
 
 ---
 
