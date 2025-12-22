@@ -1,45 +1,35 @@
 //
-//  ListView.swift
+//  ShoppingListView.swift (UNIFIED VERSION)
 //  ListsForMealie
 //
-//  Created by Jack Weekes on 25/05/2025.
+//  Updated to work seamlessly with both local and external lists
 //
 
 import SwiftUI
 
+// MARK: - Section Header View
 struct SectionHeaderView: View {
     let labelName: String
     let color: Color?
     let isExpanded: Bool
     let uncheckedCount: Int
     let checkedCount: Int
-    
-    @ObservedObject var settings: AppSettings
+    let onToggle: () -> Void
     
     var body: some View {
-        Button(action: {
-            withAnimation(.easeInOut) {
-                settings.toggleSection(labelName)
-            }
-        }) {
-            
-            
+        Button(action: onToggle) {
             HStack {
                 Image(systemName: "tag.fill")
                     .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
                 
                 Text(labelName.removingLabelNumberPrefix())
-                // .font(.headline)
                     .foregroundColor(.primary)
                 
                 Spacer()
                 HStack {
                     Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
-                    //.font(.subheadline)
                         .foregroundColor(.primary)
                     
-                    
-                    // Chevron
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                         .animation(.easeInOut, value: isExpanded)
@@ -47,16 +37,13 @@ struct SectionHeaderView: View {
                 }
                 .padding(.horizontal, 0)
             }
-            
             .background(Color(.systemGroupedBackground))
-            //.background(Capsule().fill(.red))
         }
         .buttonStyle(.plain)
     }
 }
 
-import SwiftUI
-
+// MARK: - Item Row View
 struct ItemRowView: View {
     let item: ShoppingItem
     let isLast: Bool
@@ -99,7 +86,6 @@ struct ItemRowView: View {
                     Image(systemName: item.checked ? "inset.filled.circle" : "circle")
                         .foregroundColor(item.checked ? .gray : .accentColor)
                         .imageScale(.large)
-                    
                 }
                 .buttonStyle(.plain)
             }
@@ -111,25 +97,30 @@ struct ItemRowView: View {
 }
 
 struct ShoppingListView: View {
-    @ObservedObject var welcomeViewModel: WelcomeViewModel
-    
     let list: ShoppingListSummary
-    var onListChanged: (() async -> Void)? = nil
+    let unifiedList: UnifiedList
+    let unifiedProvider: UnifiedListProvider
+    @ObservedObject var welcomeViewModel: WelcomeViewModel
     
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
-    @ObservedObject private var settings = AppSettings.shared
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
     
+    @State private var expandedSections: [String: Bool] = [:]
+    @State private var showCompletedAtBottom = false
     
-    init(list: ShoppingListSummary, welcomeViewModel: WelcomeViewModel) {
+    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel) {
         self.list = list
-        self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: list))
+        self.unifiedList = unifiedList
+        self.unifiedProvider = unifiedProvider
         self.welcomeViewModel = welcomeViewModel
+        self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
+    }
+    
+    private var saveStatus: UnifiedListProvider.SaveStatus {
+        unifiedProvider.saveStatus[unifiedList.id] ?? .saved
     }
     
     private func updateUncheckedCount(for listID: String, with count: Int) async {
@@ -138,13 +129,31 @@ struct ShoppingListView: View {
         }
     }
     
+    private func toggleSection(_ labelName: String) {
+        withAnimation(.easeInOut) {
+            if let isExpanded = expandedSections[labelName] {
+                expandedSections[labelName] = !isExpanded
+            } else {
+                expandedSections[labelName] = true
+            }
+        }
+    }
+    
+    private func initializeExpandedSections(for labels: [String]) {
+        for label in labels {
+            if expandedSections[label] == nil {
+                expandedSections[label] = true
+            }
+        }
+    }
+    
     @ViewBuilder
     private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
-        let isExpanded = settings.expandedSections[labelName] ?? true
+        let isExpanded = expandedSections[labelName] ?? true
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
         
-        let itemsToShow = settings.showCompletedAtBottom && labelName != "Completed"
+        let itemsToShow = showCompletedAtBottom && labelName != "Completed"
         ? uncheckedItems
         : uncheckedItems + checkedItems
         
@@ -158,9 +167,6 @@ struct ShoppingListView: View {
                             Task {
                                 await viewModel.toggleChecked(for: item, didUpdate: { count in
                                     await updateUncheckedCount(for: list.id, with: count)
-                                    if list.isLocal {
-                                        await onListChanged?()
-                                    }
                                 })
                             }
                         },
@@ -172,9 +178,6 @@ struct ShoppingListView: View {
                             Task {
                                 let newQty = (item.quantity ?? 1) + 1
                                 _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                if list.isLocal {
-                                    await onListChanged?()
-                                }
                             }
                         },
                         onDecrement: {
@@ -184,9 +187,6 @@ struct ShoppingListView: View {
                                 Task {
                                     let newQty = max((item.quantity ?? 1) - 1, 1)
                                     _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
-                                    if list.isLocal {
-                                        await onListChanged?()
-                                    }
                                 }
                             }
                         },
@@ -203,7 +203,7 @@ struct ShoppingListView: View {
                                 }
                             }
                         } label: {
-                            Label((item.quantity ?? 1) < 2 ? "Delete" : "–", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                            Label((item.quantity ?? 1) < 2 ? "Delete" : "Decrease", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
                         }
                         .tint((item.quantity ?? 1) < 2 ? .red : .orange)
                     }
@@ -214,7 +214,7 @@ struct ShoppingListView: View {
                                 _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
                             }
                         } label: {
-                            Label("+", systemImage: "plus")
+                            Label("Increase", systemImage: "plus")
                         }
                         .tint(.green)
                     }
@@ -239,42 +239,38 @@ struct ShoppingListView: View {
                 isExpanded: isExpanded,
                 uncheckedCount: uncheckedItems.count,
                 checkedCount: checkedItems.count,
-                settings: settings
+                onToggle: { toggleSection(labelName) }
             )
         }
     }
     
     var body: some View {
-        
         List {
-            if settings.showCompletedAtBottom {
-                // Only unchecked items per label
-                ForEach(
-                    viewModel.sortedLabelKeys.filter { labelName in
-                        guard labelName != "Completed" else { return false }
-                        let items = viewModel.itemsGroupedByLabel[labelName] ?? []
-                        if settings.showCompletedAtBottom {
-                            return items.contains(where: { !$0.checked }) // show only if there are unchecked items
-                        } else {
-                            return !items.isEmpty // show if there are any items
-                        }
-                    },
-                    id: \.self
-                ) { labelName in
+            if showCompletedAtBottom {
+                // Filter keys to show only sections with unchecked items
+                let keysToShow = viewModel.sortedLabelKeys.filter { labelName in
+                    if labelName == "Completed" {
+                        return false
+                    }
+                    let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                    return items.contains(where: { !$0.checked })
+                }
+                
+                ForEach(keysToShow, id: \.self) { labelName in
                     let items = viewModel.itemsGroupedByLabel[labelName] ?? []
                     let color = viewModel.colorForLabel(name: labelName)
                     renderSection(labelName: labelName, items: items, color: color)
                 }
                 
-                // Checked items go in "Completed" section
                 let completedItems = viewModel.items.filter { $0.checked }
                 if !completedItems.isEmpty {
                     renderSection(labelName: "Completed", items: completedItems, color: .primary)
                 }
                 
             } else {
-                // All items per label — skip "Completed" label key
-                ForEach(viewModel.sortedLabelKeys.filter { $0 != "Completed" }, id: \.self) { labelName in
+                let keysToShow = viewModel.sortedLabelKeys.filter { $0 != "Completed" }
+                
+                ForEach(keysToShow, id: \.self) { labelName in
                     let items = viewModel.itemsGroupedByLabel[labelName] ?? []
                     if !items.isEmpty {
                         let color = viewModel.colorForLabel(name: labelName)
@@ -286,15 +282,10 @@ struct ShoppingListView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
-        
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                
-                // Network status indicator
-                if !networkMonitor.isConnected {
-                    Image(systemName: "wifi.slash")
-                        .foregroundColor(.red)
-                }
+                // Save status indicator (like writie.md)
+                saveStatusView
                 
                 // Add item button
                 Button {
@@ -306,19 +297,15 @@ struct ShoppingListView: View {
                 
                 // Menu with list actions
                 Menu {
-                    // Submenu for bulk marking
                     Menu("Mark All Items As…") {
                         Button {
                             Task {
                                 await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
                                     await updateUncheckedCount(for: list.id, with: count)
-                                    if list.isLocal {
-                                        await onListChanged?()
-                                    }
                                 }
                             }
                         } label: {
-                            Label("Completed", systemImage: "inset.filled.circle")
+                            Label("Completed", systemImage: "checkmark.circle.fill")
                         }
                         .disabled(list.isReadOnlyExample)
 
@@ -326,9 +313,6 @@ struct ShoppingListView: View {
                             Task {
                                 await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
                                     await updateUncheckedCount(for: list.id, with: count)
-                                    if list.isLocal {
-                                        await onListChanged?()
-                                    }
                                 }
                             }
                         } label: {
@@ -337,15 +321,14 @@ struct ShoppingListView: View {
                         .disabled(list.isReadOnlyExample)
                     }
 
-                    // Show/Hide Completed
                     Button {
                         withAnimation(.easeInOut) {
-                            settings.showCompletedAtBottom.toggle()
+                            showCompletedAtBottom.toggle()
                         }
                     } label: {
                         Label(
-                            settings.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
-                            systemImage: settings.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
+                            showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                            systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
                         )
                     }
                     .disabled(list.isReadOnlyExample)
@@ -355,34 +338,40 @@ struct ShoppingListView: View {
                 }
             }
         }
-        
         .refreshable {
+            // Force reload from disk for external lists
+            if case .external(let url) = unifiedList.source {
+                do {
+                    let document = try await ExternalFileStore.shared.openFile(at: url, forceReload: true)
+                    await unifiedProvider.reloadList(unifiedList)
+                } catch {
+                    print("Failed to reload: \(error)")
+                }
+            }
+            
+            await viewModel.loadLabels()
             await viewModel.loadItems()
-            settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
+            initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .task {
+            await viewModel.loadLabels()
             await viewModel.loadItems()
-            settings.initializeExpandedSections(for: viewModel.sortedLabelKeys)
+            initializeExpandedSections(for: viewModel.sortedLabelKeys)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .externalListChanged)) { notification in
+            if let changedListID = notification.object as? String, changedListID == list.id {
+                Task {
+                    await viewModel.loadLabels()
+                    await viewModel.loadItems()
+                    initializeExpandedSections(for: viewModel.sortedLabelKeys)
+                }
+            }
         }
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(list: list, viewModel: viewModel)
-                .onDisappear {
-                    if list.isLocal {
-                        Task {
-                            await onListChanged?()
-                        }
-                    }
-                }
         }
         .fullScreenCover(item: $editingItem) { item in
             EditItemView(viewModel: viewModel, item: item, list: list)
-                .onDisappear {
-                    if list.isLocal {
-                        Task {
-                            await onListChanged?()
-                        }
-                    }
-                }
         }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },
@@ -393,9 +382,6 @@ struct ShoppingListView: View {
                     Task {
                         await viewModel.deleteItem(item)
                         await MainActor.run { itemToDelete = nil }
-                        if list.isLocal {
-                            await onListChanged?()
-                        }
                     }
                 }
             }
@@ -403,5 +389,27 @@ struct ShoppingListView: View {
         } message: {
             Text("Are you sure you want to delete this item?")
         }
+    }
+    
+    @ViewBuilder
+    private var saveStatusView: some View {
+        Group {
+            switch saveStatus {
+            case .saved:
+                Image(systemName: "checkmark.icloud.fill")
+                    .foregroundColor(.green)
+            case .saving:
+                ProgressView()
+                    .scaleEffect(0.7)
+            case .unsaved:
+                Image(systemName: "circle.fill")
+                    .foregroundColor(.orange)
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.red)
+                    .help(message)
+            }
+        }
+        .padding(.horizontal, 4)
     }
 }

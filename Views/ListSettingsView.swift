@@ -1,3 +1,10 @@
+//
+//  ListSettingsView.swift (V2 - SIMPLIFIED)
+//  ListsForMealie
+//
+//  Updated to use V2 format with direct fields instead of extras
+//
+
 import SwiftUI
 import SymbolPicker
 
@@ -5,125 +12,229 @@ struct ListSettingsView: View {
     @State private var allLabels: [ShoppingLabel] = []
     @State private var hiddenLabelIDs: Set<String> = []
     let list: ShoppingListSummary
-    let onSave: (String, [String: String]) -> Void
+    let unifiedList: UnifiedList
+    let unifiedProvider: UnifiedListProvider
+    let onSave: (String, [String: String]) -> Void  // Keep signature for compatibility
     
     @Environment(\.dismiss) var dismiss
     @State private var name: String = ""
     @State private var icon: String = "pencil"
     @State private var iconPickerPresented = false
-    
-    
     @State private var isFavourited: Bool = false
-    var userID: String {
-        if list.isLocal {
-            return TokenInfo.localDeviceToken.identifier
+    
+    // Label management states
+    @State private var showingLabelEditor = false
+    @State private var editingLabel: ShoppingLabel? = nil
+    @State private var showingDeleteConfirmation = false
+    @State private var labelToDelete: ShoppingLabel? = nil
+    
+    // Favorites stored in UserDefaults
+    @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
+    
+    private var favouriteListIDs: Set<String> {
+        get {
+            (try? JSONDecoder().decode(Set<String>.self, from: favouriteListIDsData)) ?? []
         }
-
-        return AppSettings.shared.tokens
-            .first(where: { $0.id == list.localTokenId && !($0.username ?? "").isEmpty })?
-            .username ?? "unknown-user"
     }
     
-    enum ListStorageType: String {
-        case remote = "Saved to Mealie"
-        case local = "On This Device"
+    private func setFavouriteListIDs(_ ids: Set<String>) {
+        if let data = try? JSONEncoder().encode(ids) {
+            favouriteListIDsData = data
+        }
     }
     
-    var storageType: ListStorageType {
-        list.isLocal ? .local : .remote
+    private func loadLabels() async {
+        do {
+            allLabels = try await unifiedProvider.fetchLabels(for: unifiedList)
+        } catch {
+            print("Failed to load labels: \(error)")
+        }
     }
-
+    
+    private func createLabel(name: String, color: String) async {
+        // Use ModelHelpers to create a label with a simple, unique ID
+        let newLabel = ModelHelpers.createNewLabel(
+            name: name,
+            color: color,
+            existingLabels: allLabels
+        )
+        
+        do {
+            try await unifiedProvider.createLabel(newLabel, for: unifiedList)
+            await loadLabels()
+        } catch {
+            print("âŒ Failed to create label: \(error)")
+        }
+    }
+    
+    private func updateLabel(_ label: ShoppingLabel) async {
+        do {
+            try await unifiedProvider.updateLabel(label, for: unifiedList)
+            await loadLabels()
+        } catch {
+            print("âŒ Failed to update label: \(error)")
+        }
+    }
+    
+    private func deleteLabel(_ label: ShoppingLabel) async {
+        do {
+            try await unifiedProvider.deleteLabel(label, from: unifiedList)
+            await loadLabels()
+        } catch {
+            print("âŒ Could not delete label: \(error)")
+        }
+    }
+    
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("Details")) {
-                    // Name row with icon
                     HStack {
                         Label("Title", systemImage: "textformat")
                         Spacer()
                         TextField("Enter title", text: $name)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: 400)
-                            //.textFieldStyle(.roundedBorder)
                     }
-
-                    // Icon picker row with icon
                     
-                        HStack {
-                            Label("Icon", systemImage: "square.grid.2x2")
-                            Spacer()
-                            Button {
-                                iconPickerPresented = true
-                            } label: {
+                    HStack {
+                        Label("Icon", systemImage: "square.grid.2x2")
+                        Spacer()
+                        Button {
+                            iconPickerPresented = true
+                        } label: {
                             Image(systemName: icon)
                                 .imageScale(.large)
-                                //.foregroundColor(.accentColor)
                         }
                     }
-                    
                     .sheet(isPresented: $iconPickerPresented) {
                         SymbolPicker(symbol: $icon)
                     }
-
-                    // Favourite toggle row with icon
+                    
+                    // Favourite toggle
                     Toggle(isOn: $isFavourited) {
                         Label("Mark as Favourite", systemImage: "star.fill")
-                            
                     }
+                    
                     Label {
-                            Text(storageType.rawValue)
-                        } icon: {
-                            Image(systemName: storageType == .local ? "internaldrive" : "icloud")
+                        switch unifiedList.source {
+                        case .local:
+                            Text("Private List")
+                        case .external(let url):
+                            Text("\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)")
                         }
+                    } icon: {
+                        switch unifiedList.source {
+                        case .local:
+                            Image(systemName: "internaldrive")
+                        case .external:
+                            Image(systemName: "link")
+                        }
+                    }
                 }
-
-                Section(header: Text("Shown Labels")) {
+                
+                // Label Management Section
+                Section(header:
+                    HStack {
+                        Text("Labels")
+                        Spacer()
+                        Button {
+                            editingLabel = nil
+                            showingLabelEditor = true
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .imageScale(.medium)
+                        }
+                    }
+                ) {
                     if allLabels.isEmpty {
-                        Text("Loading labels...")
+                        Text("No labels yet. Tap + to add one.")
+                            .foregroundColor(.secondary)
+                            .font(.callout)
                     } else {
                         ForEach(allLabels.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }), id: \.id) { label in
-                            let isShown = !hiddenLabelIDs.contains(label.id)
-                            
-                            Toggle(isOn: Binding(
-                                get: { isShown },
-                                set: { newValue in
-                                    if newValue {
-                                        hiddenLabelIDs.remove(label.id)
-                                    } else {
-                                        hiddenLabelIDs.insert(label.id)
-                                    }
-                                }
-                            )) {
+                            HStack {
+                                Image(systemName: "tag.fill")
+                                    .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
+                                
                                 Text(label.name)
-                                    .foregroundColor(isShown ? .primary : .gray)
-                                    .strikethrough(!isShown, color: .gray)
+                                
+                                Spacer()
+                                
+                                // Show/hide toggle
+                                let isShown = !hiddenLabelIDs.contains(label.id)
+                                Toggle("", isOn: Binding(
+                                    get: { isShown },
+                                    set: { newValue in
+                                        if newValue {
+                                            hiddenLabelIDs.remove(label.id)
+                                        } else {
+                                            hiddenLabelIDs.insert(label.id)
+                                        }
+                                    }
+                                ))
+                                .labelsHidden()
+                            }
+                            .opacity(hiddenLabelIDs.contains(label.id) ? 0.5 : 1.0)
+                            .swipeActions(edge: .trailing) {
+                                Button() {
+                                    labelToDelete = label
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .tint(.red)
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    editingLabel = label
+                                    showingLabelEditor = true
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.accentColor)
+                            }
+                            .contextMenu {
+                                Button {
+                                    editingLabel = label
+                                    showingLabelEditor = true
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                
+                                Button(role: .destructive) {
+                                    labelToDelete = label
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
                 }
+                .headerProminence(.increased)
             }
             .navigationTitle("List Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        // Create legacy extras format for backward compatibility
+                        // The storage layer will convert this to direct fields
                         var extras = [
                             "listsForMealieListIcon": icon,
-                            "hiddenLabels": hiddenLabelIDs.joined(separator: ",")
+                            "hiddenLabels": Array(hiddenLabelIDs).joined(separator: ",")
                         ]
                         
-                        // Handle favourites logic
-                        var favourites = list.extras?["favouritedBy"]?.components(separatedBy: ",").filter { !$0.isEmpty } ?? []
+                        // Save favorite state to UserDefaults
+                        var ids = favouriteListIDs
                         if isFavourited {
-                            if !favourites.contains(userID) {
-                                favourites.append(userID)
-                            }
+                            ids.insert(list.id)
                         } else {
-                            favourites.removeAll { $0 == userID }
+                            ids.remove(list.id)
                         }
-                        extras["favouritedBy"] = favourites.joined(separator: ",")
-
+                        setFavouriteListIDs(ids)
+                        
                         onSave(name, extras)
-                        print("Saving favourites: \(extras["favouritedBy"] ?? "nil")")
                         dismiss()
                     }
                 }
@@ -133,35 +244,72 @@ struct ListSettingsView: View {
                     }
                 }
             }
-        }
-        .onAppear {
-            name = list.name
-            icon = list.extras?["listsForMealieListIcon"].flatMap { $0.isEmpty ? nil : $0 } ?? "checklist"
-
-            // Extract hidden label IDs
-            if let hidden = list.extras?["hiddenLabels"] {
-                hiddenLabelIDs = Set(hidden.components(separatedBy: ","))
-            }
-
-            // Load initial favourite state
-            if let favs = list.extras?["favouritedBy"]?.components(separatedBy: ",") {
-                isFavourited = favs.contains(userID)
-            }
-
-            // Load labels
-            Task {
-                do {
-                    let fetchedLabels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
-                    
-                    if let groupId = list.groupId {
-                        allLabels = fetchedLabels.filter { $0.groupId == groupId }
-                    } else {
-                        allLabels = fetchedLabels
-                    }
-                } catch {
-                    print("Failed to load labels: \(error)")
+            .sheet(isPresented: $showingLabelEditor) {
+                if let label = editingLabel {
+                    // Edit existing label
+                    LabelEditorView(
+                        viewModel: LabelEditorViewModel(from: label),
+                        onSave: { name, colorHex in
+                            var updated = label
+                            updated.name = name
+                            updated.color = colorHex
+                            Task {
+                                await updateLabel(updated)
+                                showingLabelEditor = false
+                            }
+                        },
+                        onCancel: {
+                            showingLabelEditor = false
+                        }
+                    )
+                } else {
+                    // Create new label
+                    LabelEditorView(
+                        viewModel: LabelEditorViewModel(),
+                        onSave: { name, colorHex in
+                            Task {
+                                await createLabel(name: name, color: colorHex)
+                                showingLabelEditor = false
+                            }
+                        },
+                        onCancel: {
+                            showingLabelEditor = false
+                        }
+                    )
                 }
             }
+            .alert("Delete Label?", isPresented: $showingDeleteConfirmation, presenting: labelToDelete) { label in
+                Button("Delete", role: .destructive) {
+                    Task {
+                        await deleteLabel(label)
+                        labelToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    labelToDelete = nil
+                }
+            } message: { label in
+                Text("Are you sure you want to delete \"\(label.name)\"? Items using this label will not be deleted.")
+            }
+        }
+        .task {
+            name = list.name
+            
+            // Read from direct field first (V2), fall back to extras (V1)
+            icon = list.icon ?? list.extras?["listsForMealieListIcon"] ?? "checklist"
+            
+            // Extract hidden label IDs from array (V2) or string (V1)
+            if let hiddenArray = list.hiddenLabels {
+                hiddenLabelIDs = Set(hiddenArray)
+            } else if let hiddenString = list.extras?["hiddenLabels"], !hiddenString.isEmpty {
+                hiddenLabelIDs = Set(hiddenString.components(separatedBy: ","))
+            }
+            
+            // Load favourite state from UserDefaults
+            isFavourited = favouriteListIDs.contains(list.id)
+            
+            // Load labels for this list
+            await loadLabels()
         }
     }
 }

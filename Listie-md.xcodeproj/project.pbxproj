@@ -10,7 +10,6 @@
 		CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = CB260D882DE4B7E900D05618 /* MarkdownUI */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
-		CBEFACD62DE4A7B0002F4B13 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,12 +30,22 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		37F742762EF8531900C4EEF4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = "Listie-md/Info.plist"; sourceTree = "<group>"; };
 		CBEFA7AB2DE31318002F4B13 /* Listie.md.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listie.md.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7B92DE3131A002F4B13 /* Listie.mdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listie.mdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7C32DE3131A002F4B13 /* Listie.mdUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listie.mdUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFABE52DE35848002F4B13 /* extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extensions.swift; sourceTree = "<group>"; };
-		CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		37FE07702EF9BDA60051FB01 /* Exceptions for "Listie-md" folder in "Listie.md" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CBEFA7AA2DE31318002F4B13 /* Listie.md */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CB0685102DF345D1006415E1 /* Local */ = {
@@ -46,6 +55,9 @@
 		};
 		CB8EED9B2DF5E5BA0057124E /* Listie-md */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				37FE07702EF9BDA60051FB01 /* Exceptions for "Listie-md" folder in "Listie.md" target */,
+			);
 			path = "Listie-md";
 			sourceTree = "<group>";
 		};
@@ -109,8 +121,8 @@
 		CBEFA7A22DE31318002F4B13 = {
 			isa = PBXGroup;
 			children = (
+				37F742762EF8531900C4EEF4 /* Info.plist */,
 				CB0685102DF345D1006415E1 /* Local */,
-				CBEFACD52DE4A7AB002F4B13 /* NetworkMonitor.swift */,
 				CBEFABE52DE35848002F4B13 /* extensions.swift */,
 				CBEFA7D92DE313C2002F4B13 /* Views */,
 				CBEFA7D82DE313B7002F4B13 /* ViewModels */,
@@ -281,7 +293,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */,
-				CBEFACD62DE4A7B0002F4B13 /* NetworkMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -441,8 +452,20 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Listie-md/Info.plist";
 				"INFOPLIST_FILE[sdk=*]" = "";
@@ -468,7 +491,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.4;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 25.12.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.listiemd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -494,8 +517,20 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Listie-md/Info.plist";
 				"INFOPLIST_FILE[sdk=*]" = "";
@@ -521,7 +556,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.4;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 25.12.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.listiemd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

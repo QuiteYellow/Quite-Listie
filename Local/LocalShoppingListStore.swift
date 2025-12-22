@@ -1,8 +1,8 @@
 //
-//  LocalShoppingListStore.swift
+//  LocalShoppingListStore_v2.swift
 //  ListsForMealie
 //
-//  Created by Jack Weekes on 06/06/2025.
+//  Updated to use simplified V2 format with automatic migration
 //
 
 import Foundation
@@ -10,183 +10,293 @@ import Foundation
 actor LocalShoppingListStore: ShoppingListProvider {
     static let shared = LocalShoppingListStore()
 
-    private var lists: [ShoppingListSummary] = []
-    private var items: [ShoppingItem] = []
-    private var labels: [ShoppingLabel] = []
-
-    private let listsFileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        .appendingPathComponent("local_lists.json")
-    private let itemsFileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        .appendingPathComponent("local_items.json")
-    private let labelsFileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        .appendingPathComponent("local_labels.json")
+    // In-memory cache of all list documents
+    private var listDocuments: [String: ListDocument] = [:]
+    
+    private let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
 
     init() {
         Task {
-            await loadData()
+            await loadAllLists()
         }
+    }
+
+    // MARK: - File Management
+    
+    private func fileURL(for listId: String) -> URL {
+        documentsDirectory.appendingPathComponent("list_\(listId).json")
+    }
+    
+    private func listIdFromFilename(_ filename: String) -> String? {
+        guard filename.hasPrefix("list_") && filename.hasSuffix(".json") else {
+            return nil
+        }
+        let start = filename.index(filename.startIndex, offsetBy: 5) // "list_".count
+        let end = filename.index(filename.endIndex, offsetBy: -5) // ".json".count
+        return String(filename[start..<end])
     }
 
     // MARK: - Data Persistence
 
-    private func loadData() async {
-        //print("📂 [Local Load] Starting to load local data...")
-
-        // Load Lists
-        if FileManager.default.fileExists(atPath: listsFileURL.path) {
-            do {
-                let data = try Data(contentsOf: listsFileURL)
-                let decoded = try JSONDecoder().decode([ShoppingListSummary].self, from: data)
-                self.lists = decoded
-                //print("✅ [Local Load] Loaded \(decoded.count) shopping lists")
-            } catch {
-                print("❌ [Local Load] Failed to load lists:", error)
+    private func loadAllLists() async {
+        print("ðŸ“‚ [Local Load V2] Discovering list files...")
+        
+        do {
+            let fileURLs = try FileManager.default.contentsOfDirectory(
+                at: documentsDirectory,
+                includingPropertiesForKeys: nil
+            )
+            
+            let listFiles = fileURLs.filter { $0.lastPathComponent.hasPrefix("list_") && $0.pathExtension == "json" }
+            
+            print("ðŸ“‚ [Local Load V2] Found \(listFiles.count) list files")
+            
+            for fileURL in listFiles {
+                do {
+                    let data = try Data(contentsOf: fileURL)
+                    
+                    // Use migration utility to load and migrate if necessary
+                    var document = try ListDocumentMigration.loadDocument(from: data)
+                    
+                    // Store using clean ID
+                    let cleanId = document.list.cleanId
+                    if document.list.id != cleanId {
+                        // Update document to use clean ID
+                        document.list.id = cleanId
+                        // Save the migrated version back to disk
+                        try await saveList(cleanId)
+                    }
+                    
+                    listDocuments[cleanId] = document
+                    print("âœ… [Local Load V2] Loaded list: \(document.list.name) (V\(document.version))")
+                } catch {
+                    print("âŒ [Local Load V2] Failed to load \(fileURL.lastPathComponent): \(error)")
+                    
+                    // Delete corrupted file so it doesn't keep causing errors
+                    do {
+                        try FileManager.default.removeItem(at: fileURL)
+                        print("🗑️ [Local Load V2] Deleted corrupted file: \(fileURL.lastPathComponent)")
+                    } catch {
+                        print("❌ [Local Load V2] Could not delete corrupted file: \(error)")
+                    }
+                }
             }
-        } else {
-            print("📭 [Local Load] No list file found at \(listsFileURL.lastPathComponent)")
-        }
-
-        // Load Items
-        if FileManager.default.fileExists(atPath: itemsFileURL.path) {
-            do {
-                let data = try Data(contentsOf: itemsFileURL)
-                let decoded = try JSONDecoder().decode([ShoppingItem].self, from: data)
-                self.items = decoded
-                //print("✅ [Local Load] Loaded \(decoded.count) shopping items")
-            } catch {
-                print("❌ [Local Load] Failed to load items:", error)
-            }
-        }
-
-        // Load Labels
-        if FileManager.default.fileExists(atPath: labelsFileURL.path) {
-            do {
-                let data = try Data(contentsOf: labelsFileURL)
-                let decoded = try JSONDecoder().decode([ShoppingLabel].self, from: data)
-                self.labels = decoded
-                //print("✅ [Local Load] Loaded \(decoded.count) shopping labels")
-            } catch {
-                print("❌ [Local Load] Failed to load labels:", error)
-            }
+            
+            print("âœ… [Local Load V2] Loaded \(listDocuments.count) lists total")
+        } catch {
+            print("âŒ [Local Load V2] Failed to read directory: \(error)")
         }
     }
 
-    private func save() async {
-        do {
-            //print("💾 [Local Save] Saving data...")
-
-            let listData = try JSONEncoder().encode(lists)
-            let itemData = try JSONEncoder().encode(items)
-            let labelData = try JSONEncoder().encode(labels)
-
-            //print("📦 [Local Save] List count: \(lists.count)")
-            //print("📦 [Local Save] Item count: \(items.count)")
-            //print("📦 [Local Save] Label count: \(labels.count)")
-
-            try listData.write(to: listsFileURL)
-            try itemData.write(to: itemsFileURL)
-            try labelData.write(to: labelsFileURL)
-
-            //print("✅ [Local Save] Save successful to:")
-            //print("   - Lists: \(listsFileURL.lastPathComponent)")
-            //print("   - Items: \(itemsFileURL.lastPathComponent)")
-            //print("   - Labels: \(labelsFileURL.lastPathComponent)")
-        } catch {
-            print("❌ [Local Save] Save failed:", error)
+    private func saveList(_ listId: String) async throws {
+        guard let document = listDocuments[listId] else {
+            throw NSError(domain: "List not found in cache", code: 1, userInfo: nil)
+        }
+        
+        let fileURL = fileURL(for: listId)
+        
+        // Use migration utility to save in V2 format
+        let data = try ListDocumentMigration.saveDocument(document)
+        try data.write(to: fileURL)
+        
+        print("âœ… [Local Save V2] Saved list \(document.list.name) to \(fileURL.lastPathComponent)")
+    }
+    
+    private func deleteListFile(_ listId: String) async throws {
+        let fileURL = fileURL(for: listId)
+        
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
+            print("âœ… [Local Delete V2] Deleted file for list \(listId)")
         }
     }
 
     // MARK: - Lists
 
     func fetchShoppingLists() async throws -> [ShoppingListSummary] {
-        return lists
+        return listDocuments.values.map { $0.list }
     }
 
     func createList(_ list: ShoppingListSummary) async throws {
-        //print("📝 [Local] Creating list: \(list.name)")
-        lists.append(list)
-        await save()
+        print("ðŸ“ [Local V2] Creating list: \(list.name)")
+        
+        // Ensure we're using clean ID (no "local-" prefix)
+        var cleanList = list
+        cleanList.id = list.cleanId
+        cleanList.modifiedAt = Date()
+        
+        let document = ListDocument(list: cleanList, items: [], labels: [])
+        listDocuments[cleanList.id] = document
+        
+        try await saveList(cleanList.id)
     }
 
     func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws {
-        if let index = lists.firstIndex(where: { $0.id == list.id }) {
-            lists[index].name = name
-            lists[index].extras = extras
-            
-            self.items.removeAll { $0.shoppingListId == list.id }
-            self.items.append(contentsOf: items)
-            
-            await save()
+        let cleanId = list.cleanId
+        guard var document = listDocuments[cleanId] else {
+            throw NSError(domain: "List not found", code: 1, userInfo: nil)
         }
+        
+        // Update list metadata
+        document.list.name = name
+        document.list.modifiedAt = Date()
+        
+        // Update icon from extras if present
+        if let icon = extras["listsForMealieListIcon"], !icon.isEmpty {
+            document.list.icon = icon
+        }
+        
+        // Update hidden labels from extras if present
+        if let hiddenString = extras["hiddenLabels"], !hiddenString.isEmpty {
+            document.list.hiddenLabels = hiddenString.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
+        }
+        
+        // Update items
+        document.items = items.map { item in
+            var updatedItem = item
+            updatedItem.modifiedAt = Date()
+            return updatedItem
+        }
+        
+        listDocuments[cleanId] = document
+        try await saveList(cleanId)
     }
 
     func deleteList(_ list: ShoppingListSummary) async throws {
-        lists.removeAll { $0.id == list.id }
-        items.removeAll { $0.shoppingListId == list.id }
-        await save()
+        let cleanId = list.cleanId
+        listDocuments.removeValue(forKey: cleanId)
+        try await deleteListFile(cleanId)
     }
 
     // MARK: - Items
 
     func fetchItems(for listId: String) async throws -> [ShoppingItem] {
-        return items.filter { $0.shoppingListId == listId }
+        let cleanId = cleanListId(listId)
+        guard let document = listDocuments[cleanId] else {
+            return []
+        }
+        return document.items
     }
 
     func addItem(_ item: ShoppingItem, to listId: String) async throws {
-        items.append(item)
-        await save()
+        let cleanId = cleanListId(listId)
+        guard var document = listDocuments[cleanId] else {
+            throw NSError(domain: "List not found", code: 1, userInfo: nil)
+        }
+        
+        var newItem = item
+        newItem.modifiedAt = Date()
+        document.items.append(newItem)
+        document.list.modifiedAt = Date()
+        
+        listDocuments[cleanId] = document
+        try await saveList(cleanId)
     }
 
     func deleteItem(_ item: ShoppingItem) async throws {
-        items.removeAll { $0.id == item.id }
-        await save()
+        // Find which list contains this item
+        for (listId, var document) in listDocuments {
+            if document.items.contains(where: { $0.id == item.id }) {
+                document.items.removeAll { $0.id == item.id }
+                document.list.modifiedAt = Date()
+                listDocuments[listId] = document
+                try await saveList(listId)
+                return
+            }
+        }
+        
+        throw NSError(domain: "Item not found in any list", code: 1, userInfo: nil)
     }
 
     func updateItem(_ item: ShoppingItem) async throws {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else {
-            throw NSError(domain: "Item not found", code: 1, userInfo: nil)
+        // Find which list contains this item
+        for (listId, var document) in listDocuments {
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                var updatedItem = item
+                updatedItem.modifiedAt = Date()
+                document.items[index] = updatedItem
+                document.list.modifiedAt = Date()
+                listDocuments[listId] = document
+                try await saveList(listId)
+                return
+            }
         }
 
-        // Update the item with all fields from the input
-        var updatedItem = item
-            //updatedItem.checked.toggle() // Toggle checked value
-
-        items[index] = updatedItem
-
-        await save()
+        throw NSError(domain: "Item not found in any list", code: 1, userInfo: nil)
     }
 
     // MARK: - Labels
 
     func saveLabel(_ label: ShoppingLabel) async throws {
-        labels.append(label)
-        await save()
+        // Labels are now stored per-list, need to find which list
+        guard let targetListId = label.listId else {
+            throw NSError(domain: "Label must have a listId", code: 1, userInfo: nil)
+        }
+        
+        // Clean the list ID (remove "local-" prefix if present)
+        let cleanId = cleanListId(targetListId)
+        
+        guard var document = listDocuments[cleanId] else {
+            throw NSError(domain: "List not found: \(cleanId)", code: 1, userInfo: nil)
+        }
+        
+        document.labels.append(label)
+        document.list.modifiedAt = Date()
+        listDocuments[cleanId] = document
+        
+        try await saveList(cleanId)
     }
 
     func updateLabel(_ label: ShoppingLabel) async throws {
-        if let index = labels.firstIndex(where: { $0.id == label.id }) {
-            labels[index] = label
-            await save()
+        // Find which list contains this label
+        for (listId, var document) in listDocuments {
+            if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
+                document.labels[index] = label
+                document.list.modifiedAt = Date()
+                listDocuments[listId] = document
+                try await saveList(listId)
+                return
+            }
         }
+        
+        throw NSError(domain: "Label not found", code: 1, userInfo: nil)
     }
 
     func deleteLabel(_ label: ShoppingLabel) async throws {
-        labels.removeAll { $0.id == label.id }
-        await save()
+        // Find which list contains this label
+        for (listId, var document) in listDocuments {
+            if document.labels.contains(where: { $0.id == label.id }) {
+                document.labels.removeAll { $0.id == label.id }
+                document.list.modifiedAt = Date()
+                listDocuments[listId] = document
+                try await saveList(listId)
+                return
+            }
+        }
+        
+        throw NSError(domain: "Label not found", code: 1, userInfo: nil)
     }
 
     func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel] {
-        let matchingLabels = labels.filter { $0.localTokenId == list.localTokenId }
-
-        //print("📦 [Labels] Returning \(matchingLabels.count) labels for list \(list.name) (\(list.id))")
-        for label in matchingLabels {
-           // print("• Label: [\(label.id)] \(label.name), groupId: \(label.groupId ?? "nil")")
+        let cleanId = list.cleanId
+        guard let document = listDocuments[cleanId] else {
+            return []
         }
-
-        return matchingLabels
+        
+        return document.labels
     }
 
     func fetchAllLocalLabels() async throws -> [ShoppingLabel] {
-        return labels
+        // Return all labels from all lists
+        return listDocuments.values.flatMap { $0.labels }
+    }
+    
+    // MARK: - Helper
+    
+    private func cleanListId(_ listId: String) -> String {
+        if listId.hasPrefix("local-") {
+            return String(listId.dropFirst(6))
+        }
+        return listId
     }
 }
