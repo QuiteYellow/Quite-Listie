@@ -137,68 +137,6 @@ struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
     }
 }
 
-// MARK: - Legacy Support Types
-struct ShoppingListsResponse: Codable {
-    let page: Int
-    let per_page: Int
-    let total: Int
-    let total_pages: Int
-    let items: [ShoppingListSummary]
-}
-
-struct UpdateListRequest: Codable {
-    let id: String
-    let name: String
-    var extras: [String: String]
-    let groupId: String
-    let userId: String
-    let listItems: [ShoppingItem]
-    
-    var listsForMealieListIcon: String {
-        get { extras["listsForMealieListIcon"] ?? "" }
-        set { extras["listsForMealieListIcon"] = newValue }
-    }
-    
-    var hiddenLabels: Bool {
-        get { extras["hiddenLabels"].flatMap { Bool($0) } ?? false }
-        set { extras["hiddenLabels"] = String(newValue) }
-    }
-
-    var favouritedBy: [String] {
-        get { extras["favouritedBy"]?.split(separator: ",").map(String.init) ?? [] }
-        set { extras["favouritedBy"] = newValue.joined(separator: ",") }
-    }
-}
-
-struct UserInfoResponse: Codable {
-    let email: String
-    let fullName: String
-    let username: String
-    let group: String
-    let household: String
-    let admin: Bool
-    let groupId: String?
-    let groupSlug: String?
-    let householdId: String?
-    let householdSlug: String?
-    let canManage: Bool?
-}
-
-extension UpdateListRequest {
-    func isFavourited(by userID: String) -> Bool {
-        favouritedBy.contains(userID)
-    }
-
-    mutating func toggleFavourite(by userID: String) {
-        var current = Set(favouritedBy)
-        if current.contains(userID) {
-            current.remove(userID)
-        } else {
-            current.insert(userID)
-        }
-        favouritedBy = Array(current)
-    }
-}
 
 // MARK: - Provider Protocol
 protocol ShoppingListProvider {
