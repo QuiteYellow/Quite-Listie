@@ -173,20 +173,7 @@ extension UIColor {
 }
 
 
-//MARK: - ShoppingItem+Extras
-extension ShoppingItem {
-    func updatedExtras(with updates: [String: String?]) -> [String: String] {
-        var merged = self.extras ?? [:]
-        for (key, value) in updates {
-            if let value = value {
-                merged[key] = value
-            } else {
-                merged.removeValue(forKey: key)
-            }
-        }
-        return merged
-    }
-}
+
 
 extension ShoppingListSummary {
     func updatedExtras(with updates: [String: String?]) -> [String: String] {
@@ -222,35 +209,9 @@ extension Sequence {
     }
 }
 
-extension ShoppingListSummary {
-    var isLocal: Bool {
-        id.hasPrefix("local-")
-    }
-    var isReadOnlyExample: Bool {
-            id == "example-welcome-list"
-        }
-}
 
-extension ShoppingItem {
-    var isLocal: Bool {
-        shoppingListId.hasPrefix("local-")
-    }
-    var isFromReadOnlyList: Bool {
-            shoppingListId == "example-welcome-list"
-        }
-}
 
-extension String {
-    var isLocalListId: Bool {
-        self.hasPrefix("local-")
-    }
-}
 
-extension ShoppingLabel {
-    var isLocal: Bool {
-        id.hasPrefix("local-")
-    }
-}
 
 extension View {
     @ViewBuilder

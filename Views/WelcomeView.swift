@@ -1,293 +1,482 @@
+//
+//  WelcomeView.swift (FULLY UNIFIED VERSION)
+//  ListsForMealie
+//
+//  All lists (local and external) shown together with unified UI
+//
+
 import SwiftUI
 
 struct WelcomeView: View {
-    @StateObject private var viewModel = WelcomeViewModel()
+    @StateObject private var welcomeViewModel = WelcomeViewModel()
+    @StateObject private var unifiedProvider = UnifiedListProvider()
+    
     @State private var selectedListID: String? = nil
-    @State private var showingSettings = false
     @State private var isPresentingNewList = false
-    @EnvironmentObject var settings: AppSettings
+    @State private var showFileImporter = false
+    @State private var showFileExporter = false
+    @State private var exportingDocument: ListDocumentFile? = nil
+    @State private var editingUnifiedList: UnifiedList? = nil
     
-    @State private var showingLabelManager = false
-    @EnvironmentObject var networkMonitor: NetworkMonitor
+    @State private var conflictingFileURL: URL? = nil
+    @State private var conflictingDocument: ListDocument? = nil
+    @State private var showIDConflictAlert = false
     
+    @State private var showNewConnectedExporter = false
     
-    @State private var listRefreshID = UUID()
-    
-    
-    private var selectedListIsReadOnly: Bool {
-        if let id = selectedListID,
-           let list = viewModel.lists.first(where: { $0.id == id }) {
-            return list.isReadOnlyExample
-        }
-        return false
-    }
-    
-
     var body: some View {
         NavigationSplitView {
-            SidebarView(viewModel: viewModel, selectedListID: $selectedListID)
-                .toolbar {
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        if !networkMonitor.isConnected {
-                            Image(systemName: "wifi.slash")
-                                .foregroundColor(.red)
-                                .help("No internet connection")
-                        }
-                        Button() {
-                            isPresentingNewList = true
-                        } label: {
-                            Label("Add List", systemImage: "plus")
-                        }
-                        Menu {
-                            Button() {
-                                showingSettings = true
-                            } label: {
-                                Label("Settings...", systemImage: "gear")
-                            }
-                            Button {
-                                showingLabelManager = true
-                                } label: {
-                                    Label("Label Manager...", systemImage: "tag")
-                                }
-                            //Button() {
-                              // do a thing
-                            //} label: {
-                            //    Label("Label Editor (dummy)...", systemImage: "label")
-                            //}
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
+            SidebarView(
+                welcomeViewModel: welcomeViewModel,
+                unifiedProvider: unifiedProvider,
+                selectedListID: $selectedListID,
+                editingUnifiedList: $editingUnifiedList,
+                onImportFile: { showFileImporter = true },
+                onExportList: { list in
+                    Task {
+                        await exportList(list)
                     }
                 }
+            )
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button {
+                            isPresentingNewList = true
+                        } label: {
+                            Label("New List (Private)", systemImage: "doc.badge.plus")
+                        }
+                        
+                        Button {
+                            showNewConnectedExporter = true
+                        } label: {
+                            Label("New List As File...", systemImage: "doc.badge.plus")
+                        }
+                        
+                        Divider()
+                        
+                        Button {
+                            showFileImporter = true
+                        } label: {
+                            Label("Open JSON File", systemImage: "folder.badge.plus")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
         } detail: {
-            if let id = selectedListID,
-               let list = viewModel.lists.first(where: { $0.id == id }) {
-                ShoppingListView(list: list, welcomeViewModel: viewModel)
-                    .id(list.id)
+            if let listID = selectedListID,
+               let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
+                ShoppingListView(
+                    list: unifiedList.summary,
+                    unifiedList: unifiedList,
+                    unifiedProvider: unifiedProvider,
+                    welcomeViewModel: welcomeViewModel
+                )
+                .id(unifiedList.id)
             } else {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
             }
         }
-        .sheet(isPresented: $viewModel.showingListSettings) {
-            if let list = viewModel.selectedListForSettings {
-                ListSettingsView(list: list) { updatedName, extras in
-                    let updatedExtras = list.updatedExtras(with: extras)
-
-                    Task {
-                        await viewModel.updateListName(
-                            listID: list.id,
-                            newName: updatedName,
-                            extras: updatedExtras
-                        )
-                        //print("👋 WelcomeView task triggered")
-                        await viewModel.loadLists()
-                        
-                        
-                    }
+        .sheet(item: $editingUnifiedList) { unifiedList in
+            ListSettingsView(
+                list: unifiedList.summary,
+                unifiedList: unifiedList,
+                unifiedProvider: unifiedProvider
+            ) { updatedName, extras in
+                Task {
+                    let items = try? await unifiedProvider.fetchItems(for: unifiedList)
+                    try? await unifiedProvider.updateList(
+                        unifiedList,
+                        name: updatedName,
+                        extras: extras,
+                        items: items ?? []
+                    )
+                    await unifiedProvider.loadAllLists()
+                    await welcomeViewModel.loadLists()
                 }
             }
         }
         .sheet(isPresented: $isPresentingNewList) {
             NewShoppingListView {
                 Task {
-                    await viewModel.loadLists()
+                    await unifiedProvider.loadAllLists()
+                    await welcomeViewModel.loadLists()
                 }
             }
         }
-        .sheet(isPresented: $showingLabelManager) {
-            LabelManagerView(viewModel: LabelManagerViewModel())
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    Task {
+                        // Check if this exact file is already open
+                        let existingExternal = unifiedProvider.allLists.filter { $0.isExternal }
+                        if existingExternal.contains(where: { $0.externalURL?.path == url.path }) {
+                            print("ℹ️ File already open, skipping")
+                            return
+                        }
+                        
+                        do {
+                            // Load the document to check its ID
+                            let document = try await ExternalFileStore.shared.openFile(at: url)
+                            
+                            // Check if ID conflicts with local list
+                            let localLists = unifiedProvider.allLists.filter { !$0.isExternal }
+                            if localLists.contains(where: { $0.summary.id == document.list.id }) {
+                                // Show conflict alert
+                                conflictingFileURL = url
+                                conflictingDocument = document
+                                showIDConflictAlert = true
+                                // Close the file for now
+                                await ExternalFileStore.shared.closeFile(at: url)
+                            } else {
+                                // No conflict, proceed normally
+                                await unifiedProvider.loadAllLists()
+                                
+                                if let newList = unifiedProvider.allLists.first(where: {
+                                    if case .external(let listURL) = $0.source {
+                                        return listURL == url
+                                    }
+                                    return false
+                                }) {
+                                    selectedListID = newList.id
+                                }
+                            }
+                        } catch {
+                            print("Failed to open file: \(error)")
+                        }
+                    }
+                }
+            case .failure(let error):
+                print("File import error: \(error)")
+            }
         }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
+        .fileExporter(
+            isPresented: $showFileExporter,
+            document: exportingDocument,
+            contentType: .json,
+            defaultFilename: exportingDocument?.document.list.name ?? "shopping-list"
+        ) { result in
+            switch result {
+            case .success(let url):
+                print("Exported to: \(url)")
+            case .failure(let error):
+                print("Export error: \(error)")
+            }
+            exportingDocument = nil
+        }
+        .fileExporter(
+            isPresented: $showNewConnectedExporter,
+            document: ListDocumentFile.empty(name: "New List"),
+            contentType: .json,
+            defaultFilename: "new-list"
+        ) { result in
+            switch result {
+            case .success(let url):
+                Task {
+                    // Extract filename without extension as the title
+                    let filename = url.deletingPathExtension().lastPathComponent
+                    
+                    // Create a new list with the filename as title
+                    let newList = ModelHelpers.createNewList(name: filename, icon: "checklist")
+                    let document = ListDocument(list: newList, items: [], labels: [])
+                    
+                    // Save the file
+                    try? await ExternalFileStore.shared.saveFile(document, to: url)
+                    
+                    // Reload and select the new list
+                    await unifiedProvider.loadAllLists()
+                    
+                    if let newList = unifiedProvider.allLists.first(where: {
+                        if case .external(let listURL) = $0.source {
+                            return listURL == url
+                        }
+                        return false
+                    }) {
+                        selectedListID = newList.id
+                    }
+                }
+            case .failure(let error):
+                print("Export error: \(error)")
+            }
+        }
+        .alert("ID Conflict", isPresented: $showIDConflictAlert) {
+            Button("Generate New ID") {
+                Task {
+                    guard let url = conflictingFileURL, var document = conflictingDocument else { return }
+                    
+                    // Generate new ID
+                    document.list.id = UUID().uuidString
+                    
+                    // Save with new ID
+                    try? await ExternalFileStore.shared.saveFile(document, to: url)
+                    
+                    // Now open it
+                    await unifiedProvider.loadAllLists()
+                    
+                    if let newList = unifiedProvider.allLists.first(where: {
+                        if case .external(let listURL) = $0.source {
+                            return listURL == url
+                        }
+                        return false
+                    }) {
+                        selectedListID = newList.id
+                    }
+                    
+                    conflictingFileURL = nil
+                    conflictingDocument = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                conflictingFileURL = nil
+                conflictingDocument = nil
+            }
+        } message: {
+            Text("This file's ID matches an existing local list. Generate a new ID to open it, or cancel.")
+        }
+        .task {
+            await unifiedProvider.loadAllLists()
+            await welcomeViewModel.loadLists()
+            await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+        }
+        .onChange(of: selectedListID) { oldValue, newValue in
+            guard let listID = newValue else { return }
+            
+            // Find the selected list
+            if let list = unifiedProvider.allLists.first(where: { $0.id == listID }),
+               case .external(let url) = list.source {
+                Task {
+                    // Force reload from disk
+                    _ = try? await ExternalFileStore.shared.openFile(at: url, forceReload: true)
+                    await unifiedProvider.reloadList(list)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task {
+                await unifiedProvider.checkExternalFilesForChanges()
+            }
+        }
+    }
+    
+    private func exportList(_ list: ShoppingListSummary) async {
+        // Find the unified list
+        guard let unifiedList = unifiedProvider.allLists.first(where: { $0.summary.id == list.id }) else {
+            return
         }
         
-        .task {
-            await viewModel.loadLists()
+        // Fetch all data
+        let items = try? await unifiedProvider.fetchItems(for: unifiedList)
+        let labels = try? await unifiedProvider.fetchLabels(for: unifiedList)
+        
+        // Prepare the document
+        let document = ListDocument(
+            list: list,
+            items: items ?? [],
+            labels: labels ?? []
+        )
+        
+        // Set the document and show exporter
+        await MainActor.run {
+            exportingDocument = ListDocumentFile(document: document)
+            showFileExporter = true
         }
     }
 }
 
 struct SidebarView: View {
-    @ObservedObject var viewModel: WelcomeViewModel
+    @ObservedObject var welcomeViewModel: WelcomeViewModel
+    @ObservedObject var unifiedProvider: UnifiedListProvider
     @Binding var selectedListID: String?
-
-    @EnvironmentObject var settings: AppSettings
-
-    @State private var listToDelete: ShoppingListSummary? = nil
+    @Binding var editingUnifiedList: UnifiedList?
+    
+    var onImportFile: () -> Void
+    var onExportList: (ShoppingListSummary) -> Void
+    
+    @State private var listToDelete: UnifiedList? = nil
     @State private var showingDeleteConfirmation = false
-
     @State private var showFavouritesWarning: Bool = !UserDefaults.standard.bool(forKey: "hideFavouritesWarning")
-
-    var groupedLists: [String: [ShoppingListSummary]] {
-        Dictionary(grouping: viewModel.lists) { list in
-            if let tokenId = list.localTokenId,
-               let token = AppSettings.shared.tokens.first(where: { $0.id == tokenId }) {
-                return token.identifier
-            } else if list.isLocal {
-                return TokenInfo.localDeviceToken.identifier
-            } else {
-                return "Unknown"
-            }
+    
+    // Favorites stored in UserDefaults
+    @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
+    
+    private var favouriteListIDs: Set<String> {
+        get {
+            (try? JSONDecoder().decode(Set<String>.self, from: favouriteListIDsData)) ?? []
         }
     }
-
+    
+    private func setFavouriteListIDs(_ ids: Set<String>) {
+        if let data = try? JSONEncoder().encode(ids) {
+            favouriteListIDsData = data
+        }
+    }
+    
+    private func toggleFavourite(for listID: String) {
+        var ids = favouriteListIDs
+        if ids.contains(listID) {
+            ids.remove(listID)
+        } else {
+            ids.insert(listID)
+        }
+        setFavouriteListIDs(ids)
+    }
+    
     var body: some View {
-        let favourites = viewModel.lists.filter { list in
-            let userIDForList = list.isLocal
-                ? TokenInfo.localDeviceToken.identifier
-                : AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.username ?? "unknown-user"
-
-            return list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userIDForList) ?? false
+        let favourites = unifiedProvider.allLists.filter { list in
+            favouriteListIDs.contains(list.summary.id)
         }
-
-        let nonFavourites = viewModel.lists.filter { list in
-            let userIDForList = list.isLocal
-                ? TokenInfo.localDeviceToken.identifier
-                : AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.username ?? "unknown-user"
-
-            return !(list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userIDForList) ?? false)
+        
+        let nonFavourites = unifiedProvider.allLists.filter { list in
+            !favouriteListIDs.contains(list.summary.id)
         }
-
-        let groupedNonFavourites = Dictionary(grouping: nonFavourites) { list in
-            AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
-        }
-
-
+        
         List(selection: $selectedListID) {
+            // MARK: - Favourites Section
+            let favourites = unifiedProvider.allLists.filter { favouriteListIDs.contains($0.summary.id) }
             if !favourites.isEmpty {
                 Section(header: Label("Favourites", systemImage: "star.fill").foregroundColor(.yellow)) {
-                    ForEach(favourites, id: \.id) { list in
-                        listRow(for: list, showTokenCaption: true)
-                    }
-                }
-            }
-            
-            if !favourites.isEmpty && showFavouritesWarning {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Favourites for Mealie lists are visible to admins and other users in your household.", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundColor(.yellow)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-
-                    HStack {
-                        Spacer()
-                        Button("Don't show again") {
-                            UserDefaults.standard.set(true, forKey: "hideFavouritesWarning")
-                            withAnimation {
-                                showFavouritesWarning = false
-                            }
-                        }
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        Spacer()
-                    }
-                }
-                .padding(8)
-                .background(.yellow.opacity(0.05))
-                .cornerRadius(8)
-            }
-            
-
-            ForEach(groupedNonFavourites.sorted(by: { $0.key < $1.key }), id: \.key) { identifier, lists in
-                Section(header: Label(identifier, systemImage: "person.2.fill")) {
-                    ForEach(lists, id: \.id) { list in
+                    ForEach(favourites.sorted(by: { $0.summary.name < $1.summary.name }), id: \.id) { list in
                         listRow(for: list)
                     }
                 }
             }
 
+            // MARK: - Internal / Private Lists
+            let internalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && !($0.isExternal) }
+            if !internalLists.isEmpty {
+                Section(header: Text("Private")) {
+                    ForEach(internalLists.sorted(by: { $0.summary.name < $1.summary.name }), id: \.id) { list in
+                        listRow(for: list)
+                    }
+                }
+            }
+
+            // MARK: - External / Linked Lists
+            let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal }
+            if !externalLists.isEmpty {
+                Section(header: Text("Conencted")) {
+                    ForEach(externalLists.sorted(by: { $0.summary.name < $1.summary.name }), id: \.id) { list in
+                        listRow(for: list)
+                    }
+                }
+            }
         }
-        .navigationTitle("All Lists")
         .refreshable {
-            await viewModel.loadLists()
+            await unifiedProvider.loadAllLists()
+            await welcomeViewModel.loadLists()
+            await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
         }
         .alert("Delete List?", isPresented: $showingDeleteConfirmation, presenting: listToDelete) { list in
             Button("Delete", role: .destructive) {
                 Task {
                     do {
-                        try await CombinedShoppingListProvider.shared.deleteList(list)
-                        await viewModel.loadLists()
+                        try await unifiedProvider.deleteList(list)
                         if selectedListID == list.id {
                             selectedListID = nil
                         }
+                        await welcomeViewModel.loadLists()
                     } catch {
-                        print("❌ Failed to delete list: \(error)")
+                        print("âŒ Failed to delete list: \(error)")
                     }
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: { list in
-            Text("Are you sure you want to delete the list \"\(list.name)\"?")
-        }
-        .onChange(of: settings.tokens) { _ in
-            Task {
-                await viewModel.loadLists()
+            if list.isExternal {
+                Text("This will remove the file from Listie. The actual file will not be deleted.")
+            } else {
+                Text("Are you sure you want to delete the list \"\(list.summary.name)\"?")
             }
         }
     }
-
+    
     @ViewBuilder
-    private func listRow(for list: ShoppingListSummary, showTokenCaption: Bool = false) -> some View {
-        let userIDForList = list.isLocal
-            ? TokenInfo.localDeviceToken.identifier
-            : AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.username ?? "unknown-user"
-
-        let isFavourited = list.extras?["favouritedBy"]?.components(separatedBy: ",").contains(userIDForList) ?? false
-        let tokenIdentifier = AppSettings.shared.tokens.first(where: { $0.id == list.localTokenId })?.identifier ?? "Unknown"
-
+    private func listRow(for list: UnifiedList) -> some View {
+        let isFavourited = favouriteListIDs.contains(list.summary.id)
+        let saveStatus = unifiedProvider.saveStatus[list.id] ?? .saved
+        
         HStack {
-            Image(systemName: list.extras?["listsForMealieListIcon"] ?? "list.bullet")
+            // Icon
+            Image(systemName: list.summary.icon ?? list.summary.extras?["listsForMealieListIcon"] ?? "list.bullet")
                 .frame(minWidth: 30)
                 .foregroundColor(.secondary)
-
+            
             VStack(alignment: .leading, spacing: 2) {
-                Text(list.name)
+                Text(list.summary.name)
 
-                if showTokenCaption {
-                    Text(tokenIdentifier)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
             }
-
+            
             Spacer()
-
-            if let count = viewModel.uncheckedCounts[list.id], count >= 0 {
+            
+            // Save status indicator (like writie.md)
+            
+            // Only show external icon if this list is a favourite
+                    if isFavourited && list.isExternal {
+                        Image(systemName: "link")
+                            .foregroundColor(.secondary)
+                            .imageScale(.small)
+                    }
+            if list.isExternal {
+                saveStatusView(for: saveStatus)
+            } else {
+                Image(systemName: "icloud.slash.fill")
+                    .foregroundColor(.secondary)
+                    .imageScale(.small)
+            }
+            
+            // Unchecked count
+            if let count = welcomeViewModel.uncheckedCounts[list.summary.id], count >= 0 {
                 Text("\(count)")
+                    .foregroundColor(.secondary)
+            } else {
+                Text("0")
                     .foregroundColor(.secondary)
             }
         }
         .tag(list.id)
         .contextMenu {
-            if !list.isReadOnlyExample {
+            if !list.summary.isReadOnlyExample {
                 Button(isFavourited ? "Unfavourite" : "Favourite") {
-                    Task {
-                        await viewModel.toggleFavourite(for: list)
-                    }
+                    toggleFavourite(for: list.summary.id)
                 }
-
+                
                 Button("List Settings") {
-                    viewModel.selectedListForSettings = list
-                    viewModel.showingListSettings = true
+                    editingUnifiedList = list
                 }
-
                 Divider()
-
-                Button("Delete List", role: .destructive) {
-                    listToDelete = list
-                    showingDeleteConfirmation = true
+                
+                Button("Export as JSON") {
+                    onExportList(list.summary)
+                }
+                
+                if list.isExternal {
+                    Button("Close File") {
+                        listToDelete = list
+                        showingDeleteConfirmation = true
+                    }
+                } else {
+                    Divider()
+                    
+                    Button("Delete List", role: .destructive) {
+                        listToDelete = list
+                        showingDeleteConfirmation = true
+                    }
                 }
             } else {
                 Text("Read-only list").foregroundColor(.gray)
             }
         }
         .swipeActions(edge: .leading) {
-            if !list.isReadOnlyExample {
+            if !list.summary.isReadOnlyExample {
                 Button {
-                    viewModel.selectedListForSettings = list
-                    viewModel.showingListSettings = true
+                    editingUnifiedList = list
                 } label: {
                     Label("Edit", systemImage: "pencil")
                 }
@@ -295,15 +484,36 @@ struct SidebarView: View {
             }
         }
         .swipeActions(edge: .trailing) {
-            if !list.isReadOnlyExample {
+            if !list.summary.isReadOnlyExample {
                 Button(role: .none) {
                     listToDelete = list
                     showingDeleteConfirmation = true
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label(list.isExternal ? "Close" : "Delete", systemImage: list.isExternal ? "xmark.circle" : "trash")
                 }
                 .tint(.red)
             }
+        }
+    }
+    
+    @ViewBuilder
+    private func saveStatusView(for status: UnifiedListProvider.SaveStatus) -> some View {
+        switch status {
+        case .saved:
+            Image(systemName: "checkmark.icloud.fill")
+                .foregroundColor(.green)
+                .imageScale(.small)
+        case .saving:
+            ProgressView()
+                .scaleEffect(0.6)
+        case .unsaved:
+            Image(systemName: "circle.fill")
+                .foregroundColor(.orange)
+                .imageScale(.small)
+        case .failed:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.red)
+                .imageScale(.small)
         }
     }
 }

@@ -1,0 +1,362 @@
+//
+//  UnifiedListProvider.swift
+//  ListsForMealie
+//
+//  Unified provider that handles both local storage and external files seamlessly
+//
+
+import Foundation
+import SwiftUI
+
+enum ListSource {
+    case local
+    case external(URL)
+}
+
+extension Notification.Name {
+    static let externalFileChanged = Notification.Name("externalFileChanged")
+    static let externalListChanged = Notification.Name("externalListChanged")
+}
+
+struct UnifiedList: Identifiable, Hashable {
+    let id: String
+    let source: ListSource
+    var summary: ShoppingListSummary
+    
+    var originalFileId: String?
+    
+    var externalURL: URL? {
+        if case .external(let url) = source { return url }
+        return nil
+    }
+    
+    var isExternal: Bool { if case .external = source { return true } else { return false } }
+    
+    static func == (lhs: UnifiedList, rhs: UnifiedList) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+@MainActor
+class UnifiedListProvider: ObservableObject {
+    
+    @Published var allLists: [UnifiedList] = []
+    @Published var saveStatus: [String: SaveStatus] = [:]
+    
+    // REACTIVE cache for external labels
+    @Published var externalLabels: [URL: [ShoppingLabel]] = [:]
+    
+    private var autosaveTasks: [String: Task<Void, Never>] = [:]
+    
+    enum SaveStatus { case saved, saving, unsaved, failed(String) }
+    
+    // MARK: - Load Lists
+    
+    func loadAllLists() async {
+        var unified: [UnifiedList] = []
+        var seenExternalURLs: Set<String> = []
+        
+        // Local lists
+        do {
+            let localLists = try await LocalOnlyProvider.shared.fetchShoppingLists()
+            for list in localLists {
+                unified.append(UnifiedList(
+                    id: list.id,
+                    source: .local,
+                    summary: list,
+                    originalFileId: nil
+                ))
+            }
+        } catch {
+            print("Failed to load local lists: \(error)")
+        }
+        
+        // External lists
+        let externalURLs = await ExternalFileStore.shared.getBookmarkedURLs()
+        for url in externalURLs {
+            guard !seenExternalURLs.contains(url.path) else { continue }
+            seenExternalURLs.insert(url.path)
+            
+            do {
+                let document = try await ExternalFileStore.shared.openFile(at: url)
+                let runtimeId = "external:\(url.path)"
+                
+                var modifiedSummary = document.list
+                modifiedSummary.id = runtimeId
+                
+                unified.append(UnifiedList(
+                    id: runtimeId,
+                    source: .external(url),
+                    summary: modifiedSummary,
+                    originalFileId: document.list.id
+                ))
+                
+                // PRELOAD reactive label cache
+                externalLabels[url] = document.labels
+                
+            } catch {
+                print("❌ Failed to load external file \(url): \(error)")
+                await ExternalFileStore.shared.closeFile(at: url)
+            }
+            
+            await ExternalFileStore.shared.startMonitoring(url: url)
+        }
+        
+        allLists = unified
+        
+        // Initialize save status
+        for list in unified where saveStatus[list.id] == nil {
+            saveStatus[list.id] = .saved
+        }
+    }
+    
+    func handleFileChange(at url: URL) async {
+        guard let list = allLists.first(where: {
+            if case .external(let listURL) = $0.source {
+                return listURL.path == url.path
+            }
+            return false
+        }) else { return }
+        
+        print("🔄 Reloading changed file: \(list.summary.name)")
+        
+        do {
+            let document = try await ExternalFileStore.shared.openFile(at: url, forceReload: true)
+            
+            if let index = allLists.firstIndex(where: { $0.id == list.id }) {
+                var updatedList = allLists[index]
+                updatedList.summary = document.list
+                updatedList.summary.id = list.id // Keep runtime ID
+                allLists[index] = updatedList
+                externalLabels[url] = document.labels
+            }
+            
+            // Notify views to refresh
+            await MainActor.run {
+                NotificationCenter.default.post(name: .externalListChanged, object: list.id)
+            }
+        } catch {
+            print("❌ Failed to reload file: \(error)")
+        }
+    }
+    
+    // MARK: - Items
+    
+    func fetchItems(for list: UnifiedList) async throws -> [ShoppingItem] {
+        switch list.source {
+        case .local:
+            return try await LocalOnlyProvider.shared.fetchItems(for: list.summary.id)
+        case .external(let url):
+            let document = try await ExternalFileStore.shared.openFile(at: url)
+            return document.items
+        }
+    }
+    
+    func addItem(_ item: ShoppingItem, to list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.addItem(item, to: list.summary.id)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            document.items.append(item)
+            await ExternalFileStore.shared.updateCache(document, at: url)  // ADD THIS LINE
+            triggerAutosave(for: list, document: document)
+        }
+        
+    }
+    
+    func updateItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.updateItem(item)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                document.items[index] = item
+                await ExternalFileStore.shared.updateCache(document, at: url)  // ADD THIS LINE
+                triggerAutosave(for: list, document: document)
+            }
+        }
+    }
+    
+    func deleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.deleteItem(item)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            document.items.removeAll { $0.id == item.id }
+            await ExternalFileStore.shared.updateCache(document, at: url)  // ADD THIS LINE
+            triggerAutosave(for: list, document: document)
+        }
+    }
+    
+    // MARK: - Labels
+    
+    func fetchLabels(for list: UnifiedList) async throws -> [ShoppingLabel] {
+        switch list.source {
+        case .local:
+            return try await LocalOnlyProvider.shared.fetchLabels(for: list.summary)
+        case .external(let url):
+            // Return cached labels if available (prevents stale reads)
+            if let cached = externalLabels[url] {
+                return cached
+            }
+            // Otherwise load from file and cache
+            let document = try await ExternalFileStore.shared.openFile(at: url)
+            externalLabels[url] = document.labels
+            return document.labels
+        }
+    }
+    
+    func createLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            var labelWithListId = label
+            labelWithListId.listId = list.summary.id
+            try await LocalOnlyProvider.shared.createLabel(labelWithListId)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            document.labels.append(label)
+            document.list.modifiedAt = Date()
+            triggerAutosave(for: list, document: document)
+            externalLabels[url] = document.labels
+        }
+    }
+    
+    func updateLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.updateLabel(label)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
+                document.labels[index] = label
+                document.list.modifiedAt = Date()
+                triggerAutosave(for: list, document: document)
+                externalLabels[url] = document.labels
+            }
+        }
+    }
+    
+    func deleteLabel(_ label: ShoppingLabel, from list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.deleteLabel(label)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            document.labels.removeAll { $0.id == label.id }
+            document.list.modifiedAt = Date()
+            triggerAutosave(for: list, document: document)
+            externalLabels[url] = document.labels
+        }
+    }
+    
+    // MARK: - List Management
+    
+    func updateList(_ list: UnifiedList, name: String, extras: [String: String], items: [ShoppingItem]) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.updateList(list.summary, with: name, extras: extras, items: items)
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            document.list.name = name
+            document.list.extras = extras
+            
+            // Extract icon from extras to direct field (V2)
+            if let icon = extras["listsForMealieListIcon"], !icon.isEmpty {
+                document.list.icon = icon
+            }
+            
+            // Extract hidden labels from extras to direct field (V2)
+            if let hiddenString = extras["hiddenLabels"], !hiddenString.isEmpty {
+                document.list.hiddenLabels = hiddenString.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
+            }
+            
+            document.items = items
+            try await saveExternalFile(document, to: url, listId: list.id)
+        }
+        
+    }
+    
+    func deleteList(_ list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            try await LocalOnlyProvider.shared.deleteList(list.summary)
+        case .external(let url):
+            await ExternalFileStore.shared.closeFile(at: url)
+            externalLabels.removeValue(forKey: url)
+        }
+        allLists.removeAll { $0.id == list.id }
+        saveStatus.removeValue(forKey: list.id)
+    }
+    
+    // MARK: - Autosave
+    
+    private func triggerAutosave(for list: UnifiedList, document: ListDocument) {
+        guard case .external(let url) = list.source else { return }
+        autosaveTasks[list.id]?.cancel()
+        
+        autosaveTasks[list.id] = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { saveStatus[list.id] = .saving }
+            
+            do {
+                try await saveExternalFile(document, to: url, listId: list.id)
+            } catch {
+                await MainActor.run { saveStatus[list.id] = .failed(error.localizedDescription) }
+            }
+        }
+    }
+    
+    private func saveExternalFile(_ document: ListDocument, to url: URL, listId: String) async throws {
+        var docToSave = document
+        if let list = allLists.first(where: { $0.id == listId }),
+           let originalId = list.originalFileId {
+            docToSave.list.id = originalId
+        }
+        
+        try await ExternalFileStore.shared.saveFile(docToSave, to: url)
+        await MainActor.run { saveStatus[listId] = .saved }
+    }
+    
+    // MARK: - Helper
+    
+    func reloadList(_ list: UnifiedList) async {
+        switch list.source {
+        case .local: break
+        case .external(let url):
+            do {
+                let document = try await ExternalFileStore.shared.openFile(at: url, forceReload: true)
+                if let index = allLists.firstIndex(where: { $0.id == list.id }) {
+                    var updatedList = list
+                    updatedList.summary = document.list
+                    updatedList.summary.id = list.id // Keep runtime ID
+                    allLists[index] = updatedList
+                    externalLabels[url] = document.labels
+                }
+                objectWillChange.send()
+            } catch {
+                print("Failed to reload external list: \(error)")
+            }
+        }
+    }
+    
+    func checkExternalFilesForChanges() async {
+        let externalLists = allLists.filter { $0.isExternal }
+        
+        for list in externalLists {
+            guard case .external(let url) = list.source else { continue }
+            
+            if await ExternalFileStore.shared.hasFileChanged(at: url) {
+                print("🔄 File changed: \(list.summary.name)")
+                await reloadList(list)
+                
+                // Post notification
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .externalListChanged, object: list.id)
+                }
+            }
+        }
+    }
+}

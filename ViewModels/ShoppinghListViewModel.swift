@@ -1,3 +1,10 @@
+//
+//  ShoppingListViewModel.swift (V2 - UNIFIED VERSION)
+//  ListsForMealie
+//
+//  Updated to use V2 format with labelId references and timestamps
+//
+
 import Foundation
 import SwiftUI
 
@@ -6,35 +13,30 @@ class ShoppingListViewModel: ObservableObject {
     @Published var items: [ShoppingItem] = []
     @Published var isLoading = false
     @Published var labels: [ShoppingLabel] = []
-    let list: ShoppingListSummary
-    var shoppingListId: String { list.id }
-    private var fetchTask: Task<Void, Never>? = nil
+    
+    let list: UnifiedList
+    let provider: UnifiedListProvider
+    
+    var shoppingListId: String { list.summary.id }
 
-    init(list: ShoppingListSummary) {
+    init(list: UnifiedList, provider: UnifiedListProvider) {
         self.list = list
+        self.provider = provider
     }
 
     func loadItems() async {
-        fetchTask?.cancel()
-        fetchTask = Task {
-            isLoading = true
-            do {
-                let allItems = try await CombinedShoppingListProvider.shared.fetchItems(for: shoppingListId)
-                items = allItems
-            } catch {
-                if (error as NSError).code != NSURLErrorCancelled {
-                    print("Error loading items: \(error)")
-                }
-            }
-            isLoading = false
-            fetchTask = nil
+        isLoading = true
+        do {
+            items = try await provider.fetchItems(for: list)
+        } catch {
+            print("Error loading items: \(error)")
         }
-        await fetchTask?.value
+        isLoading = false
     }
     
     func loadLabels() async {
         do {
-            labels = try await CombinedShoppingListProvider.shared.fetchLabels(for: list)
+            labels = try await provider.fetchLabels(for: list)
         } catch {
             print("Error loading labels: \(error)")
         }
@@ -42,24 +44,17 @@ class ShoppingListViewModel: ObservableObject {
 
     @MainActor
     func addItem(note: String, label: ShoppingLabel?, quantity: Double?, markdownNotes: String?) async -> Bool {
-        var newItem = ShoppingItem(
-            id: UUID(),
+        // Use ModelHelpers to create a clean V2 item
+        let newItem = ModelHelpers.createNewItem(
             note: note,
+            quantity: quantity ?? 1,
             checked: false,
-            shoppingListId: shoppingListId,
-            label: label,
-            quantity: quantity
+            labelId: label?.id,  // Reference by ID, not embedded object
+            markdownNotes: markdownNotes
         )
-        
-        if let mdNotes = markdownNotes {
-            newItem.markdownNotes = mdNotes  // This sets extras["markdownNotes"]
-        }
-        
-        //  Copy the token ID from the list
-            newItem.localTokenId = list.localTokenId
 
         do {
-            try await CombinedShoppingListProvider.shared.addItem(newItem, to: shoppingListId)
+            try await provider.addItem(newItem, to: list)
             await loadItems()
             return true
         } catch {
@@ -67,11 +62,12 @@ class ShoppingListViewModel: ObservableObject {
             return false
         }
     }
+    
     func deleteItems(at offsets: IndexSet) async {
         for index in offsets {
             let item = items[index]
             do {
-                try await CombinedShoppingListProvider.shared.deleteItem(item)  // Pass full item for token lookup
+                try await provider.deleteItem(item, from: list)
             } catch {
                 print("Error deleting item: \(error)")
             }
@@ -82,7 +78,7 @@ class ShoppingListViewModel: ObservableObject {
     @MainActor
     func deleteItem(_ item: ShoppingItem) async -> Bool {
         do {
-            try await CombinedShoppingListProvider.shared.deleteItem(item)
+            try await provider.deleteItem(item, from: list)
             
             if let index = items.firstIndex(where: { $0.id == item.id }) {
                 items.remove(at: index)
@@ -98,14 +94,17 @@ class ShoppingListViewModel: ObservableObject {
     func toggleChecked(for item: ShoppingItem, didUpdate: @escaping (Int) async -> Void) async {
         var updated = item
         updated.checked.toggle()
+        updated.modifiedAt = Date()  // Update timestamp
+        
         do {
-            try await CombinedShoppingListProvider.shared.updateItem(updated)
+            try await provider.updateItem(updated, in: list)
 
             if let index = items.firstIndex(where: { $0.id == updated.id }) {
                 items[index] = updated
             }
 
-            let count = items.filter { $0.shoppingListId == item.shoppingListId && !$0.checked }.count
+            // Count unchecked items (works with both V1 and V2)
+            let count = items.filter { !$0.checked }.count
             await didUpdate(count)
         } catch {
             print("Error toggling item: \(error)")
@@ -113,32 +112,38 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     func setAllItems(for listId: String, toCompleted completed: Bool, didUpdate: @escaping (Int) async -> Void) async {
-        var updatedItems: [ShoppingItem] = []
-
-        for var item in items where item.shoppingListId == listId {
+        for var item in items {
             if item.checked != completed {
                 item.checked = completed
+                item.modifiedAt = Date()  // Update timestamp
+                
                 do {
-                    try await CombinedShoppingListProvider.shared.updateItem(item)
+                    try await provider.updateItem(item, in: list)
                     if let index = items.firstIndex(where: { $0.id == item.id }) {
                         items[index] = item
                     }
-                    updatedItems.append(item)
                 } catch {
                     print("Error updating item: \(error)")
                 }
             }
         }
 
-        // Count unchecked (active) items in this list
-        let count = items.filter { $0.shoppingListId == listId && !$0.checked }.count
+        let count = items.filter { !$0.checked }.count
         await didUpdate(count)
     }
     
     func colorForLabel(name: String) -> Color? {
-        if let item = items.first(where: { $0.label?.name == name }),
-           let hex = item.label?.color {
-            return Color(hex: hex)
+        // Find the label by name in the loaded labels array
+        if let label = labels.first(where: { $0.name == name }) {
+            return Color(hex: label.color)
+        }
+        return nil
+    }
+    
+    func colorForLabelId(_ labelId: String) -> Color? {
+        // Find the label by ID
+        if let label = labels.first(where: { $0.id == labelId }) {
+            return Color(hex: label.color)
         }
         return nil
     }
@@ -149,18 +154,17 @@ class ShoppingListViewModel: ObservableObject {
         note: String,
         label: ShoppingLabel?,
         quantity: Double?,
-        extras: [String: String]? = nil
+        markdownNotes: String? = nil
     ) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
-        updatedItem.label = label
-        updatedItem.quantity = quantity
-        if let extras = extras {
-            updatedItem.extras = extras
-        }
+        updatedItem.labelId = label?.id  // Use labelId reference instead of embedded object
+        updatedItem.quantity = quantity ?? 1
+        updatedItem.markdownNotes = markdownNotes  // Direct field
+        updatedItem.modifiedAt = Date()  // Update timestamp
 
         do {
-            try await CombinedShoppingListProvider.shared.updateItem(updatedItem)
+            try await provider.updateItem(updatedItem, in: list)
 
             if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
                 items[index] = updatedItem
@@ -173,9 +177,20 @@ class ShoppingListViewModel: ObservableObject {
         }
     }
     
+    // Helper to get label for an item
+    func labelForItem(_ item: ShoppingItem) -> ShoppingLabel? {
+        // First try V2 format (labelId)
+        if let labelId = item.labelId {
+            return labels.first(where: { $0.id == labelId })
+        }
+        // Fall back to V1 format (embedded label)
+        return item.label
+    }
+    
     var itemsGroupedByLabel: [String: [ShoppingItem]] {
         Dictionary(grouping: items) { item in
-            item.label?.name ?? "No Label"
+            // Use the helper to get label, works with both V1 and V2
+            labelForItem(item)?.name ?? "No Label"
         }
     }
 

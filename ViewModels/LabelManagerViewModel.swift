@@ -1,3 +1,10 @@
+//
+//  LabelManagerViewModel.swift (V2 - SIMPLIFIED)
+//  ListsForMealie
+//
+//  Updated to use V2 format with simple label IDs
+//
+
 import Foundation
 import SwiftUI
 
@@ -7,8 +14,7 @@ class LabelManagerViewModel: ObservableObject {
     
     func loadLabels() async {
         do {
-            let labels = try await CombinedShoppingListProvider.shared.fetchAllLabels()
-           // print("📦 [LabelManager] Loaded \(labels.count) total labels")
+            let labels = try await LocalOnlyProvider.shared.fetchAllLabels()
             
             await MainActor.run {
                 withAnimation {
@@ -20,34 +26,54 @@ class LabelManagerViewModel: ObservableObject {
         }
     }
     
-    func createLabel(name: String, color: String, groupId: String, tokenId: UUID) async {
-        guard let tokenInfo = AppSettings.shared.tokens.first(where: { $0.id == tokenId }) else { return }
+    func createLabel(name: String, color: String, for listId: String) async {
+        // Fetch existing labels for this list to ensure unique IDs
+        let existingLabels: [ShoppingLabel]
         do {
-            try await ShoppingListAPI.shared.createLabel(name: name, color: color, groupId: groupId, tokenInfo: tokenInfo)
+            // Get the list to fetch its labels
+            let lists = try await LocalOnlyProvider.shared.fetchShoppingLists()
+            if let list = lists.first(where: { $0.id == listId || $0.cleanId == listId }) {
+                existingLabels = try await LocalOnlyProvider.shared.fetchLabels(for: list)
+            } else {
+                existingLabels = []
+            }
+        } catch {
+            existingLabels = []
+        }
+        
+        // Use ModelHelpers to create a label with a simple, unique ID
+        let newLabel = ModelHelpers.createNewLabel(
+            name: name,
+            color: color,
+            existingLabels: existingLabels
+        )
+        
+        // Note: The label needs to know which list it belongs to
+        // We'll need to update the storage layer to associate it properly
+        var labelWithListId = newLabel
+        // Store the list ID in legacy field for compatibility
+        labelWithListId.listId = listId
+        
+        do {
+            try await LocalOnlyProvider.shared.createLabel(labelWithListId)
             await loadLabels()
         } catch {
             print("❌ Failed to create label: \(error)")
         }
     }
-
+    
     func updateLabel(_ label: ShoppingLabel) async {
-       // print("🔄 Updating label:")
-       // print("ID: \(label.id)")
-       // print("Name: \(label.name)")
-       // print("Color: \(label.color)")
-       // print("Group ID: \(label.groupId ?? "nil")")
-      //  print("Token ID: \(tokenInfo.id)")
         do {
-            try await CombinedShoppingListProvider.shared.updateLabel(label)
+            try await LocalOnlyProvider.shared.updateLabel(label)
             await loadLabels()
         } catch {
             print("❌ Failed to update label: \(error)")
         }
     }
-
+    
     func deleteLabel(_ label: ShoppingLabel) async {
         do {
-            try await CombinedShoppingListProvider.shared.deleteLabel(label)
+            try await LocalOnlyProvider.shared.deleteLabel(label)
             await loadLabels()
         } catch {
             print("❌ Could not delete label: \(error)")
