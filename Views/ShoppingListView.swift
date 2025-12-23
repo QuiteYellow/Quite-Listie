@@ -109,7 +109,26 @@ struct ShoppingListView: View {
     @State private var itemToDelete: ShoppingItem? = nil
     
     @State private var expandedSections: [String: Bool] = [:]
-    @State private var showCompletedAtBottom = false
+    
+    // Store per-list preference in UserDefaults
+    @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
+
+    // Computed property to get/set for this specific list
+    private var showCompletedAtBottom: Bool {
+        get {
+            let dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
+            return dict[unifiedList.id] ?? false
+        }
+        nonmutating set {
+            var dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
+            dict[unifiedList.id] = newValue
+            if let data = try? JSONEncoder().encode(dict) {
+                showCompletedAtBottomData = data
+            }
+        }
+    }
+    
+    @State private var showingRecycleBin = false
     
     init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel) {
         self.list = list
@@ -332,6 +351,15 @@ struct ShoppingListView: View {
                         )
                     }
                     .disabled(list.isReadOnlyExample)
+                    
+                    if case .external = unifiedList.source {
+                        Divider()
+                            Button {
+                                showingRecycleBin = true
+                            } label: {
+                                Label("Recycle Bin", systemImage: "trash")
+                            }
+                        }
 
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -339,39 +367,30 @@ struct ShoppingListView: View {
             }
         }
         .refreshable {
-            // Force reload from disk for external lists
-            if case .external(let url) = unifiedList.source {
-                do {
-                    let document = try await ExternalFileStore.shared.openFile(at: url, forceReload: true)
-                    await unifiedProvider.reloadList(unifiedList)
-                } catch {
-                    print("Failed to reload: \(error)")
-                }
-            }
+            // NEW: Sync external files before refreshing
+            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
             initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .task {
+            // NEW: Sync on open
+            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+            
             await viewModel.loadLabels()
             await viewModel.loadItems()
             initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .externalListChanged)) { notification in
-            if let changedListID = notification.object as? String, changedListID == list.id {
-                Task {
-                    await viewModel.loadLabels()
-                    await viewModel.loadItems()
-                    initializeExpandedSections(for: viewModel.sortedLabelKeys)
-                }
-            }
-        }
+        
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(list: list, viewModel: viewModel)
         }
         .fullScreenCover(item: $editingItem) { item in
             EditItemView(viewModel: viewModel, item: item, list: list)
+        }
+        .sheet(isPresented: $showingRecycleBin) {
+            RecycleBinView(list: unifiedList, provider: unifiedProvider)
         }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },

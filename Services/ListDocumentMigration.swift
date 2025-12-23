@@ -175,23 +175,83 @@ enum ListDocumentMigration {
         }
     }
     
+    // MARK: - Validation & Repair
+        
+        /// Validates and repairs common issues in external documents
+        static func validateAndRepair(_ document: ListDocument) -> (document: ListDocument, issues: [String]) {
+            var repaired = document
+            var issues: [String] = []
+            
+            // 1. Validate list modification date
+            if repaired.list.modifiedAt.timeIntervalSince1970 < 0 {
+                repaired.list.modifiedAt = Date()
+                issues.append("Invalid list modification date - reset to current time")
+            }
+            
+            // 2. Validate items
+            var repairedItems: [ShoppingItem] = []
+            for var item in repaired.items {
+                var itemIssues: [String] = []
+                
+                // Check for missing/invalid modification date
+                if item.modifiedAt.timeIntervalSince1970 < 0 ||
+                   item.modifiedAt.timeIntervalSince1970 == 0 {
+                    item.modifiedAt = Date()
+                    itemIssues.append("invalid date")
+                }
+                
+                // Ensure isDeleted is explicitly false if not set
+                // (decoder handles this, but we're being explicit)
+                if !item.isDeleted {
+                    item.isDeleted = false
+                }
+                
+                if !itemIssues.isEmpty {
+                    issues.append("Item '\(item.note)': \(itemIssues.joined(separator: ", "))")
+                }
+                
+                repairedItems.append(item)
+            }
+            
+            repaired.items = repairedItems
+            
+            // 3. Validate labels
+            for label in repaired.labels {
+                // Ensure color is valid hex
+                if !label.color.hasPrefix("#") || label.color.count < 7 {
+                    issues.append("Label '\(label.name)': invalid color format")
+                }
+            }
+            
+            return (repaired, issues)
+        }
+    
     // MARK: - Helpers for Loading
     
     /// Loads a document from JSON data, migrating if necessary
     static func loadDocument(from data: Data) throws -> ListDocument {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        
-        var document = try decoder.decode(ListDocument.self, from: data)
-        
-        // Check if migration is needed
-        if needsMigration(document) {
-            print("📦 Document version \(document.version) detected, migrating to V2...")
-            document = migrateToV2(document)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            
+            var document = try decoder.decode(ListDocument.self, from: data)
+            
+            // Check if migration is needed
+            if needsMigration(document) {
+                print("📦 Document version \(document.version) detected, migrating to V2...")
+                document = migrateToV2(document)
+            }
+            
+            // Validate and repair common issues
+            let (repairedDocument, issues) = validateAndRepair(document)
+            if !issues.isEmpty {
+                print("🔧 Repaired \(issues.count) issue(s) in document:")
+                for issue in issues {
+                    print("   - \(issue)")
+                }
+            }
+            
+            return repairedDocument
         }
-        
-        return document
-    }
     
     /// Saves a document to JSON data in V2 format
     static func saveDocument(_ document: ListDocument) throws -> Data {

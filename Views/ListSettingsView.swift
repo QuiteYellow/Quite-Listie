@@ -28,8 +28,11 @@ struct ListSettingsView: View {
     @State private var showingDeleteConfirmation = false
     @State private var labelToDelete: ShoppingLabel? = nil
     
+    @State private var showCompletedAtBottom: Bool = false
+    
     // Favorites stored in UserDefaults
     @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
+    @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
     
     private var favouriteListIDs: Set<String> {
         get {
@@ -130,6 +133,12 @@ struct ListSettingsView: View {
                         case .external:
                             Image(systemName: "link")
                         }
+                    }
+                }
+                
+                Section(header: Text("Display Options")) {
+                    Toggle(isOn: $showCompletedAtBottom) {
+                        Label("Show Completed as Separate Label", systemImage: "checkmark.circle.badge.questionmark")
                     }
                 }
                 
@@ -234,6 +243,13 @@ struct ListSettingsView: View {
                         }
                         setFavouriteListIDs(ids)
                         
+                        // Save show completed setting
+                            var dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
+                            dict[list.id] = showCompletedAtBottom
+                            if let data = try? JSONEncoder().encode(dict) {
+                                showCompletedAtBottomData = data
+                            }
+                        
                         onSave(name, extras)
                         dismiss()
                     }
@@ -310,6 +326,10 @@ struct ListSettingsView: View {
             
             // Load labels for this list
             await loadLabels()
+            
+            // Load show completed setting
+                let dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
+                showCompletedAtBottom = dict[list.id] ?? false
         }
     }
 }

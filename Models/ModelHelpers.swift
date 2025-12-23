@@ -40,7 +40,8 @@ enum ModelHelpers {
         quantity: Double = 1,
         checked: Bool = false,
         labelId: String? = nil,
-        markdownNotes: String? = nil
+        markdownNotes: String? = nil,
+        isDeleted: Bool = false
     ) -> ShoppingItem {
         return ShoppingItem(
             id: UUID(),
@@ -49,7 +50,8 @@ enum ModelHelpers {
             checked: checked,
             labelId: labelId,
             markdownNotes: markdownNotes,
-            modifiedAt: Date()
+            modifiedAt: Date(),
+            isDeleted: isDeleted
         )
     }
     
