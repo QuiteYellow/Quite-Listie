@@ -366,13 +366,15 @@ struct SidebarView: View {
             // MARK: - External / Linked Lists
             let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal }
             if !externalLists.isEmpty {
-                Section(header: Text("Conencted")) {
+                Section(header: Text("Connected")) {
                         ForEach(externalLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                             listRow(for: list) 
                     }
                 }
             }
         }
+        .navigationTitle("All Lists")
+        .navigationBarTitleDisplayMode(.large)
         .animation(.none, value: welcomeViewModel.uncheckedCounts) // Disable animation for count changes
         .animation(.none, value: unifiedProvider.allLists) // Disable animation for list changes
         
