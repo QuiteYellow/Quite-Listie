@@ -2,7 +2,7 @@
 //  ExternalFileStore_v2.swift
 //  ListsForMealie
 //
-//  Updated to support V2 format with automatic migration
+//  Updated to support V2 format with automatic migration and sync resolution
 //
 
 import Foundation
@@ -12,10 +12,11 @@ actor ExternalFileStore {
     
     private let defaultsKey = "com.listie.external-files"
     
-    private var filePresenters: [String: ExternalFilePresenter] = [:]
-    
     // In-memory cache of opened external files
     private var openedFiles: [String: (url: URL, document: ListDocument)] = [:]
+    
+    // Track file modification dates for change detection
+    private var fileModificationDates: [String: Date] = [:]
     
     init() {
         Task {
@@ -25,8 +26,6 @@ actor ExternalFileStore {
     
     // MARK: - File Management
     
-    private var fileModificationDates: [String: Date] = [:]
-
     func openFile(at url: URL, forceReload: Bool = false) async throws -> ListDocument {
         // Return cached document if available and not forcing reload
         if !forceReload, let cached = openedFiles[url.path]?.document {
@@ -67,7 +66,7 @@ actor ExternalFileStore {
         // Ensure clean ID
         let cleanId = document.list.cleanId
         if document.list.id != cleanId {
-            print("ðŸ”„ Cleaning external file ID: \(document.list.id) -> \(cleanId)")
+            print("🧹 Cleaning external file ID: \(document.list.id) -> \(cleanId)")
             document.list.id = cleanId
             // We'll save the cleaned version when the user makes changes
         }
@@ -78,17 +77,16 @@ actor ExternalFileStore {
         // Save bookmark
         try await saveBookmark(for: url)
         
-        print("âœ… Opened external file: \(document.list.name) (V\(document.version))")
+        print("✅ Opened external file: \(document.list.name) (V\(document.version))")
         
         // After loading, store the file's modification date
-           if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let modDate = attributes[.modificationDate] as? Date {
-               fileModificationDates[url.path] = modDate
-           }
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let modDate = attributes[.modificationDate] as? Date {
+            fileModificationDates[url.path] = modDate
+        }
         
         return document
     }
-    
     
     func hasFileChanged(at url: URL) -> Bool {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -128,10 +126,16 @@ actor ExternalFileStore {
         // Update cache
         openedFiles[url.path] = (url, document)
         
+        // Update modification date
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let modDate = attributes[.modificationDate] as? Date {
+            fileModificationDates[url.path] = modDate
+        }
+        
         // Save bookmark
         try await saveBookmark(for: url)
         
-        print("âœ… Saved external file: \(document.list.name) (V2)")
+        print("✅ Saved external file: \(document.list.name) (V2)")
     }
     
     func getOpenedFile(at url: URL) -> ListDocument? {
@@ -143,8 +147,8 @@ actor ExternalFileStore {
     }
     
     func closeFile(at url: URL) {
-        stopMonitoring(url: url)
         openedFiles.removeValue(forKey: url.path)
+        fileModificationDates.removeValue(forKey: url.path)
         
         // Remove the bookmark so file won't reappear on next launch
         var bookmarks = loadBookmarks()
@@ -314,32 +318,115 @@ actor ExternalFileStore {
     func clearBookmarks() {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
         openedFiles.removeAll()
+        fileModificationDates.removeAll()
     }
     
     func updateCache(_ document: ListDocument, at url: URL) async {
         openedFiles[url.path] = (url, document)
     }
     
-    func startMonitoring(url: URL) async {
-        guard filePresenters[url.path] == nil else { return }
+    // MARK: - Sync Resolution
+    
+    /// Syncs file by merging cached changes with disk changes, using modification dates to resolve conflicts
+    func syncFile(at url: URL) async throws -> ListDocument {
+        print("🔄 Syncing file: \(url.lastPathComponent)")
         
-        let presenter = ExternalFilePresenter(url: url) { [weak self] in
-            Task {
-                await MainActor.run {
-                    NotificationCenter.default.post(
-                        name: .externalFileChanged,
-                        object: url
-                    )
+        // 1. IMPORTANT: Save the cached version BEFORE reloading from disk
+        let cachedDocument = openedFiles[url.path]?.document
+        
+        // 2. Load current file from disk (this will update the cache, so we saved it above)
+        let diskDocument = try await openFile(at: url, forceReload: true)
+        
+        // 3. If no cache existed, just return disk version
+        guard let cached = cachedDocument else {
+            print("✅ No cache, using disk version")
+            return diskDocument
+        }
+        
+        // 4. Merge items based on modification dates
+        let mergedItems = mergeItems(cached: cached.items, disk: diskDocument.items)
+        
+        // 5. Merge labels based on modification or presence
+        let mergedLabels = mergeLabels(cached: cached.labels, disk: diskDocument.labels)
+        
+        // 6. Create merged document (use latest list metadata)
+        var mergedDocument = diskDocument
+        mergedDocument.items = mergedItems
+        mergedDocument.labels = mergedLabels
+        
+        // Use latest list modification date
+        if cached.list.modifiedAt > diskDocument.list.modifiedAt {
+            mergedDocument.list = cached.list
+        }
+        
+        // 7. Save merged version back to disk
+        try await saveFile(mergedDocument, to: url)
+        
+        print("✅ Sync complete: \(mergedItems.count) items, \(mergedLabels.count) labels")
+        
+        return mergedDocument
+    }
+    
+    /// Merges items from cache and disk, preferring the one with the latest modification date
+    private func mergeItems(cached: [ShoppingItem], disk: [ShoppingItem]) -> [ShoppingItem] {
+        var itemsById: [UUID: ShoppingItem] = [:]
+        
+        // Add all disk items first
+        for item in disk {
+            itemsById[item.id] = item
+        }
+        
+        // Merge with cached items (latest modification date wins)
+        for cachedItem in cached {
+            if let diskItem = itemsById[cachedItem.id] {
+                // Both exist - compare modification dates
+                if cachedItem.modifiedAt > diskItem.modifiedAt {
+                    // Cache is newer - use it
+                    itemsById[cachedItem.id] = cachedItem
+                    // Only log if there's a meaningful time difference (> 1 second)
+                    if cachedItem.modifiedAt.timeIntervalSince(diskItem.modifiedAt) > 1 {
+                        print("  📝 Item '\(cachedItem.note)': cache is newer (\(cachedItem.modifiedAt) vs \(diskItem.modifiedAt))")
+                    }
+                } else if diskItem.modifiedAt > cachedItem.modifiedAt {
+                    // Disk is newer - already in dict, just log if meaningful difference
+                    if diskItem.modifiedAt.timeIntervalSince(cachedItem.modifiedAt) > 1 {
+                        print("  📝 Item '\(diskItem.note)': disk is newer (\(diskItem.modifiedAt) vs \(cachedItem.modifiedAt))")
+                    }
                 }
+                // If timestamps are equal (within 1 second), don't log - no conflict
+            } else {
+                // Only in cache - add it (new item created locally)
+                itemsById[cachedItem.id] = cachedItem
+                print("  ➕ Item '\(cachedItem.note)': added from cache")
             }
         }
         
-        filePresenters[url.path] = presenter
-        print("👁️ Started monitoring: \(url.lastPathComponent)")
+        // Check for items only in disk (new items created remotely)
+        for diskItem in disk {
+            if !cached.contains(where: { $0.id == diskItem.id }) {
+                print("  ➕ Item '\(diskItem.note)': added from disk")
+            }
+        }
+        
+        return Array(itemsById.values).sorted { $0.modifiedAt > $1.modifiedAt }
     }
-
-    func stopMonitoring(url: URL) {
-        filePresenters.removeValue(forKey: url.path)
-        print("🛑 Stopped monitoring: \(url.lastPathComponent)")
+    
+    /// Merges labels from cache and disk
+    private func mergeLabels(cached: [ShoppingLabel], disk: [ShoppingLabel]) -> [ShoppingLabel] {
+        var labelsById: [String: ShoppingLabel] = [:]
+        
+        // Add all disk labels
+        for label in disk {
+            labelsById[label.id] = label
+        }
+        
+        // Add cached labels not in disk
+        for label in cached {
+            if labelsById[label.id] == nil {
+                labelsById[label.id] = label
+            }
+        }
+        
+        return Array(labelsById.values)
     }
 }

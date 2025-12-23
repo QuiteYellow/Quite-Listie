@@ -38,6 +38,13 @@ struct WelcomeView: View {
                     }
                 }
             )
+            .refreshable {
+                await unifiedProvider.loadAllLists()
+                //await welcomeViewModel.loadLists()
+                await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+                
+                //await Task.yield()
+            }
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Menu {
@@ -249,18 +256,16 @@ struct WelcomeView: View {
             guard let listID = newValue else { return }
             
             // Find the selected list
-            if let list = unifiedProvider.allLists.first(where: { $0.id == listID }),
-               case .external(let url) = list.source {
+            if let list = unifiedProvider.allLists.first(where: { $0.id == listID }) {
                 Task {
-                    // Force reload from disk
-                    _ = try? await ExternalFileStore.shared.openFile(at: url, forceReload: true)
-                    await unifiedProvider.reloadList(list)
+                    // NEW: Sync before displaying
+                    try? await unifiedProvider.syncIfNeeded(for: list)
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task {
-                await unifiedProvider.checkExternalFilesForChanges()
+                await unifiedProvider.syncAllExternalLists()
             }
         }
     }
@@ -342,7 +347,7 @@ struct SidebarView: View {
             let favourites = unifiedProvider.allLists.filter { favouriteListIDs.contains($0.summary.id) }
             if !favourites.isEmpty {
                 Section(header: Label("Favourites", systemImage: "star.fill").foregroundColor(.yellow)) {
-                    ForEach(favourites.sorted(by: { $0.summary.name < $1.summary.name }), id: \.id) { list in
+                    ForEach(favourites.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                         listRow(for: list)
                     }
                 }
@@ -352,7 +357,7 @@ struct SidebarView: View {
             let internalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && !($0.isExternal) }
             if !internalLists.isEmpty {
                 Section(header: Text("Private")) {
-                    ForEach(internalLists.sorted(by: { $0.summary.name < $1.summary.name }), id: \.id) { list in
+                    ForEach(internalLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                         listRow(for: list)
                     }
                 }
@@ -362,17 +367,15 @@ struct SidebarView: View {
             let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal }
             if !externalLists.isEmpty {
                 Section(header: Text("Conencted")) {
-                    ForEach(externalLists.sorted(by: { $0.summary.name < $1.summary.name }), id: \.id) { list in
-                        listRow(for: list)
+                        ForEach(externalLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
+                            listRow(for: list) 
                     }
                 }
             }
         }
-        .refreshable {
-            await unifiedProvider.loadAllLists()
-            await welcomeViewModel.loadLists()
-            await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
-        }
+        .animation(.none, value: welcomeViewModel.uncheckedCounts) // Disable animation for count changes
+        .animation(.none, value: unifiedProvider.allLists) // Disable animation for list changes
+        
         .alert("Delete List?", isPresented: $showingDeleteConfirmation, presenting: listToDelete) { list in
             Button("Delete", role: .destructive) {
                 Task {

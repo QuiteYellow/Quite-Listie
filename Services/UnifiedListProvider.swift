@@ -98,10 +98,11 @@ class UnifiedListProvider: ObservableObject {
                 await ExternalFileStore.shared.closeFile(at: url)
             }
             
-            await ExternalFileStore.shared.startMonitoring(url: url)
         }
         
-        allLists = unified
+        allLists = unified.sorted { list1, list2 in
+            list1.summary.name.localizedCaseInsensitiveCompare(list2.summary.name) == .orderedAscending
+        }
         
         // Initialize save status
         for list in unified where saveStatus[list.id] == nil {
@@ -109,35 +110,7 @@ class UnifiedListProvider: ObservableObject {
         }
     }
     
-    func handleFileChange(at url: URL) async {
-        guard let list = allLists.first(where: {
-            if case .external(let listURL) = $0.source {
-                return listURL.path == url.path
-            }
-            return false
-        }) else { return }
-        
-        print("🔄 Reloading changed file: \(list.summary.name)")
-        
-        do {
-            let document = try await ExternalFileStore.shared.openFile(at: url, forceReload: true)
-            
-            if let index = allLists.firstIndex(where: { $0.id == list.id }) {
-                var updatedList = allLists[index]
-                updatedList.summary = document.list
-                updatedList.summary.id = list.id // Keep runtime ID
-                allLists[index] = updatedList
-                externalLabels[url] = document.labels
-            }
-            
-            // Notify views to refresh
-            await MainActor.run {
-                NotificationCenter.default.post(name: .externalListChanged, object: list.id)
-            }
-        } catch {
-            print("❌ Failed to reload file: \(error)")
-        }
-    }
+    
     
     // MARK: - Items
     
@@ -164,6 +137,37 @@ class UnifiedListProvider: ObservableObject {
         
     }
     
+    /// Syncs an external list if the file has changed
+    func syncIfNeeded(for list: UnifiedList) async throws {
+        guard case .external(let url) = list.source else { return }
+        
+        if await ExternalFileStore.shared.hasFileChanged(at: url) {
+            print("🔄 File changed, syncing: \(list.summary.name)")
+            let mergedDoc = try await ExternalFileStore.shared.syncFile(at: url)
+            
+            // Update cache and UI
+            await ExternalFileStore.shared.updateCache(mergedDoc, at: url)
+            externalLabels[url] = mergedDoc.labels
+            
+            // Update the list in allLists
+            if let index = allLists.firstIndex(where: { $0.id == list.id }) {
+                var updatedList = allLists[index]
+                updatedList.summary = mergedDoc.list
+                updatedList.summary.id = list.id  // Keep runtime ID
+                allLists[index] = updatedList
+            }
+            
+            objectWillChange.send()
+        }
+    }
+
+    /// Checks all external files for changes and syncs if needed
+    func syncAllExternalLists() async {
+        for list in allLists where list.isExternal {
+            try? await syncIfNeeded(for: list)
+        }
+    }
+    
     func updateItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
         switch list.source {
         case .local:
@@ -181,12 +185,55 @@ class UnifiedListProvider: ObservableObject {
     func deleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
         switch list.source {
         case .local:
+            // Local: hard delete
+            try await LocalOnlyProvider.shared.deleteItem(item)
+        case .external(let url):
+            // External: soft delete
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                document.items[index].isDeleted = true
+                document.items[index].modifiedAt = Date()
+                await ExternalFileStore.shared.updateCache(document, at: url)
+                triggerAutosave(for: list, document: document)
+            }
+        }
+    }
+    
+    func restoreItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
+            // Not applicable for local
+            break
+        case .external(let url):
+            var document = try await ExternalFileStore.shared.openFile(at: url)
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                document.items[index].isDeleted = false
+                document.items[index].modifiedAt = Date()
+                await ExternalFileStore.shared.updateCache(document, at: url)
+                triggerAutosave(for: list, document: document)
+            }
+        }
+    }
+
+    func permanentlyDeleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
+        switch list.source {
+        case .local:
             try await LocalOnlyProvider.shared.deleteItem(item)
         case .external(let url):
             var document = try await ExternalFileStore.shared.openFile(at: url)
             document.items.removeAll { $0.id == item.id }
-            await ExternalFileStore.shared.updateCache(document, at: url)  // ADD THIS LINE
+            await ExternalFileStore.shared.updateCache(document, at: url)
             triggerAutosave(for: list, document: document)
+        }
+    }
+
+    func fetchDeletedItems(for list: UnifiedList) async throws -> [ShoppingItem] {
+        switch list.source {
+        case .local:
+            return []  // Local doesn't have soft delete
+        case .external(let url):
+            let document = try await ExternalFileStore.shared.openFile(at: url)
+            return document.items.filter { $0.isDeleted }
         }
     }
     
@@ -283,7 +330,7 @@ class UnifiedListProvider: ObservableObject {
         case .local:
             try await LocalOnlyProvider.shared.deleteList(list.summary)
         case .external(let url):
-            await ExternalFileStore.shared.closeFile(at: url)
+            await ExternalFileStore.shared.closeFile(at: url)  // This already handles cleanup
             externalLabels.removeValue(forKey: url)
         }
         allLists.removeAll { $0.id == list.id }
@@ -343,20 +390,6 @@ class UnifiedListProvider: ObservableObject {
     }
     
     func checkExternalFilesForChanges() async {
-        let externalLists = allLists.filter { $0.isExternal }
-        
-        for list in externalLists {
-            guard case .external(let url) = list.source else { continue }
-            
-            if await ExternalFileStore.shared.hasFileChanged(at: url) {
-                print("🔄 File changed: \(list.summary.name)")
-                await reloadList(list)
-                
-                // Post notification
-                await MainActor.run {
-                    NotificationCenter.default.post(name: .externalListChanged, object: list.id)
-                }
-            }
-        }
+        await syncAllExternalLists()
     }
 }

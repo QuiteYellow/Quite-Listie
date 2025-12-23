@@ -27,7 +27,9 @@ class ShoppingListViewModel: ObservableObject {
     func loadItems() async {
         isLoading = true
         do {
-            items = try await provider.fetchItems(for: list)
+            let allItems = try await provider.fetchItems(for: list)
+            // Filter out soft-deleted items
+            items = allItems.filter { !($0.isDeleted ?? false) }
         } catch {
             print("Error loading items: \(error)")
         }
@@ -188,9 +190,16 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     var itemsGroupedByLabel: [String: [ShoppingItem]] {
-        Dictionary(grouping: items) { item in
+        let grouped = Dictionary(grouping: items) { item in
             // Use the helper to get label, works with both V1 and V2
             labelForItem(item)?.name ?? "No Label"
+        }
+        
+        // Sort items within each group alphabetically
+        return grouped.mapValues { items in
+            items.sorted { item1, item2 in
+                item1.note.localizedCaseInsensitiveCompare(item2.note) == .orderedAscending
+            }
         }
     }
 

@@ -27,6 +27,17 @@ struct ListDocument: Codable {
         case items
         case labels
     }
+    
+    // Custom decoder to handle missing version field (old withMealie files)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Default to version 1 if not present (old withMealie format)
+        self.version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        self.list = try container.decode(ShoppingListSummary.self, forKey: .list)
+        self.items = try container.decode([ShoppingItem].self, forKey: .items)
+        self.labels = try container.decode([ShoppingLabel].self, forKey: .labels)
+    }
 }
 
 // MARK: - Shopping List
@@ -47,17 +58,44 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
     var extras: [String: String]? = nil
     
     enum CodingKeys: String, CodingKey {
-        case id, name, modifiedAt, icon, hiddenLabels
-        case localTokenId, groupId, userId, householdId, extras
-    }
-    
-    init(id: String, name: String, modifiedAt: Date = Date(), icon: String? = nil, hiddenLabels: [String]? = nil) {
-        self.id = id
-        self.name = name
-        self.modifiedAt = modifiedAt
-        self.icon = icon
-        self.hiddenLabels = hiddenLabels
-    }
+            case id, name, modifiedAt, icon, hiddenLabels
+            case localTokenId, groupId, userId, householdId, extras
+        }
+        
+        // Custom decoder for defensive parsing
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            // Required fields
+            self.id = try container.decode(String.self, forKey: .id)
+            self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unnamed List"
+            
+            // Handle modification date with fallback
+            if let modDate = try? container.decode(Date.self, forKey: .modifiedAt) {
+                self.modifiedAt = modDate
+            } else {
+                self.modifiedAt = Date() // Fallback to current date
+            }
+            
+            // Optional fields
+            self.icon = try container.decodeIfPresent(String.self, forKey: .icon)
+            self.hiddenLabels = try container.decodeIfPresent([String].self, forKey: .hiddenLabels)
+            
+            // Legacy fields
+            self.localTokenId = try container.decodeIfPresent(UUID.self, forKey: .localTokenId)
+            self.groupId = try container.decodeIfPresent(String.self, forKey: .groupId)
+            self.userId = try container.decodeIfPresent(String.self, forKey: .userId)
+            self.householdId = try container.decodeIfPresent(String.self, forKey: .householdId)
+            self.extras = try container.decodeIfPresent([String: String].self, forKey: .extras)
+        }
+        
+        init(id: String, name: String, modifiedAt: Date = Date(), icon: String? = nil, hiddenLabels: [String]? = nil) {
+            self.id = id
+            self.name = name
+            self.modifiedAt = modifiedAt
+            self.icon = icon
+            self.hiddenLabels = hiddenLabels
+        }
     
     // Helper to get clean ID (remove "local-" prefix if present)
     var cleanId: String {
@@ -76,6 +114,7 @@ struct ShoppingItem: Identifiable, Codable {
     var checked: Bool
     var labelId: String?  // Reference to label by ID only
     var modifiedAt: Date
+    var isDeleted: Bool  // Soft delete flag
     
     // Optional fields
     var markdownNotes: String?  // Moved out of extras
@@ -89,21 +128,56 @@ struct ShoppingItem: Identifiable, Codable {
     var extras: [String: String]? = nil
     
     enum CodingKeys: String, CodingKey {
-        case id, note, quantity, checked, labelId, modifiedAt, markdownNotes
-        case shoppingListId, label, localTokenId, groupId, householdId, extras
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted
+            case shoppingListId, label, localTokenId, groupId, householdId, extras
+        }
+        
+        // Custom decoder for defensive parsing
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            // Required fields with fallbacks
+            self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+            self.note = try container.decode(String.self, forKey: .note)
+            self.quantity = try container.decodeIfPresent(Double.self, forKey: .quantity) ?? 1.0
+            self.checked = try container.decodeIfPresent(Bool.self, forKey: .checked) ?? false
+            self.labelId = try container.decodeIfPresent(String.self, forKey: .labelId)
+            
+            // Handle modification date with fallback
+            if let modDate = try? container.decode(Date.self, forKey: .modifiedAt) {
+                self.modifiedAt = modDate
+            } else {
+                self.modifiedAt = Date() // Fallback to current date
+            }
+            
+            // Handle isDeleted with default to false
+            self.isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+            
+            // Optional fields
+            self.markdownNotes = try container.decodeIfPresent(String.self, forKey: .markdownNotes)
+            
+            // Legacy fields
+            self.shoppingListId = try container.decodeIfPresent(String.self, forKey: .shoppingListId)
+            self.label = try container.decodeIfPresent(ShoppingLabel.self, forKey: .label)
+            self.localTokenId = try container.decodeIfPresent(UUID.self, forKey: .localTokenId)
+            self.groupId = try container.decodeIfPresent(String.self, forKey: .groupId)
+            self.householdId = try container.decodeIfPresent(String.self, forKey: .householdId)
+            self.extras = try container.decodeIfPresent([String: String].self, forKey: .extras)
+        }
+        
+        init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
+             labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(), isDeleted: Bool = false) {
+            self.id = id
+            self.note = note
+            self.quantity = quantity
+            self.checked = checked
+            self.labelId = labelId
+            self.markdownNotes = markdownNotes
+            self.modifiedAt = modifiedAt
+            self.isDeleted = isDeleted
+        }
     }
-    
-    init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
-         labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date()) {
-        self.id = id
-        self.note = note
-        self.quantity = quantity
-        self.checked = checked
-        self.labelId = labelId
-        self.markdownNotes = markdownNotes
-        self.modifiedAt = modifiedAt
-    }
-}
+
 
 // MARK: - Shopping Label
 struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
