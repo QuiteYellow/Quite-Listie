@@ -28,51 +28,72 @@ enum ExampleData {
             markdownNotes: """
 ## 👋 Welcome to Listie!
 
-This app lets you quickly manage your shopping lists on your device — fast, simple, and always offline.
+This app lets you manage your shopping lists — either privately on your device or as shareable files.
 
-### 📝 Local Shopping Lists
+### 📱 Two Ways to Work
 
-All your lists are stored **locally on your device**:
-
-- ✅ No account needed
+**Private Lists** (stored on device):
+- ✅ No files to manage
 - ✅ Works completely offline
 - ✅ Fast and responsive
 - ✅ Your data stays private
 
+**Connected Lists** (shareable files):
+- 📂 Stored as `.json` files
+- 🔗 Share via Files, iCloud, or any file service
+- 👥 Collaborate with others
+- 🗑️ Includes recycle bin for deleted items
+
 ### 🚀 Getting Started
 
-1. Tap the **+** button to create your first list
-2. Add items to your list
-3. Check them off as you shop
-4. Use **labels** to organize items by category
-5. Add **markdown notes** to items for extra details
+Tap the **+** button in the sidebar to:
+1. **New List (Private)** — Quick personal list on this device
+2. **New List As File...** — Create a shareable `.listie` file
+3. **Open JSON File** — Import an existing list file
 
-### 🏷️ Labels
+### 📝 Working with Lists
 
-Access the **Label Manager** from the menu to:
-- Create custom labels (Produce, Dairy, etc.)
-- Assign colors to labels
-- Organize your shopping items
+- Add items to any list
+- Check them off as you shop
+- Use **labels** to organize by category (Produce, Dairy, etc.)
+- Add **markdown notes** to items for details
+- Adjust quantities with swipe gestures
 
-### 📋 Features
+### 🏷️ Managing Labels
 
-- Markdown notes on items
-- Quantities
+Open **List Settings** to:
+- Create custom labels with colors
+- Show/hide labels per list
+- Organize items visually
+
+### 📂 File Sharing Tips
+
+**Connected Lists** automatically sync when:
+- You open the list
+- You pull to refresh
+- The app returns to foreground
+
+If multiple people edit the same file, Listie merges changes intelligently based on timestamps.
+
+### ⚙️ Features
+
 - Custom list icons
-- Color-coded labels
+- Color-coded labels  
+- Mark all items as complete/active
+- Swipe to adjust quantities
+- Export any list as JSON
 - Offline-first design
-- **New**: Simplified data format (V2)
-- **New**: Cleaner JSON exports
+- Clean V2 data format
 
 ---
 
 ### 🔒 Read-Only Example
 
-This welcome list is **read-only** and just here to help you get started.
+This welcome list is **read-only** — it's just here to help you get started.
 
-**Tap the + button** to create your first real shopping list!
+**Tap the + button** to create your first list!
 
-Happy shopping! 🛍️
+Happy Listing! 🛍️
 """,
             modifiedAt: Date()
         )
