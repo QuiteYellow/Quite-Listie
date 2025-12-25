@@ -118,6 +118,7 @@ struct ShoppingItem: Identifiable, Codable {
     
     // Optional fields
     var markdownNotes: String?  // Moved out of extras
+    var deletedAt: Date?  // tracks when item was deleted
     
     // Legacy fields (will be ignored in new files)
     var shoppingListId: String? = nil
@@ -128,7 +129,7 @@ struct ShoppingItem: Identifiable, Codable {
     var extras: [String: String]? = nil
     
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt
             case shoppingListId, label, localTokenId, groupId, householdId, extras
         }
         
@@ -142,6 +143,9 @@ struct ShoppingItem: Identifiable, Codable {
             self.quantity = try container.decodeIfPresent(Double.self, forKey: .quantity) ?? 1.0
             self.checked = try container.decodeIfPresent(Bool.self, forKey: .checked) ?? false
             self.labelId = try container.decodeIfPresent(String.self, forKey: .labelId)
+            
+            // Handle deletedAt
+                self.deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
             
             // Handle modification date with fallback
             if let modDate = try? container.decode(Date.self, forKey: .modifiedAt) {

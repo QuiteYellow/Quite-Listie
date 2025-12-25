@@ -39,6 +39,18 @@ class LocalOnlyProvider: ShoppingListProvider {
         try await store.deleteItem(item)
     }
     
+    func restoreItem(_ item: ShoppingItem) async throws {
+        try await store.restoreItem(item)
+    }
+
+    func permanentlyDeleteItem(_ item: ShoppingItem) async throws {
+        try await store.permanentlyDeleteItem(item)
+    }
+
+    func fetchDeletedItems(for listId: String) async throws -> [ShoppingItem] {
+        return try await store.fetchDeletedItems(for: listId)
+    }
+    
     func createList(_ list: ShoppingListSummary) async throws {
         try await store.createList(list)
     }

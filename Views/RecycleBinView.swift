@@ -11,6 +11,7 @@ import SwiftUI
 struct RecycleBinView: View {
     let list: UnifiedList
     let provider: UnifiedListProvider
+    var onItemsChanged: (() -> Void)?
     @Environment(\.dismiss) var dismiss
     
     @State private var deletedItems: [ShoppingItem] = []
@@ -19,23 +20,42 @@ struct RecycleBinView: View {
     @State private var itemToDelete: ShoppingItem?
     
     var body: some View {
-        NavigationView {
-            List {
-                if deletedItems.isEmpty {
-                    ContentUnavailableView(
-                        "Recycle Bin Empty",
-                        systemImage: "trash",
-                        description: Text("Deleted items will appear here")
-                    )
-                } else {
-                    ForEach(deletedItems) { item in
+            NavigationView {
+                List {
+                    if deletedItems.isEmpty {
+                        ContentUnavailableView(
+                            "Recycle Bin Empty",
+                            systemImage: "trash",
+                            description: Text("Deleted items will appear here and be automatically removed after 30 days")
+                        )
+                    } else {
+                        Section {
+                            Text("Items are automatically deleted after 30 days")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        ForEach(deletedItems) { item in
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(item.note)
                                     .font(.body)
-                                Text("Deleted: \(item.modifiedAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                
+                                // Show deletion date and auto-delete countdown
+                                if let deletedAt = item.deletedAt ?? item.modifiedAt as Date? {
+                                    let daysAgo = Calendar.current.dateComponents([.day], from: deletedAt, to: Date()).day ?? 0
+                                    let daysRemaining = 30 - daysAgo
+                                    
+                                    if daysRemaining > 0 {
+                                        Text("Deleted \(daysAgo) day\(daysAgo == 1 ? "" : "s") ago • Auto-deletes in \(daysRemaining) day\(daysRemaining == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundColor(daysRemaining <= 7 ? .orange : .secondary)
+                                    } else {
+                                        Text("Deleted \(daysAgo) day\(daysAgo == 1 ? "" : "s") ago • Will be auto-deleted soon")
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                    }
+                                }
                             }
                             
                             Spacer()
@@ -124,6 +144,7 @@ struct RecycleBinView: View {
         do {
             try await provider.restoreItem(item, in: list)
             await loadDeletedItems()
+            onItemsChanged?()
         } catch {
             print("Failed to restore item: \(error)")
         }
@@ -133,6 +154,7 @@ struct RecycleBinView: View {
         do {
             try await provider.permanentlyDeleteItem(item, from: list)
             await loadDeletedItems()
+            onItemsChanged?()
         } catch {
             print("Failed to permanently delete item: \(error)")
         }
@@ -144,6 +166,7 @@ struct RecycleBinView: View {
         }
         await loadDeletedItems()
         showRestoreAllConfirmation = false
+        onItemsChanged?()
     }
     
     private func deleteAll() async {
@@ -152,5 +175,6 @@ struct RecycleBinView: View {
         }
         await loadDeletedItems()
         showDeleteAllConfirmation = false
+        onItemsChanged?() 
     }
 }
