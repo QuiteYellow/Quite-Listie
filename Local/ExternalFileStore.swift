@@ -371,6 +371,9 @@ actor ExternalFileStore {
     private func mergeItems(cached: [ShoppingItem], disk: [ShoppingItem]) -> [ShoppingItem] {
         var itemsById: [UUID: ShoppingItem] = [:]
         
+        // Note: Items may reference labelIds that don't exist in labels array
+        // This is handled gracefully - labelForItem returns nil and item appears under "No Label"
+        
         // Add all disk items first
         for item in disk {
             itemsById[item.id] = item

@@ -79,14 +79,21 @@ struct WelcomeView: View {
                     list: unifiedList.summary,
                     unifiedList: unifiedList,
                     unifiedProvider: unifiedProvider,
-                    welcomeViewModel: welcomeViewModel
+                    welcomeViewModel: welcomeViewModel,
+                    onExportJSON: {
+                        Task {
+                            await exportList(unifiedList.summary)
+                        }
+                    }
                 )
                 .id(unifiedList.id)
             } else {
                 ContentUnavailableView("Select a list", systemImage: "list.bullet")
             }
         }
-        .sheet(item: $editingUnifiedList) { unifiedList in
+        .sheet(item: $editingUnifiedList, onDismiss: {
+            NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
+        }) { unifiedList in
             ListSettingsView(
                 list: unifiedList.summary,
                 unifiedList: unifiedList,

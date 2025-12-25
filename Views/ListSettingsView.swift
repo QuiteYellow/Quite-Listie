@@ -197,7 +197,6 @@ struct ListSettingsView: View {
                             .swipeActions(edge: .leading) {
                                 Button {
                                     editingLabel = label
-                                    showingLabelEditor = true
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
@@ -206,7 +205,6 @@ struct ListSettingsView: View {
                             .contextMenu {
                                 Button {
                                     editingLabel = label
-                                    showingLabelEditor = true
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
@@ -260,39 +258,36 @@ struct ListSettingsView: View {
                     }
                 }
             }
+            .sheet(item: $editingLabel) { label in
+                // Edit existing label
+                LabelEditorView(
+                    viewModel: LabelEditorViewModel(from: label),
+                    onSave: { name, colorHex in
+                        var updated = label
+                        updated.name = name
+                        updated.color = colorHex
+                        Task {
+                            await updateLabel(updated)
+                        }
+                    },
+                    onCancel: {
+                        editingLabel = nil
+                    }
+                )
+            }
             .sheet(isPresented: $showingLabelEditor) {
-                if let label = editingLabel {
-                    // Edit existing label
-                    LabelEditorView(
-                        viewModel: LabelEditorViewModel(from: label),
-                        onSave: { name, colorHex in
-                            var updated = label
-                            updated.name = name
-                            updated.color = colorHex
-                            Task {
-                                await updateLabel(updated)
-                                showingLabelEditor = false
-                            }
-                        },
-                        onCancel: {
-                            showingLabelEditor = false
+                // Create new label
+                LabelEditorView(
+                    viewModel: LabelEditorViewModel(),
+                    onSave: { name, colorHex in
+                        Task {
+                            await createLabel(name: name, color: colorHex)
                         }
-                    )
-                } else {
-                    // Create new label
-                    LabelEditorView(
-                        viewModel: LabelEditorViewModel(),
-                        onSave: { name, colorHex in
-                            Task {
-                                await createLabel(name: name, color: colorHex)
-                                showingLabelEditor = false
-                            }
-                        },
-                        onCancel: {
-                            showingLabelEditor = false
-                        }
-                    )
-                }
+                    },
+                    onCancel: {
+                        showingLabelEditor = false
+                    }
+                )
             }
             .alert("Delete Label?", isPresented: $showingDeleteConfirmation, presenting: labelToDelete) { label in
                 Button("Delete", role: .destructive) {

@@ -16,7 +16,9 @@ enum ListSource {
 extension Notification.Name {
     static let externalFileChanged = Notification.Name("externalFileChanged")
     static let externalListChanged = Notification.Name("externalListChanged")
+    static let listSettingsChanged = Notification.Name("listSettingsChanged")
 }
+
 
 struct UnifiedList: Identifiable, Hashable {
     let id: String
@@ -267,6 +269,7 @@ class UnifiedListProvider: ObservableObject {
             var document = try await ExternalFileStore.shared.openFile(at: url)
             document.labels.append(label)
             document.list.modifiedAt = Date()
+            await ExternalFileStore.shared.updateCache(document, at: url)
             triggerAutosave(for: list, document: document)
             externalLabels[url] = document.labels
         }
@@ -281,6 +284,7 @@ class UnifiedListProvider: ObservableObject {
             if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
                 document.labels[index] = label
                 document.list.modifiedAt = Date()
+                await ExternalFileStore.shared.updateCache(document, at: url)
                 triggerAutosave(for: list, document: document)
                 externalLabels[url] = document.labels
             }
@@ -295,6 +299,7 @@ class UnifiedListProvider: ObservableObject {
             var document = try await ExternalFileStore.shared.openFile(at: url)
             document.labels.removeAll { $0.id == label.id }
             document.list.modifiedAt = Date()
+            await ExternalFileStore.shared.updateCache(document, at: url) 
             triggerAutosave(for: list, document: document)
             externalLabels[url] = document.labels
         }
