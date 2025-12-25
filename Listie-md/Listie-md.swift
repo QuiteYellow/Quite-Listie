@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct ShoppingListApp: App {
+    @FocusedBinding(\.newListSheet) private var newListSheet: Bool?
+    @FocusedBinding(\.fileImporter) private var fileImporter: Bool?
+    @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?
+    
     var body: some Scene {
         WindowGroup {
             WelcomeView()
@@ -31,15 +35,25 @@ struct ShoppingListApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New List") {
-                    NotificationCenter.default.post(name: NSNotification.Name("CreateNewList"), object: nil)
+                Button("New List (Private)") {
+                    newListSheet = true
                 }
                 .keyboardShortcut("N", modifiers: .command)
+                .disabled(newListSheet == nil)
+                
+                Button("New List As File...") {
+                    newConnectedExporter = true
+                }
+                .keyboardShortcut("N", modifiers: [.command, .shift])
+                .disabled(newConnectedExporter == nil)
+                
+                Divider()
                 
                 Button("Open JSON File...") {
-                    NotificationCenter.default.post(name: NSNotification.Name("OpenJSONFile"), object: nil)
+                    fileImporter = true
                 }
                 .keyboardShortcut("O", modifiers: .command)
+                .disabled(fileImporter == nil)
             }
         }
     }

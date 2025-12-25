@@ -9,6 +9,35 @@ import Foundation
 
 import SwiftUI
 
+struct NewListSheetKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+struct FileImporterKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+struct NewConnectedExporterKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+extension FocusedValues {
+    var newListSheet: Binding<Bool>? {
+        get { self[NewListSheetKey.self] }
+        set { self[NewListSheetKey.self] = newValue }
+    }
+    
+    var fileImporter: Binding<Bool>? {
+        get { self[FileImporterKey.self] }
+        set { self[FileImporterKey.self] = newValue }
+    }
+    
+    var newConnectedExporter: Binding<Bool>? {
+        get { self[NewConnectedExporterKey.self] }
+        set { self[NewConnectedExporterKey.self] = newValue }
+    }
+}
+
 extension String {
     func removingLabelNumberPrefix() -> String {
         let pattern = #"^\d+\.\s*"#

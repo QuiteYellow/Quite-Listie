@@ -251,7 +251,11 @@ struct WelcomeView: View {
             await unifiedProvider.loadAllLists()
             await welcomeViewModel.loadLists()
             await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+            
         }
+        .focusedSceneValue(\.newListSheet, $isPresentingNewList)
+        .focusedSceneValue(\.fileImporter, $showFileImporter)
+        .focusedSceneValue(\.newConnectedExporter, $showNewConnectedExporter)
         .onChange(of: selectedListID) { oldValue, newValue in
             guard let listID = newValue else { return }
             

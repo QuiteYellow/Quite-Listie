@@ -185,29 +185,40 @@ class UnifiedListProvider: ObservableObject {
     func deleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
         switch list.source {
         case .local:
-            // Local: hard delete
+            // Local: soft delete (changed from hard delete)
             try await LocalOnlyProvider.shared.deleteItem(item)
         case .external(let url):
             // External: soft delete
             var document = try await ExternalFileStore.shared.openFile(at: url)
             if let index = document.items.firstIndex(where: { $0.id == item.id }) {
                 document.items[index].isDeleted = true
+                document.items[index].deletedAt = Date()
                 document.items[index].modifiedAt = Date()
                 await ExternalFileStore.shared.updateCache(document, at: url)
                 triggerAutosave(for: list, document: document)
             }
         }
     }
+
+    func fetchDeletedItems(for list: UnifiedList) async throws -> [ShoppingItem] {
+        switch list.source {
+        case .local:
+            return try await LocalOnlyProvider.shared.fetchDeletedItems(for: list.summary.id)
+        case .external(let url):
+            let document = try await ExternalFileStore.shared.openFile(at: url)
+            return document.items.filter { $0.isDeleted }
+        }
+    }
     
     func restoreItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
         switch list.source {
         case .local:
-            // Not applicable for local
-            break
+            try await LocalOnlyProvider.shared.restoreItem(item)
         case .external(let url):
             var document = try await ExternalFileStore.shared.openFile(at: url)
             if let index = document.items.firstIndex(where: { $0.id == item.id }) {
                 document.items[index].isDeleted = false
+                document.items[index].deletedAt = nil
                 document.items[index].modifiedAt = Date()
                 await ExternalFileStore.shared.updateCache(document, at: url)
                 triggerAutosave(for: list, document: document)
@@ -218,7 +229,7 @@ class UnifiedListProvider: ObservableObject {
     func permanentlyDeleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
         switch list.source {
         case .local:
-            try await LocalOnlyProvider.shared.deleteItem(item)
+            try await LocalOnlyProvider.shared.permanentlyDeleteItem(item)
         case .external(let url):
             var document = try await ExternalFileStore.shared.openFile(at: url)
             document.items.removeAll { $0.id == item.id }
@@ -227,15 +238,6 @@ class UnifiedListProvider: ObservableObject {
         }
     }
 
-    func fetchDeletedItems(for list: UnifiedList) async throws -> [ShoppingItem] {
-        switch list.source {
-        case .local:
-            return []  // Local doesn't have soft delete
-        case .external(let url):
-            let document = try await ExternalFileStore.shared.openFile(at: url)
-            return document.items.filter { $0.isDeleted }
-        }
-    }
     
     // MARK: - Labels
     
@@ -391,5 +393,28 @@ class UnifiedListProvider: ObservableObject {
     
     func checkExternalFilesForChanges() async {
         await syncAllExternalLists()
+    }
+    
+    // MARK: - Auto-cleanup
+
+    /// Permanently deletes items that have been in recycle bin for more than 30 days
+    func cleanupOldDeletedItems(for list: UnifiedList) async {
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        
+        do {
+            let deletedItems = try await fetchDeletedItems(for: list)
+            
+            for item in deletedItems {
+                // If deletedAt is nil (old items before this feature), use modifiedAt
+                let deletionDate = item.deletedAt ?? item.modifiedAt
+                
+                if deletionDate < thirtyDaysAgo {
+                    print("🗑️ Auto-deleting old item: \(item.note) (deleted \(deletionDate))")
+                    try? await permanentlyDeleteItem(item, from: list)
+                }
+            }
+        } catch {
+            print("Failed to cleanup old items: \(error)")
+        }
     }
 }

@@ -196,8 +196,11 @@ actor LocalShoppingListStore: ShoppingListProvider {
     func deleteItem(_ item: ShoppingItem) async throws {
         // Find which list contains this item
         for (listId, var document) in listDocuments {
-            if document.items.contains(where: { $0.id == item.id }) {
-                document.items.removeAll { $0.id == item.id }
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                // Soft delete instead of removing
+                document.items[index].isDeleted = true
+                document.items[index].deletedAt = Date()
+                document.items[index].modifiedAt = Date()
                 document.list.modifiedAt = Date()
                 listDocuments[listId] = document
                 try await saveList(listId)
@@ -206,6 +209,42 @@ actor LocalShoppingListStore: ShoppingListProvider {
         }
         
         throw NSError(domain: "Item not found in any list", code: 1, userInfo: nil)
+    }
+    
+    func restoreItem(_ item: ShoppingItem) async throws {
+        for (listId, var document) in listDocuments {
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                document.items[index].isDeleted = false
+                document.items[index].deletedAt = nil 
+                document.items[index].modifiedAt = Date()
+                document.list.modifiedAt = Date()
+                listDocuments[listId] = document
+                try await saveList(listId)
+                return
+            }
+        }
+        throw NSError(domain: "Item not found", code: 1, userInfo: nil)
+    }
+
+    func permanentlyDeleteItem(_ item: ShoppingItem) async throws {
+        for (listId, var document) in listDocuments {
+            if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+                document.items.remove(at: index)
+                document.list.modifiedAt = Date()
+                listDocuments[listId] = document
+                try await saveList(listId)
+                return
+            }
+        }
+        throw NSError(domain: "Item not found", code: 1, userInfo: nil)
+    }
+
+    func fetchDeletedItems(for listId: String) async throws -> [ShoppingItem] {
+        let cleanId = cleanListId(listId)
+        guard let document = listDocuments[cleanId] else {
+            return []
+        }
+        return document.items.filter { $0.isDeleted }
     }
 
     func updateItem(_ item: ShoppingItem) async throws {

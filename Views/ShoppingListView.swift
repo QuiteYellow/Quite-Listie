@@ -108,8 +108,6 @@ struct ShoppingListView: View {
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
     
-    @State private var expandedSections: [String: Bool] = [:]
-    
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
 
@@ -124,6 +122,23 @@ struct ShoppingListView: View {
             dict[unifiedList.id] = newValue
             if let data = try? JSONEncoder().encode(dict) {
                 showCompletedAtBottomData = data
+            }
+        }
+    }
+    
+    @AppStorage("expandedSections") private var expandedSectionsData: Data = Data()
+
+    // Computed property to get/set for this specific list
+    private var expandedSections: [String: Bool] {
+        get {
+            let allData = (try? JSONDecoder().decode([String: [String: Bool]].self, from: expandedSectionsData)) ?? [:]
+            return allData[unifiedList.id] ?? [:]
+        }
+        nonmutating set {
+            var allData = (try? JSONDecoder().decode([String: [String: Bool]].self, from: expandedSectionsData)) ?? [:]
+            allData[unifiedList.id] = newValue
+            if let data = try? JSONEncoder().encode(allData) {
+                expandedSectionsData = data
             }
         }
     }
@@ -150,20 +165,20 @@ struct ShoppingListView: View {
     
     private func toggleSection(_ labelName: String) {
         withAnimation(.easeInOut) {
-            if let isExpanded = expandedSections[labelName] {
-                expandedSections[labelName] = !isExpanded
-            } else {
-                expandedSections[labelName] = true
-            }
+            var sections = expandedSections
+            sections[labelName] = !(sections[labelName] ?? true)
+            expandedSections = sections
         }
     }
-    
+
     private func initializeExpandedSections(for labels: [String]) {
+        var sections = expandedSections
         for label in labels {
-            if expandedSections[label] == nil {
-                expandedSections[label] = true
+            if sections[label] == nil {
+                sections[label] = true
             }
         }
+        expandedSections = sections
     }
     
     @ViewBuilder
@@ -352,14 +367,14 @@ struct ShoppingListView: View {
                     }
                     .disabled(list.isReadOnlyExample)
                     
-                    if case .external = unifiedList.source {
+
                         Divider()
                             Button {
                                 showingRecycleBin = true
                             } label: {
                                 Label("Recycle Bin", systemImage: "trash")
                             }
-                        }
+                        
 
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -375,8 +390,11 @@ struct ShoppingListView: View {
             initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .task {
-            // NEW: Sync on open
+            // Sync on open
             try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+
+            // NEW: Cleanup old deleted items
+            await unifiedProvider.cleanupOldDeletedItems(for: unifiedList)
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
@@ -390,7 +408,13 @@ struct ShoppingListView: View {
             EditItemView(viewModel: viewModel, item: item, list: list)
         }
         .sheet(isPresented: $showingRecycleBin) {
-            RecycleBinView(list: unifiedList, provider: unifiedProvider)
+            RecycleBinView(list: unifiedList, provider: unifiedProvider) {
+                Task {
+                    await viewModel.loadItems()
+                }
+            }
+            
+            
         }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },
@@ -406,7 +430,7 @@ struct ShoppingListView: View {
             }
             Button("Cancel", role: .cancel) { itemToDelete = nil }
         } message: {
-            Text("Are you sure you want to delete this item?")
+            Text("Item will be moved to the Recycle Bin and automatically deleted after 30 days.")
         }
     }
     
