@@ -96,17 +96,30 @@ struct ItemRowView: View {
     }
 }
 
+struct MarkdownExport: Identifiable {
+    let id = UUID()
+    let listName: String
+    let items: [ShoppingItem]
+    let labels: [ShoppingLabel]
+    let activeOnly: Bool
+}
+
 struct ShoppingListView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
     @ObservedObject var welcomeViewModel: WelcomeViewModel
+    var onExportJSON: (() -> Void)?
     
     @StateObject private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
     @State private var itemToDelete: ShoppingItem? = nil
+    
+    @State private var showingMarkdownImport = false
+    @State private var markdownToExport: MarkdownExport? = nil
+    @State private var exportMarkdownText = ""
     
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
@@ -145,11 +158,12 @@ struct ShoppingListView: View {
     
     @State private var showingRecycleBin = false
     
-    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel) {
+    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, onExportJSON exportJSON: (() -> Void)? = nil) {
         self.list = list
         self.unifiedList = unifiedList
         self.unifiedProvider = unifiedProvider
         self.welcomeViewModel = welcomeViewModel
+        self.onExportJSON = exportJSON
         self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
     }
     
@@ -211,7 +225,7 @@ struct ShoppingListView: View {
                         onIncrement: {
                             Task {
                                 let newQty = (item.quantity ?? 1) + 1
-                                _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
                             }
                         },
                         onDecrement: {
@@ -220,7 +234,7 @@ struct ShoppingListView: View {
                             } else {
                                 Task {
                                     let newQty = max((item.quantity ?? 1) - 1, 1)
-                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
                                 }
                             }
                         },
@@ -233,7 +247,7 @@ struct ShoppingListView: View {
                             } else {
                                 Task {
                                     let newQty = max((item.quantity ?? 1) - 1, 1)
-                                    _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                    _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
                                 }
                             }
                         } label: {
@@ -245,7 +259,7 @@ struct ShoppingListView: View {
                         Button {
                             Task {
                                 let newQty = (item.quantity ?? 1) + 1
-                                _ = await viewModel.updateItem(item, note: item.note, label: item.label, quantity: newQty)
+                                _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
                             }
                         } label: {
                             Label("Increase", systemImage: "plus")
@@ -331,6 +345,17 @@ struct ShoppingListView: View {
                 
                 // Menu with list actions
                 Menu {
+                    Button {
+                            showingMarkdownImport = true
+                        } label: {
+                            Label("Import from Markdown", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(list.isReadOnlyExample)
+                        
+                        
+                    
+                    Divider()
+                    
                     Menu("Mark All Items As…") {
                         Button {
                             Task {
@@ -367,20 +392,42 @@ struct ShoppingListView: View {
                     }
                     .disabled(list.isReadOnlyExample)
                     
-
-                        Divider()
-                            Button {
-                                showingRecycleBin = true
-                            } label: {
-                                Label("Recycle Bin", systemImage: "trash")
-                            }
+                    Divider()
+                
+                    Menu("Export As…") {
+                        Button {
+                            markdownToExport = MarkdownExport(
+                                listName: list.name,
+                                items: viewModel.items,
+                                labels: viewModel.labels,
+                                activeOnly: true  // Defaults to active, user can toggle in the view
+                            )
+                        } label: {
+                            Label("Markdown", systemImage: "doc.text")
+                        }
                         
-
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
-        }
+                        Divider()
+                        
+                        Button {
+                            onExportJSON?()
+                        } label: {
+                            Label("JSON (Backup)", systemImage: "doc.badge.gearshape")
+                        }
+                    }
+                                        
+                                        Divider()
+                                        
+                                        Button {
+                                            showingRecycleBin = true
+                                        } label: {
+                                            Label("Recycle Bin", systemImage: "trash")
+                                        }
+                                        
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                    }
+                                }
+                            }
         .refreshable {
             // NEW: Sync external files before refreshing
             try? await unifiedProvider.syncIfNeeded(for: unifiedList)
@@ -416,6 +463,28 @@ struct ShoppingListView: View {
             
             
         }
+        .sheet(isPresented: $showingMarkdownImport) {
+            Task {
+                // Reload items and labels after import
+                await viewModel.loadItems()
+                await viewModel.loadLabels()
+            }
+        } content: {
+            MarkdownListImportView(
+                list: unifiedList,
+                provider: unifiedProvider,
+                existingItems: viewModel.items,
+                existingLabels: viewModel.labels
+            )
+        }
+        .sheet(item: $markdownToExport) { export in
+            MarkdownExportView(
+                listName: export.listName,
+                items: export.items,
+                labels: export.labels,
+                activeOnly: export.activeOnly
+            )
+        }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },
             set: { if !$0 { itemToDelete = nil } }
@@ -432,6 +501,12 @@ struct ShoppingListView: View {
         } message: {
             Text("Item will be moved to the Recycle Bin and automatically deleted after 30 days.")
         }
+        .onReceive(NotificationCenter.default.publisher(for: .listSettingsChanged)) { _ in
+                    Task {
+                        await viewModel.loadLabels()
+                        await viewModel.loadItems()
+                    }
+                }
     }
     
     @ViewBuilder

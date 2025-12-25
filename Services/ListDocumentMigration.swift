@@ -86,43 +86,19 @@ enum ListDocumentMigration {
     // MARK: - Label Migration
     
     private static func migrateLabels(_ oldLabels: [ShoppingLabel], listId: String) -> [ShoppingLabel] {
-        var usedIds = Set<String>()
-        
         return oldLabels.map { oldLabel in
-            // Generate a clean, simple ID from the label name
-            let baseId = generateSimpleId(from: oldLabel.name)
-            let uniqueId = makeUniqueId(baseId: baseId, usedIds: &usedIds)
+            // Check if this is already a UUID (36 chars with dashes)
+            let isUUID = oldLabel.id.count == 36 && oldLabel.id.contains("-")
+            
+            // Use existing ID if it's already a UUID, otherwise generate new UUID
+            let newId = isUUID ? oldLabel.id : UUID().uuidString
             
             return ShoppingLabel(
-                id: uniqueId,
+                id: newId,
                 name: oldLabel.name,
                 color: oldLabel.color
             )
         }
-    }
-    
-    private static func generateSimpleId(from name: String) -> String {
-        // Convert name to lowercase, remove special characters, use dashes
-        let cleaned = name
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "-")
-            .filter { $0.isLetter || $0 == "-" }
-        
-        // If empty after cleaning, use a default
-        return cleaned.isEmpty ? "label" : cleaned
-    }
-    
-    private static func makeUniqueId(baseId: String, usedIds: inout Set<String>) -> String {
-        var candidateId = baseId
-        var counter = 1
-        
-        while usedIds.contains(candidateId) {
-            candidateId = "\(baseId)-\(counter)"
-            counter += 1
-        }
-        
-        usedIds.insert(candidateId)
-        return candidateId
     }
     
     private static func createLabelIdMapping(oldLabels: [ShoppingLabel], newLabels: [ShoppingLabel]) -> [String: String] {
