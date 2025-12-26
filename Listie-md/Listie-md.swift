@@ -2,7 +2,7 @@
 //  Listie-md.swift (UPDATED WITH FILE SUPPORT)
 //  ListsForMealie
 //
-//  Now supports opening .json shopping list files directly
+//  Now supports opening .json shopping list files directly and export commands
 //
 
 import SwiftUI
@@ -12,6 +12,8 @@ struct ShoppingListApp: App {
     @FocusedBinding(\.newListSheet) private var newListSheet: Bool?
     @FocusedBinding(\.fileImporter) private var fileImporter: Bool?
     @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?
+    @FocusedBinding(\.exportMarkdown) private var exportMarkdown: Bool?
+    @FocusedBinding(\.exportJSON) private var exportJSON: Bool?
     
     var body: some Scene {
         WindowGroup {
@@ -46,7 +48,7 @@ struct ShoppingListApp: App {
                 }
                 .keyboardShortcut("N", modifiers: [.command, .shift])
                 .disabled(newConnectedExporter == nil)
-                
+
                 Divider()
                 
                 Button("Open JSON File...") {
@@ -54,6 +56,27 @@ struct ShoppingListApp: App {
                 }
                 .keyboardShortcut("O", modifiers: .command)
                 .disabled(fileImporter == nil)
+                
+                Divider()
+            }
+            
+            CommandGroup(before: .saveItem) {
+                Divider()
+                
+                // Export submenu under File - keep menu enabled, disable items instead
+                Menu("Export As...") {
+                    Button("Markdown...") {
+                        exportMarkdown = true
+                    }
+                    .keyboardShortcut("E", modifiers: .command)
+                    .disabled(exportMarkdown == nil)
+                    
+                    Button("JSON (Backup)...") {
+                        exportJSON = true
+                    }
+                    .keyboardShortcut("E", modifiers: [.command, .shift])
+                    .disabled(exportJSON == nil)
+                }
             }
         }
     }

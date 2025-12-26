@@ -32,11 +32,6 @@ struct WelcomeView: View {
                 selectedListID: $selectedListID,
                 editingUnifiedList: $editingUnifiedList,
                 onImportFile: { showFileImporter = true },
-                onExportList: { list in
-                    Task {
-                        await exportList(list)
-                    }
-                }
             )
             .refreshable {
                 await unifiedProvider.loadAllLists()
@@ -319,7 +314,6 @@ struct SidebarView: View {
     @Binding var editingUnifiedList: UnifiedList?
     
     var onImportFile: () -> Void
-    var onExportList: (ShoppingListSummary) -> Void
     
     @State private var listToDelete: UnifiedList? = nil
     @State private var showingDeleteConfirmation = false
@@ -473,10 +467,6 @@ struct SidebarView: View {
                     editingUnifiedList = list
                 }
                 Divider()
-                
-                Button("Export as JSON") {
-                    onExportList(list.summary)
-                }
                 
                 if list.isExternal {
                     Button("Close File") {
