@@ -172,54 +172,53 @@ struct WelcomeView: View {
             }
         }
         .fileExporter(
-            isPresented: $showFileExporter,
-            document: exportingDocument,
-            contentType: .json,
-            defaultFilename: exportingDocument?.document.list.name ?? "shopping-list"
-        ) { result in
-            switch result {
-            case .success(let url):
-                print("Exported to: \(url)")
-            case .failure(let error):
-                print("Export error: \(error)")
-            }
-            exportingDocument = nil
-        }
-        .fileExporter(
-            isPresented: $showNewConnectedExporter,
-            document: ListDocumentFile.empty(name: "New List"),
-            contentType: .json,
-            defaultFilename: "new-list"
-        ) { result in
-            switch result {
-            case .success(let url):
-                Task {
-                    // Extract filename without extension as the title
-                    let filename = url.deletingPathExtension().lastPathComponent
-                    
-                    // Create a new list with the filename as title
-                    let newList = ModelHelpers.createNewList(name: filename, icon: "checklist")
-                    let document = ListDocument(list: newList, items: [], labels: [])
-                    
-                    // Save the file
-                    try? await ExternalFileStore.shared.saveFile(document, to: url)
-                    
-                    // Reload and select the new list
-                    await unifiedProvider.loadAllLists()
-                    
-                    if let newList = unifiedProvider.allLists.first(where: {
-                        if case .external(let listURL) = $0.source {
-                            return listURL == url
+                    isPresented: Binding(
+                        get: { showFileExporter || showNewConnectedExporter },
+                        set: { isPresented in
+                            if !isPresented {
+                                showFileExporter = false
+                                showNewConnectedExporter = false
+                            }
                         }
-                        return false
-                    }) {
-                        selectedListID = newList.id
+                    ),
+                    document: exportingDocument ?? ListDocumentFile.empty(name: "New List"),
+                    contentType: .json,
+                    defaultFilename: exportingDocument?.document.list.name ?? "new-list"
+                ) { result in
+                    switch result {
+                    case .success(let url):
+                        print("Exported to: \(url)")
+                        
+                        // Handle new connected list creation
+                        if showNewConnectedExporter {
+                            Task {
+                                let filename = url.deletingPathExtension().lastPathComponent
+                                let newList = ModelHelpers.createNewList(name: filename, icon: "checklist")
+                                let document = ListDocument(list: newList, items: [], labels: [])
+                                
+                                try? await ExternalFileStore.shared.saveFile(document, to: url)
+                                await unifiedProvider.loadAllLists()
+                                
+                                if let newList = unifiedProvider.allLists.first(where: {
+                                    if case .external(let listURL) = $0.source {
+                                        return listURL == url
+                                    }
+                                    return false
+                                }) {
+                                    selectedListID = newList.id
+                                }
+                            }
+                        }
+                        
+                    case .failure(let error):
+                        print("Export error: \(error)")
                     }
+                    
+                    // Reset state
+                    exportingDocument = nil
+                    showFileExporter = false
+                    showNewConnectedExporter = false
                 }
-            case .failure(let error):
-                print("Export error: \(error)")
-            }
-        }
         .alert("ID Conflict", isPresented: $showIDConflictAlert) {
             Button("Generate New ID") {
                 Task {
@@ -281,29 +280,36 @@ struct WelcomeView: View {
         }
     }
     
-    private func exportList(_ list: ShoppingListSummary) async {
-        // Find the unified list
-        guard let unifiedList = unifiedProvider.allLists.first(where: { $0.summary.id == list.id }) else {
-            return
-        }
-        
-        // Fetch all data
-        let items = try? await unifiedProvider.fetchItems(for: unifiedList)
-        let labels = try? await unifiedProvider.fetchLabels(for: unifiedList)
-        
-        // Prepare the document
-        let document = ListDocument(
-            list: list,
-            items: items ?? [],
-            labels: labels ?? []
-        )
-        
-        // Set the document and show exporter
-        await MainActor.run {
+    @MainActor
+        private func exportList(_ list: ShoppingListSummary) async {
+            // Find the unified list
+            guard let unifiedList = unifiedProvider.allLists.first(where: { $0.summary.id == list.id }) else {
+                return
+            }
+            
+            // Fetch all data
+            let items = try? await unifiedProvider.fetchItems(for: unifiedList)
+            let labels = try? await unifiedProvider.fetchLabels(for: unifiedList)
+            
+            // Use original ID if available (for external lists)
+            var exportList = list
+            if let originalId = unifiedList.originalFileId {
+                exportList.id = originalId
+            }
+            
+            // Prepare the document
+            let document = ListDocument(
+                list: exportList,
+                items: items ?? [],
+                labels: labels ?? []
+            )
+            
+            // Set the document and show exporter
             exportingDocument = ListDocumentFile(document: document)
+            
+            
             showFileExporter = true
         }
-    }
 }
 
 struct SidebarView: View {

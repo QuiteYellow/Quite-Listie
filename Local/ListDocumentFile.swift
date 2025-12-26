@@ -15,7 +15,7 @@ extension UTType {
 }
 
 struct ListDocumentFile: FileDocument {
-    static var readableContentTypes: [UTType] { [.shoppingList, .json] }
+    static var readableContentTypes: [UTType] { [.json] }
     
     var document: ListDocument
     

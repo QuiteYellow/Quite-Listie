@@ -36,7 +36,7 @@ struct MarkdownExportView: View {
             listName: listName,
             items: items,
             labels: labels,
-            activeOnly: showActiveOnly,
+            activeOnly: !showActiveOnly,
             includeNotes: includeNotes
         )
     }
@@ -44,33 +44,35 @@ struct MarkdownExportView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Info banner
-                HStack {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.secondary)
-                    Text("Copy and export operations will use raw markdown")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(Color(.secondarySystemGroupedBackground))
-                
-                Divider()
-                
+
                 // Options section
-                Form {
-                        Toggle(isOn: $showActiveOnly) {
-                            Label("Active Items Only", systemImage: "circle")
+                HStack {
+                Text("Include:")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    Spacer()  // Pushes content to the left
                         }
-                        
-                        Toggle(isOn: $includeNotes) {
-                            Label("Include Notes", systemImage: "note.text")
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .background(Color(.secondarySystemBackground))
+                HStack {
                     
-                }
-                .frame(height: 160)
+                                    Toggle(isOn: $showActiveOnly) {
+                                        Label("Completed", systemImage: "circle")
+                                    }
+                                    
+                                    Divider()
+                                        .frame(height: 20)
+                                        .padding(.horizontal, 16)
+                                    
+                                    Toggle(isOn: $includeNotes) {
+                                        Label("Notes", systemImage: "note.text")
+                                    }
+                                }
+                                .padding(.horizontal)
+                                .padding(.vertical, 12)
+                                .background(Color(.secondarySystemBackground))
                 .scrollDisabled(true)
                 
                 Divider()
@@ -101,16 +103,32 @@ struct MarkdownExportView: View {
                     .background(Color(.systemBackground))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                
+                Divider()
+                
+                // Info banner
+                HStack {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                    Text("Copy and export operations will use raw markdown")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemGroupedBackground))
+                
             }
-            .navigationTitle("Export as Markdown")
+            .navigationTitle("Export Markdown")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Done") { dismiss() }
                             }
-                
+                ToolbarSpacer(.fixed, placement: .cancellationAction)
                             
-                            ToolbarItem(placement: .navigation) {
+                            ToolbarItem(placement: .cancellationAction) {
                                 Button {
                                     showRawMarkdown.toggle()
                                 } label: {
@@ -167,16 +185,13 @@ struct MarkdownExportView: View {
                 }
             )
             .onAppear {
-                           showActiveOnly = activeOnly  // Initialize from parameter
+                           showActiveOnly = !activeOnly  // Initialize from parameter
                        }
                    }
 
 #if targetEnvironment(macCatalyst) || os(macOS)
         .frame(minHeight: 800)
-        #else
-        .presentationDetents([.fraction(0.9), .large])
-        .presentationDragIndicator(.visible)
-        #endif
+#endif
 
     }
     
