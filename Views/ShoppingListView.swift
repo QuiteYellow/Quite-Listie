@@ -121,6 +121,10 @@ struct ShoppingListView: View {
     @State private var markdownToExport: MarkdownExport? = nil
     @State private var exportMarkdownText = ""
     
+    // Export triggers for menu commands
+    @State private var triggerMarkdownExport = false
+    @State private var triggerJSONExport = false
+    
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
 
@@ -502,11 +506,32 @@ struct ShoppingListView: View {
             Text("Item will be moved to the Recycle Bin and automatically deleted after 30 days.")
         }
         .onReceive(NotificationCenter.default.publisher(for: .listSettingsChanged)) { _ in
-                    Task {
-                        await viewModel.loadLabels()
-                        await viewModel.loadItems()
-                    }
-                }
+            Task {
+                await viewModel.loadLabels()
+                await viewModel.loadItems()
+            }
+        }
+        .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
+        .focusedSceneValue(\.exportJSON, $triggerJSONExport)
+        .onChange(of: triggerMarkdownExport) { oldValue, newValue in
+            if newValue {
+                // Trigger markdown export
+                markdownToExport = MarkdownExport(
+                    listName: list.name,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    activeOnly: true
+                )
+                triggerMarkdownExport = false
+            }
+        }
+        .onChange(of: triggerJSONExport) { oldValue, newValue in
+            if newValue {
+                // Trigger JSON export
+                onExportJSON?()
+                triggerJSONExport = false
+            }
+        }
     }
     
     @ViewBuilder

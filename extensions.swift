@@ -21,6 +21,14 @@ struct NewConnectedExporterKey: FocusedValueKey {
     typealias Value = Binding<Bool>
 }
 
+struct ExportMarkdownKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+struct ExportJSONKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 extension FocusedValues {
     var newListSheet: Binding<Bool>? {
         get { self[NewListSheetKey.self] }
@@ -35,6 +43,16 @@ extension FocusedValues {
     var newConnectedExporter: Binding<Bool>? {
         get { self[NewConnectedExporterKey.self] }
         set { self[NewConnectedExporterKey.self] = newValue }
+    }
+    
+    var exportMarkdown: Binding<Bool>? {
+        get { self[ExportMarkdownKey.self] }
+        set { self[ExportMarkdownKey.self] = newValue }
+    }
+
+    var exportJSON: Binding<Bool>? {
+        get { self[ExportJSONKey.self] }
+        set { self[ExportJSONKey.self] = newValue }
     }
 }
 
