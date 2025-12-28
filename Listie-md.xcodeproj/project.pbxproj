@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		379DF6422F017C6D00475782 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6412F017C6D00475782 /* Textual */; };
 		CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = CB260D882DE4B7E900D05618 /* MarkdownUI */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
@@ -88,6 +89,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				379DF6422F017C6D00475782 /* Textual in Frameworks */,
 				CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */,
 				CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */,
 			);
@@ -170,6 +172,7 @@
 			packageProductDependencies = (
 				CB260D882DE4B7E900D05618 /* MarkdownUI */,
 				CB3015E32DE9D43700CCFCC8 /* SymbolPicker */,
+				379DF6412F017C6D00475782 /* Textual */,
 			);
 			productName = ListsForMealie;
 			productReference = CBEFA7AB2DE31318002F4B13 /* Listie.md.app */;
@@ -250,6 +253,7 @@
 			packageReferences = (
 				CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
 				CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */,
+				379DF6402F017C6D00475782 /* XCRemoteSwiftPackageReference "textual" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CBEFA7AC2DE31318002F4B13 /* Products */;
@@ -450,12 +454,12 @@
 				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
@@ -497,12 +501,12 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 				UIFileSharingEnabled = YES;
 			};
 			name = Debug;
@@ -515,12 +519,12 @@
 				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
@@ -562,12 +566,12 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 				UIFileSharingEnabled = YES;
 			};
 			name = Release;
@@ -704,6 +708,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		379DF6402F017C6D00475782 /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/textual";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 		CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/gonzalezreal/MarkdownUI";
@@ -723,6 +735,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		379DF6412F017C6D00475782 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 379DF6402F017C6D00475782 /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
+		};
 		CB260D882DE4B7E900D05618 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */;

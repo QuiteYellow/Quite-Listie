@@ -27,6 +27,8 @@ struct UnifiedList: Identifiable, Hashable {
     
     var originalFileId: String?
     
+    var isReadOnly: Bool = false
+    
     var externalURL: URL? {
         if case .external(let url) = source { return url }
         return nil
@@ -61,11 +63,14 @@ class UnifiedListProvider: ObservableObject {
         do {
             let localLists = try await LocalOnlyProvider.shared.fetchShoppingLists()
             for list in localLists {
+                let isReadOnly = list.id == "example-welcome-list" // Mark example as read-only
+                
                 unified.append(UnifiedList(
                     id: list.id,
                     source: .local,
                     summary: list,
-                    originalFileId: nil
+                    originalFileId: nil,
+                    isReadOnly: isReadOnly 
                 ))
             }
         } catch {
@@ -85,11 +90,15 @@ class UnifiedListProvider: ObservableObject {
                 var modifiedSummary = document.list
                 modifiedSummary.id = runtimeId
                 
+                // Check if file is writable
+                let isReadOnly = !ExternalFileStore.isFileWritable(at: url)
+                
                 unified.append(UnifiedList(
                     id: runtimeId,
                     source: .external(url),
                     summary: modifiedSummary,
-                    originalFileId: document.list.id
+                    originalFileId: document.list.id,
+                    isReadOnly: isReadOnly
                 ))
                 
                 // PRELOAD reactive label cache
@@ -370,8 +379,69 @@ class UnifiedListProvider: ObservableObject {
             docToSave.list.id = originalId
         }
         
-        try await ExternalFileStore.shared.saveFile(docToSave, to: url)
-        await MainActor.run { saveStatus[listId] = .saved }
+        do {
+            try await ExternalFileStore.shared.saveFile(docToSave, to: url)
+            await MainActor.run { saveStatus[listId] = .saved }
+        } catch {
+            let nsError = error as NSError
+            print("❌ Save error: \(error)")
+            print("   Domain: \(nsError.domain)")
+            print("   Code: \(nsError.code)")
+            print("   Description: \(nsError.localizedDescription)")
+            
+            // Check if file is writable now
+            let isWritable = ExternalFileStore.isFileWritable(at: url)
+            print("   File is writable: \(isWritable)")
+            
+            // If file is not writable (regardless of error type)
+            if !isWritable {
+                print("⚠️ File became read-only, reverting changes and reloading from disk")
+                
+                do {
+                    // 1. Reload clean version from disk
+                    let cleanDocument = try await ExternalFileStore.shared.openFile(at: url, forceReload: true)
+                    
+                    // 2. Update cache with clean version (discards unsaved changes)
+                    await ExternalFileStore.shared.updateCache(cleanDocument, at: url)
+                    
+                    // 3. Update reactive label cache
+                    await MainActor.run {
+                        externalLabels[url] = cleanDocument.labels
+                    }
+                    
+                    // 4. Mark list as read-only and update summary
+                    if let index = allLists.firstIndex(where: { $0.id == listId }) {
+                        var updatedList = allLists[index]
+                        updatedList.isReadOnly = true
+                        updatedList.summary = cleanDocument.list
+                        updatedList.summary.id = listId  // Keep runtime ID
+                        allLists[index] = updatedList
+                        print("✅ Marked list as read-only and updated")
+                    }
+                    
+                    // 5. Update save status
+                    await MainActor.run {
+                        saveStatus[listId] = .failed("File is read-only. Changes discarded.")
+                    }
+                    
+                    // 6. Post notification to refresh views
+                    NotificationCenter.default.post(name: .externalListChanged, object: listId)
+                    
+                    // 7. Trigger objectWillChange to update WelcomeView
+                    objectWillChange.send()
+                    
+                    print("✅ Successfully reverted to clean version")
+                } catch {
+                    print("❌ Failed to reload clean version: \(error)")
+                }
+            } else {
+                await MainActor.run {
+                    saveStatus[listId] = .failed(error.localizedDescription)
+                }
+            }
+            
+            throw error
+        }
     }
     
     // MARK: - Helper

@@ -125,6 +125,8 @@ struct ShoppingListView: View {
     @State private var triggerMarkdownExport = false
     @State private var triggerJSONExport = false
     
+    @State private var showContent = false
+    
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
 
@@ -242,33 +244,38 @@ struct ShoppingListView: View {
                                 }
                             }
                         },
-                        isReadOnly: list.isReadOnlyExample
+                        isReadOnly: unifiedList.isReadOnly
                     )
                     .swipeActions(edge: .trailing) {
-                        Button(role: .none) {
-                            if (item.quantity ?? 1) < 2 {
-                                itemToDelete = item
-                            } else {
-                                Task {
-                                    let newQty = max((item.quantity ?? 1) - 1, 1)
-                                    _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                        if !unifiedList.isReadOnly {
+                            Button(role: .none) {
+                                if (item.quantity ?? 1) < 2 {
+                                    itemToDelete = item
+                                } else {
+                                    Task {
+                                        let newQty = max((item.quantity ?? 1) - 1, 1)
+                                        _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                                        
+                                    }
                                 }
+                            } label: {
+                                Label((item.quantity ?? 1) < 2 ? "Delete" : "Decrease", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
                             }
-                        } label: {
-                            Label((item.quantity ?? 1) < 2 ? "Delete" : "Decrease", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                            .tint((item.quantity ?? 1) < 2 ? .red : .orange)
                         }
-                        .tint((item.quantity ?? 1) < 2 ? .red : .orange)
                     }
                     .swipeActions(edge: .leading) {
-                        Button {
-                            Task {
-                                let newQty = (item.quantity ?? 1) + 1
-                                _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                        if !unifiedList.isReadOnly {
+                            Button {
+                                Task {
+                                    let newQty = (item.quantity ?? 1) + 1
+                                    _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                                }
+                            } label: {
+                                Label("Increase", systemImage: "plus")
                             }
-                        } label: {
-                            Label("Increase", systemImage: "plus")
+                            .tint(.green)
                         }
-                        .tint(.green)
                     }
                     .contextMenu {
                         Button("Edit Item...") {
@@ -332,6 +339,7 @@ struct ShoppingListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -345,7 +353,7 @@ struct ShoppingListView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .disabled(list.isReadOnlyExample)
+                .disabled(unifiedList.isReadOnly)
                 
                 // Menu with list actions
                 Menu {
@@ -354,7 +362,7 @@ struct ShoppingListView: View {
                         } label: {
                             Label("Import from Markdown", systemImage: "square.and.arrow.down")
                         }
-                        .disabled(list.isReadOnlyExample)
+                        .disabled(unifiedList.isReadOnly)
                         
                         
                     
@@ -370,7 +378,7 @@ struct ShoppingListView: View {
                         } label: {
                             Label("Completed", systemImage: "checkmark.circle.fill")
                         }
-                        .disabled(list.isReadOnlyExample)
+                        .disabled(unifiedList.isReadOnly)
 
                         Button {
                             Task {
@@ -381,7 +389,7 @@ struct ShoppingListView: View {
                         } label: {
                             Label("Active", systemImage: "circle")
                         }
-                        .disabled(list.isReadOnlyExample)
+                        .disabled(unifiedList.isReadOnly)
                     }
 
                     Button {
@@ -394,7 +402,7 @@ struct ShoppingListView: View {
                             systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
                         )
                     }
-                    .disabled(list.isReadOnlyExample)
+                    .disabled(unifiedList.isReadOnly)
                     
                     Divider()
                 
@@ -409,6 +417,7 @@ struct ShoppingListView: View {
                         } label: {
                             Label("Markdown", systemImage: "doc.text")
                         }
+                        .disabled(unifiedList.isReadOnly)
                         
                         Divider()
                         
@@ -417,6 +426,7 @@ struct ShoppingListView: View {
                         } label: {
                             Label("JSON (Backup)", systemImage: "doc.badge.gearshape")
                         }
+                        .disabled(unifiedList.isReadOnly)
                     }
                                         
                                         Divider()
@@ -426,6 +436,7 @@ struct ShoppingListView: View {
                                         } label: {
                                             Label("Recycle Bin", systemImage: "trash")
                                         }
+                                        .disabled(unifiedList.isReadOnly)
                                         
                                     } label: {
                                         Image(systemName: "ellipsis.circle")
@@ -441,6 +452,7 @@ struct ShoppingListView: View {
             initializeExpandedSections(for: viewModel.sortedLabelKeys)
         }
         .task {
+            showContent = false  // Reset on appear
             // Sync on open
             try? await unifiedProvider.syncIfNeeded(for: unifiedList)
 
@@ -450,13 +462,18 @@ struct ShoppingListView: View {
             await viewModel.loadLabels()
             await viewModel.loadItems()
             initializeExpandedSections(for: viewModel.sortedLabelKeys)
+            
+            // Fade in after loading
+                    withAnimation {
+                        showContent = true
+                    }
         }
         
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(list: list, viewModel: viewModel)
         }
         .fullScreenCover(item: $editingItem) { item in
-            EditItemView(viewModel: viewModel, item: item, list: list)
+            EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList) 
         }
         .sheet(isPresented: $showingRecycleBin) {
             RecycleBinView(list: unifiedList, provider: unifiedProvider) {
@@ -511,8 +528,19 @@ struct ShoppingListView: View {
                 await viewModel.loadItems()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .externalListChanged)) { notification in
+            // Reload if this list changed
+            if let changedListId = notification.object as? String,
+               changedListId == unifiedList.id {
+                Task {
+                    await viewModel.loadLabels()
+                    await viewModel.loadItems()
+                }
+            }
+        }
         .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
         .focusedSceneValue(\.exportJSON, $triggerJSONExport)
+        .focusedSceneValue(\.isReadOnly, unifiedList.isReadOnly) 
         .onChange(of: triggerMarkdownExport) { oldValue, newValue in
             if newValue {
                 // Trigger markdown export
@@ -539,8 +567,7 @@ struct ShoppingListView: View {
         Group {
             switch saveStatus {
             case .saved:
-                Image(systemName: "checkmark.icloud.fill")
-                    .foregroundColor(.green)
+                EmptyView()
             case .saving:
                 ProgressView()
                     .scaleEffect(0.7)

@@ -41,7 +41,13 @@ struct MarkdownListImportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .help("Cancel")
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
@@ -60,9 +66,14 @@ struct MarkdownListImportView: View {
                 
                 if showPreview {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Back") {
+
+                        Button {
                             showPreview = false
-                        }
+                                } label: {
+                                    Image(systemName: "chevron.backward")
+                                        .symbolRenderingMode(.hierarchical)
+                                }
+                                .help("Back")
                     }
                 }
             }

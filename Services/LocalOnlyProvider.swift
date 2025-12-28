@@ -14,12 +14,7 @@ class LocalOnlyProvider: ShoppingListProvider {
     func fetchShoppingLists() async throws -> [ShoppingListSummary] {
         let lists = try await store.fetchShoppingLists()
         
-        // If no lists exist, return welcome list
-        if lists.isEmpty {
-            return [ExampleData.welcomeList]
-        }
-        
-        return lists
+        return lists + [ExampleData.welcomeList]
     }
     
     func fetchItems(for listId: String) async throws -> [ShoppingItem] {

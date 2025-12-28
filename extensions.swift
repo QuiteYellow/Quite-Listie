@@ -29,6 +29,12 @@ struct ExportJSONKey: FocusedValueKey {
     typealias Value = Binding<Bool>
 }
 
+struct IsReadOnlyKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+
+
 extension FocusedValues {
     var newListSheet: Binding<Bool>? {
         get { self[NewListSheetKey.self] }
@@ -54,6 +60,11 @@ extension FocusedValues {
         get { self[ExportJSONKey.self] }
         set { self[ExportJSONKey.self] = newValue }
     }
+    
+    var isReadOnly: Bool? {
+            get { self[IsReadOnlyKey.self] }
+            set { self[IsReadOnlyKey.self] = newValue }
+        }
 }
 
 extension String {

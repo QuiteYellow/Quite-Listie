@@ -14,6 +14,7 @@ struct ShoppingListApp: App {
     @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?
     @FocusedBinding(\.exportMarkdown) private var exportMarkdown: Bool?
     @FocusedBinding(\.exportJSON) private var exportJSON: Bool?
+    @FocusedValue(\.isReadOnly) private var isReadOnly: Bool?
     
     var body: some Scene {
         WindowGroup {
@@ -69,13 +70,13 @@ struct ShoppingListApp: App {
                         exportMarkdown = true
                     }
                     .keyboardShortcut("E", modifiers: .command)
-                    .disabled(exportMarkdown == nil)
+                    .disabled(exportMarkdown == nil || isReadOnly == true)
                     
                     Button("JSON (Backup)...") {
                         exportJSON = true
                     }
                     .keyboardShortcut("E", modifiers: [.command, .shift])
-                    .disabled(exportJSON == nil)
+                    .disabled(exportJSON == nil || isReadOnly == true)
                 }
             }
         }

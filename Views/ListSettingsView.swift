@@ -253,9 +253,13 @@ struct ListSettingsView: View {
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
                     }
+                    .help("Cancel")
                 }
             }
             .sheet(item: $editingLabel) { label in

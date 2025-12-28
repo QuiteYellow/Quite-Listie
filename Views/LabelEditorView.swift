@@ -44,10 +44,15 @@ struct LabelEditorView: View {
             .navigationTitle(viewModel.isEditing ? "Edit Label" : "New Label")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+
+                    Button {
                         onCancel()
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
                     }
+                    .help("Cancel")
                 }
 
                 ToolbarItem(placement: .confirmationAction) {

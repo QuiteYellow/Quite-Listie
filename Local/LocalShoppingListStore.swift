@@ -70,15 +70,18 @@ actor LocalShoppingListStore: ShoppingListProvider {
                     listDocuments[cleanId] = document
                     print("âœ… [Local Load V2] Loaded list: \(document.list.name) (V\(document.version))")
                 } catch {
-                    print("âŒ [Local Load V2] Failed to load \(fileURL.lastPathComponent): \(error)")
+                    print("❌ [Local Load V2] Failed to load \(fileURL.lastPathComponent): \(error)")
                     
-                    // Delete corrupted file so it doesn't keep causing errors
-                    do {
-                        try FileManager.default.removeItem(at: fileURL)
-                        print("🗑️ [Local Load V2] Deleted corrupted file: \(fileURL.lastPathComponent)")
-                    } catch {
-                        print("❌ [Local Load V2] Could not delete corrupted file: \(error)")
+                    // DON'T auto-delete - could be temporary error!
+                    // Instead, try to read raw data and report issue
+                    if let rawData = try? Data(contentsOf: fileURL),
+                       let rawString = String(data: rawData, encoding: .utf8) {
+                        print("⚠️ [Local Load V2] File contents (first 200 chars): \(rawString.prefix(200))")
                     }
+                    
+                    // Only delete if explicitly corrupted AND user confirms
+                    // For now, just log and skip
+                    print("⚠️ [Local Load V2] Skipping file - manual intervention needed")
                 }
             }
             

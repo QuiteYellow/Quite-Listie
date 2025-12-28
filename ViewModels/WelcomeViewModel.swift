@@ -45,7 +45,7 @@ class WelcomeViewModel: ObservableObject {
         for list in lists {
             do {
                 let items = try await LocalOnlyProvider.shared.fetchItems(for: list.id)
-                let count = items.filter { !$0.checked }.count
+                let count = items.filter { !$0.checked && !$0.isDeleted }.count
                 result[list.id] = count
             } catch {
                 result[list.id] = 0
@@ -81,7 +81,7 @@ class WelcomeViewModel: ObservableObject {
         for list in lists {
             do {
                 let items = try await provider.fetchItems(for: list)
-                let count = items.filter { !$0.checked }.count
+                let count = items.filter { !$0.checked && !$0.isDeleted }.count
                 result[list.id] = count
             } catch {
                 result[list.id] = 0
