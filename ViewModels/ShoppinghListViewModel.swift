@@ -114,22 +114,23 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     func setAllItems(for listId: String, toCompleted completed: Bool, didUpdate: @escaping (Int) async -> Void) async {
+        // Update all items in provider WITHOUT touching @Published items array
         for var item in items {
             if item.checked != completed {
                 item.checked = completed
-                item.modifiedAt = Date()  // Update timestamp
+                item.modifiedAt = Date()
                 
                 do {
                     try await provider.updateItem(item, in: list)
-                    if let index = items.firstIndex(where: { $0.id == item.id }) {
-                        items[index] = item
-                    }
                 } catch {
                     print("Error updating item: \(error)")
                 }
             }
         }
-
+        
+        // Completely reload from provider (clean state for Catalyst toolbar)
+        await loadItems()
+        
         let count = items.filter { !$0.checked }.count
         await didUpdate(count)
     }
