@@ -1,6 +1,6 @@
 //
 //  ItemView.swift (V2 - UPDATED)
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated EditItemView to use V2 format with direct markdownNotes field
 //

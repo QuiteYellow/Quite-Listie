@@ -1,6 +1,6 @@
 //
 //  ExternalFileStore_v2.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to support V2 format with automatic migration and sync resolution
 //

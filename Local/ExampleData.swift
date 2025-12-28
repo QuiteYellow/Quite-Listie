@@ -1,6 +1,6 @@
 //
 //  ExampleData_v2.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Example data using V2 simplified format
 //

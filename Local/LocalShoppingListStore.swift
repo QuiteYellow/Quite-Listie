@@ -1,6 +1,6 @@
 //
 //  LocalShoppingListStore_v2.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to use simplified V2 format with automatic migration
 //

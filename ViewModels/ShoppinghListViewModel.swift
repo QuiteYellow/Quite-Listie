@@ -1,6 +1,6 @@
 //
 //  ShoppingListViewModel.swift (V2 - UNIFIED VERSION)
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to use V2 format with labelId references and timestamps
 //

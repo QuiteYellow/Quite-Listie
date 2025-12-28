@@ -8,7 +8,7 @@
 
 //
 //  ListDocumentMigration.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Handles migration from V1 (old) to V2 (new simplified) format
 //
@@ -65,6 +65,7 @@ enum ListDocumentMigration {
         
         // Extract icon from extras
         let icon = oldList.extras?["listsForMealieListIcon"]
+        let icon = oldList.extras?["Listie.mdListIcon"]
         
         // Extract hidden labels from extras (convert from comma-separated string to array)
         let hiddenLabels: [String]? = {

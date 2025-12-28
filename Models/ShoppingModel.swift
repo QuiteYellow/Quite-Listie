@@ -1,6 +1,6 @@
 //
 //  ShoppingModel.swift (V2 - SIMPLIFIED)
-//  ListsForMealie
+//  Listie.md
 //
 //  Simplified data model with fewer UUIDs and cleaner structure
 //
