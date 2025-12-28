@@ -1,6 +1,6 @@
 //
 //  ShoppingListView.swift (UNIFIED VERSION)
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to work seamlessly with both local and external lists
 //

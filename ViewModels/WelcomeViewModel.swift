@@ -1,6 +1,6 @@
 //
 //  WelcomeViewModel.swift (LOCAL-ONLY VERSION)
-//  ListsForMealie
+//  Listie.md
 //
 //  Simplified for local-only storage
 //

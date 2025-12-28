@@ -1,6 +1,6 @@
 //
 //  Listie-md.swift (UPDATED WITH FILE SUPPORT)
-//  ListsForMealie
+//  Listie.md
 //
 //  Now supports opening .json shopping list files directly and export commands
 //

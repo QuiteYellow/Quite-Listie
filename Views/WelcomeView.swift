@@ -1,6 +1,6 @@
 //
 //  WelcomeView.swift (FULLY UNIFIED VERSION)
-//  ListsForMealie
+//  Listie.md
 //
 //  All lists (local and external) shown together with unified UI
 //

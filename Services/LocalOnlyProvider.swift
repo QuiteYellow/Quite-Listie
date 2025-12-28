@@ -1,6 +1,6 @@
 //
 //  LocalOnlyProvider.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Simplified provider - local storage only, no API
 //

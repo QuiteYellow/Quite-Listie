@@ -8,7 +8,7 @@
 
 //
 //  ModelHelpers_v2.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Helper functions for creating V2 model objects with clean IDs
 //

@@ -1,6 +1,6 @@
 //
 //  UnifiedListProvider.swift
-//  ListsForMealie
+//  Listie.md
 //
 //  Unified provider that handles both local storage and external files seamlessly
 //

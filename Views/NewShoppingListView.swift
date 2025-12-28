@@ -1,6 +1,6 @@
 //
 //  NewShoppingListView.swift (V2 - SIMPLIFIED)
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to use V2 format with clean IDs
 //

@@ -1,6 +1,6 @@
 //
 //  ListDocumentFile.swift (V2)
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to use V2 format with automatic migration support
 //

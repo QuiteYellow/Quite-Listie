@@ -1,6 +1,6 @@
 //
 //  ListSettingsView.swift (V2 - SIMPLIFIED)
-//  ListsForMealie
+//  Listie.md
 //
 //  Updated to use V2 format with direct fields instead of extras
 //
