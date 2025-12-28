@@ -127,6 +127,8 @@ struct ShoppingListView: View {
     
     @State private var showContent = false
     
+    @State private var isPerformingBulkAction = false
+    
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
 
@@ -344,105 +346,123 @@ struct ShoppingListView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                // Save status indicator (like writie.md)
-                saveStatusView
-                
-                // Add item button
-                Button {
-                    showingAddView = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .disabled(unifiedList.isReadOnly)
-                
-                // Menu with list actions
-                Menu {
+                if isPerformingBulkAction {
+                    // Show only a spinner during bulk operations
+                    ProgressView()   // ← THIS SPINNER
+                        .scaleEffect(0.7)
+                    
+                } else {
+                    // Save status indicator (like writie.md)
+                    saveStatusView
+                    
+                    // Add item button
                     Button {
+                        showingAddView = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(unifiedList.isReadOnly)
+                    
+                    // Menu with list actions
+                    Menu {
+                        Button {
                             showingMarkdownImport = true
                         } label: {
                             Label("Import from Markdown", systemImage: "square.and.arrow.down")
                         }
                         .disabled(unifiedList.isReadOnly)
                         
+                        Divider()
                         
-                    
-                    Divider()
-                    
-                    Menu("Mark All Items As…") {
-                        Button {
-                            Task {
-                                await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
-                                    await updateUncheckedCount(for: list.id, with: count)
+                        Menu("Mark All Items As…") {
+                            Button {
+                                Task {
+                                    isPerformingBulkAction = true
+                                    
+                                    await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
+                                        await updateUncheckedCount(for: list.id, with: count)
+                                    }
+                                    
+                                    await MainActor.run {
+                                        isPerformingBulkAction = false
+                                    }
                                 }
+                            } label: {
+                                Label("Completed", systemImage: "checkmark.circle.fill")
+                            }
+                            .disabled(unifiedList.isReadOnly)
+
+                            Button {
+                                Task {
+                                    isPerformingBulkAction = true
+                                    
+                                    await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
+                                        await updateUncheckedCount(for: list.id, with: count)
+                                    }
+                                    
+                                    await MainActor.run {
+                                        isPerformingBulkAction = false
+                                    }
+                                }
+                            } label: {
+                                Label("Active", systemImage: "circle")
+                            }
+                            .disabled(unifiedList.isReadOnly)
+                        }
+                        
+                        Button {
+                            withAnimation(.easeInOut) {
+                                showCompletedAtBottom.toggle()
                             }
                         } label: {
-                            Label("Completed", systemImage: "checkmark.circle.fill")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-
-                        Button {
-                            Task {
-                                await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
-                                    await updateUncheckedCount(for: list.id, with: count)
-                                }
-                            }
-                        } label: {
-                            Label("Active", systemImage: "circle")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-                    }
-
-                    Button {
-                        withAnimation(.easeInOut) {
-                            showCompletedAtBottom.toggle()
-                        }
-                    } label: {
-                        Label(
-                            showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
-                            systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
-                        )
-                    }
-                    .disabled(unifiedList.isReadOnly)
-                    
-                    Divider()
-                
-                    Menu("Export As…") {
-                        Button {
-                            markdownToExport = MarkdownExport(
-                                listName: list.name,
-                                items: viewModel.items,
-                                labels: viewModel.labels,
-                                activeOnly: true  // Defaults to active, user can toggle in the view
+                            Label(
+                                showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                                systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
                             )
-                        } label: {
-                            Label("Markdown", systemImage: "doc.text")
                         }
                         .disabled(unifiedList.isReadOnly)
                         
                         Divider()
                         
+                        Menu("Export As…") {
+                            Button {
+                                markdownToExport = MarkdownExport(
+                                    listName: list.name,
+                                    items: viewModel.items,
+                                    labels: viewModel.labels,
+                                    activeOnly: true
+                                )
+                            } label: {
+                                Label("Markdown", systemImage: "doc.text")
+                            }
+                            .disabled(unifiedList.isReadOnly)
+                            
+                            Divider()
+                            
+                            Button {
+                                onExportJSON?()
+                            } label: {
+                                Label("JSON (Backup)", systemImage: "doc.badge.gearshape")
+                            }
+                            .disabled(unifiedList.isReadOnly)
+                        }
+                        
+                        Divider()
+                        
                         Button {
-                            onExportJSON?()
+                            showingRecycleBin = true
                         } label: {
-                            Label("JSON (Backup)", systemImage: "doc.badge.gearshape")
+                            Label("Recycle Bin", systemImage: "trash")
                         }
                         .disabled(unifiedList.isReadOnly)
+                        
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                                        
-                                        Divider()
-                                        
-                                        Button {
-                                            showingRecycleBin = true
-                                        } label: {
-                                            Label("Recycle Bin", systemImage: "trash")
-                                        }
-                                        .disabled(unifiedList.isReadOnly)
-                                        
-                                    } label: {
-                                        Image(systemName: "ellipsis.circle")
-                                    }
-                                }
-                            }
+                }
+            }
+        }
+        .animation(nil, value: isPerformingBulkAction)
         .refreshable {
             // NEW: Sync external files before refreshing
             try? await unifiedProvider.syncIfNeeded(for: unifiedList)
@@ -569,8 +589,10 @@ struct ShoppingListView: View {
             case .saved:
                 EmptyView()
             case .saving:
-                ProgressView()
-                    .scaleEffect(0.7)
+                //ProgressView()
+                //    .scaleEffect(0.7) //As saves are so quick, only showing on error instead...
+                
+                EmptyView()
             case .unsaved:
                 Image(systemName: "circle.fill")
                     .foregroundColor(.orange)
