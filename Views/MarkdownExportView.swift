@@ -14,8 +14,7 @@
 //
 
 import SwiftUI
-import MarkdownUI
-import Textual
+import MarkdownView
 import UniformTypeIdentifiers
 
 struct MarkdownExportView: View {
@@ -100,23 +99,11 @@ struct MarkdownExportView: View {
                     // Preview view
                     VStack(alignment: .leading, spacing: 0) {
                         ScrollView {
-                            Markdown(markdownText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            StructuredText(
-                              markdown: """
-                                ## The Problem
-
-                                > After merging PR #347, users reported that tapping "Back" from the detail view would sometimes
-                                > navigate to a completely random screen. One user ended up in Settings while trying to return to
-                                > their inbox. Another saw the onboarding flow. Creative, but not ideal.
-
-                                Here's what we knew going in:
-
-                                - The issue only appeared **after** the state restoration changes
-                                - It happened _inconsistently_—maybe 1 in 5 back navigations
-                                - The stack trace was... let's call it "unhelpful"
-                                """
-                            )
+                            
+                            MarkdownView(markdownText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            
+                            
                             
                         }
                     }
@@ -140,6 +127,12 @@ struct MarkdownExportView: View {
                 .padding(.vertical, 8)
                 .background(Color(.secondarySystemGroupedBackground))
                 
+            }
+            .onAppear {
+                print("=== MARKDOWN START ===")
+                print(markdownText)
+                print("=== MARKDOWN END ===")
+                print("Character count: \(markdownText.count)")
             }
             .navigationTitle("Export Markdown")
             .navigationBarTitleDisplayMode(.inline)

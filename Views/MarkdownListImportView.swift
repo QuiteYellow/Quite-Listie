@@ -123,6 +123,7 @@ struct MarkdownListImportView: View {
         Form {
             Section {
                 Toggle("Create New Labels for Unmatched", isOn: $createUnmatchedLabels)
+                    .toggleStyle(.switch)
             } footer: {
                 Text(createUnmatchedLabels ?
                      "Existing labels will be matched by name. New labels will be created for unmatched names." :
