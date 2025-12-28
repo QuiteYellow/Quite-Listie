@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import MarkdownUI
+import MarkdownView
 
 struct AddItemView: View {
     
@@ -164,7 +164,7 @@ struct AddItemView: View {
                     Text("No notes")
                         .foregroundColor(.secondary)
                 } else {
-                    Markdown(mdNotes)
+                    MarkdownView(mdNotes)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -391,7 +391,7 @@ struct EditItemView: View {
                     Text("No notes")
                         .foregroundColor(.secondary)
                 } else {
-                    Markdown(mdNotes)
+                    MarkdownView(mdNotes)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -441,7 +441,7 @@ struct MarkdownEditorView: View {
                             
                             VStack(alignment: .leading, spacing: 8) {
                                 ScrollView {
-                                    Markdown(text)
+                                    MarkdownView(text)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding(.top, 4)
                                 }
@@ -482,7 +482,7 @@ struct MarkdownEditorView: View {
                         
                         Section(header: Text("Preview")) {
                             ScrollView {
-                                Markdown(text).padding(.vertical)
+                                MarkdownView(text).padding(.vertical)
                             }
                         }
                     }

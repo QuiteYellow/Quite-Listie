@@ -118,6 +118,7 @@ struct ListSettingsView: View {
                     Toggle(isOn: $isFavourited) {
                         Label("Mark as Favourite", systemImage: "star.fill")
                     }
+                    .toggleStyle(.switch)
                     
                     Label {
                         switch unifiedList.source {
@@ -140,6 +141,7 @@ struct ListSettingsView: View {
                     Toggle(isOn: $showCompletedAtBottom) {
                         Label("Show Completed as Separate Label", systemImage: "checkmark.circle.badge.questionmark")
                     }
+                    .toggleStyle(.switch)
                 }
                 
                 // Label Management Section
@@ -183,6 +185,7 @@ struct ListSettingsView: View {
                                     }
                                 ))
                                 .labelsHidden()
+                                .toggleStyle(.switch)
                             }
                             .opacity(hiddenLabelIDs.contains(label.id) ? 0.5 : 1.0)
                             .swipeActions(edge: .trailing) {

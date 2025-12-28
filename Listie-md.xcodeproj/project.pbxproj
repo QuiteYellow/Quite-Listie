@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		379DF6422F017C6D00475782 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6412F017C6D00475782 /* Textual */; };
-		CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = CB260D882DE4B7E900D05618 /* MarkdownUI */; };
+		379DF6462F01885B00475782 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6452F01885B00475782 /* MarkdownView */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
 /* End PBXBuildFile section */
@@ -89,9 +88,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				379DF6422F017C6D00475782 /* Textual in Frameworks */,
 				CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */,
-				CB260D892DE4B7E900D05618 /* MarkdownUI in Frameworks */,
+				379DF6462F01885B00475782 /* MarkdownView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -170,9 +168,8 @@
 			);
 			name = Listie.md;
 			packageProductDependencies = (
-				CB260D882DE4B7E900D05618 /* MarkdownUI */,
 				CB3015E32DE9D43700CCFCC8 /* SymbolPicker */,
-				379DF6412F017C6D00475782 /* Textual */,
+				379DF6452F01885B00475782 /* MarkdownView */,
 			);
 			productName = ListsForMealie;
 			productReference = CBEFA7AB2DE31318002F4B13 /* Listie.md.app */;
@@ -251,9 +248,8 @@
 			mainGroup = CBEFA7A22DE31318002F4B13;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
 				CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */,
-				379DF6402F017C6D00475782 /* XCRemoteSwiftPackageReference "textual" */,
+				379DF6442F01885B00475782 /* XCRemoteSwiftPackageReference "MarkdownView" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CBEFA7AC2DE31318002F4B13 /* Products */;
@@ -504,6 +500,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,6";
@@ -569,6 +566,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,6";
@@ -708,20 +706,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		379DF6402F017C6D00475782 /* XCRemoteSwiftPackageReference "textual" */ = {
+		379DF6442F01885B00475782 /* XCRemoteSwiftPackageReference "MarkdownView" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/textual";
+			repositoryURL = "https://github.com/LiYanan2004/MarkdownView";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.1.0;
-			};
-		};
-		CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/MarkdownUI";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.4.1;
+				minimumVersion = 2.5.2;
 			};
 		};
 		CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */ = {
@@ -735,15 +725,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		379DF6412F017C6D00475782 /* Textual */ = {
+		379DF6452F01885B00475782 /* MarkdownView */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 379DF6402F017C6D00475782 /* XCRemoteSwiftPackageReference "textual" */;
-			productName = Textual;
-		};
-		CB260D882DE4B7E900D05618 /* MarkdownUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CB260D872DE4B7E900D05618 /* XCRemoteSwiftPackageReference "MarkdownUI" */;
-			productName = MarkdownUI;
+			package = 379DF6442F01885B00475782 /* XCRemoteSwiftPackageReference "MarkdownView" */;
+			productName = MarkdownView;
 		};
 		CB3015E32DE9D43700CCFCC8 /* SymbolPicker */ = {
 			isa = XCSwiftPackageProductDependency;
