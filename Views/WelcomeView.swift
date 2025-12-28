@@ -154,72 +154,20 @@ struct WelcomeView: View {
             case .success(let urls):
                 if let url = urls.first {
                     Task {
-                        // Check if this exact file is already open
-                        let existingExternal = unifiedProvider.allLists.filter { $0.isExternal }
-                        if existingExternal.contains(where: { $0.externalURL?.path == url.path }) {
-                            print("ℹ️ File already open, skipping")
-                            return
-                        }
-                        
                         do {
-                            // Load the document to check its ID
-                            let document = try await ExternalFileStore.shared.openFile(at: url)
-                            
-                            // Check if ID conflicts with local list
-                            let localLists = unifiedProvider.allLists.filter { !$0.isExternal }
-                            if localLists.contains(where: { $0.summary.id == document.list.id }) {
-                                // Show conflict alert
-                                conflictingFileURL = url
-                                conflictingDocument = document
-                                showIDConflictAlert = true
-                                // Close the file for now
-                                await ExternalFileStore.shared.closeFile(at: url)
-                            } else {
-                                // No conflict, reload lists to pick up the new file
-                                await unifiedProvider.loadAllLists()
-                                
-                                // If not found (read-only files won't have bookmarks), manually add it
-                                if !unifiedProvider.allLists.contains(where: {
-                                    if case .external(let listURL) = $0.source {
-                                        return listURL.path == url.path
-                                    }
-                                    return false
-                                }) {
-                                    print("⚠️ File not in bookmarks, adding manually")
-                                    let runtimeId = "external:\(url.path)"
-                                    var modifiedSummary = document.list
-                                    modifiedSummary.id = runtimeId
-                                    let isReadOnly = !ExternalFileStore.isFileWritable(at: url)
-                                    
-                                    let newList = UnifiedList(
-                                        id: runtimeId,
-                                        source: .external(url),
-                                        summary: modifiedSummary,
-                                        originalFileId: document.list.id,
-                                        isReadOnly: isReadOnly
-                                    )
-                                    
-                                    await MainActor.run {
-                                        unifiedProvider.allLists.append(newList)
-                                        unifiedProvider.externalLabels[url] = document.labels
-                                        selectedListID = newList.id
-                                    }
-                                    
-                                    print("✅ Manually added read-only file: \(document.list.name)")
-                                } else {
-                                    // Found in bookmarks, just select it
-                                    if let newList = unifiedProvider.allLists.first(where: {
-                                        if case .external(let listURL) = $0.source {
-                                            return listURL.path == url.path
-                                        }
-                                        return false
-                                    }) {
-                                        selectedListID = newList.id
-                                    }
-                                }
+                            if let listId = try await unifiedProvider.openExternalFile(at: url) {
+                                selectedListID = listId
                             }
                         } catch {
-                            print("Failed to open file: \(error)")
+                            let nsError = error as NSError
+                            if nsError.domain == "UnifiedListProvider" && nsError.code == 1 {
+                                // ID conflict - show alert
+                                conflictingFileURL = nsError.userInfo["url"] as? URL
+                                conflictingDocument = nsError.userInfo["document"] as? ListDocument
+                                showIDConflictAlert = true
+                            } else {
+                                print("Failed to open file: \(error)")
+                            }
                         }
                     }
                 }
@@ -342,6 +290,19 @@ struct WelcomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task {
                 await unifiedProvider.syncAllExternalLists()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenExternalFile"))) { notification in
+            guard let url = notification.object as? URL else { return }
+            
+            Task {
+                do {
+                    if let listId = try await unifiedProvider.openExternalFile(at: url) {
+                        selectedListID = listId
+                    }
+                } catch {
+                    print("Failed to open file from URL: \(error)")
+                }
             }
         }
     }

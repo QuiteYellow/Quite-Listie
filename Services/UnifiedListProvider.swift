@@ -121,7 +121,74 @@ class UnifiedListProvider: ObservableObject {
         }
     }
     
-    
+    // MARK: - External File Opening
+
+    /// Opens an external file, handling conflicts and selection
+    /// Returns the ID of the list to select, or nil if there was a conflict
+    func openExternalFile(at url: URL) async throws -> String? {
+        // Check if already open
+        if let existing = allLists.first(where: {
+            if case .external(let existingURL) = $0.source {
+                return existingURL.path == url.path
+            }
+            return false
+        }) {
+            print("ℹ️ File already open: \(existing.summary.name)")
+            return existing.id
+        }
+        
+        // Open the file (this saves the bookmark)
+        let document = try await ExternalFileStore.shared.openFile(at: url)
+        
+        // Check for ID conflicts with local lists
+        let localLists = allLists.filter { !$0.isExternal }
+        if localLists.contains(where: { $0.summary.id == document.list.id }) {
+            print("⚠️ ID conflict detected for: \(document.list.name)")
+            await ExternalFileStore.shared.closeFile(at: url)
+            throw NSError(domain: "UnifiedListProvider", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "ID conflict",
+                "url": url,
+                "document": document
+            ])
+        }
+        
+        // Reload all lists (picks up the new bookmark)
+        await loadAllLists()
+        
+        // Find the newly opened list
+        if let newList = allLists.first(where: {
+            if case .external(let listURL) = $0.source {
+                return listURL.path == url.path
+            }
+            return false
+        }) {
+            print("✅ Opened and selected: \(newList.summary.name)")
+            return newList.id
+        }
+        
+        // If not found (read-only file without bookmark), add manually
+        print("⚠️ File not in bookmarks, adding manually")
+        let runtimeId = "external:\(url.path)"
+        var modifiedSummary = document.list
+        modifiedSummary.id = runtimeId
+        let isReadOnly = !ExternalFileStore.isFileWritable(at: url)
+        
+        let newList = UnifiedList(
+            id: runtimeId,
+            source: .external(url),
+            summary: modifiedSummary,
+            originalFileId: document.list.id,
+            isReadOnly: isReadOnly
+        )
+        
+        await MainActor.run {
+            allLists.append(newList)
+            externalLabels[url] = document.labels
+        }
+        
+        print("✅ Manually added and selected: \(newList.summary.name)")
+        return newList.id
+    }
     
     // MARK: - Items
     
