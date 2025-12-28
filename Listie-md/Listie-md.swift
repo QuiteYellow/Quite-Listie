@@ -20,20 +20,10 @@ struct ShoppingListApp: App {
         WindowGroup {
             WelcomeView()
                 .onOpenURL { url in
-                    // Handle opening JSON files from the system
-                    Task {
-                        do {
-                            _ = try await ExternalFileStore.shared.openFile(at: url)
-                            
-                            // Post notification to update UI
-                            NotificationCenter.default.post(
-                                name: NSNotification.Name("ExternalFileOpened"),
-                                object: url
-                            )
-                        } catch {
-                            print("Failed to open external file: \(error)")
-                        }
-                    }
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("OpenExternalFile"),
+                        object: url
+                    )
                 }
         }
         .commands {

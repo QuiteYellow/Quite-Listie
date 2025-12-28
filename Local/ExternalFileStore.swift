@@ -179,32 +179,33 @@ actor ExternalFileStore {
             print("📂 [Cache] Cache miss/expired for \(url.lastPathComponent) - loading from disk")
         }
         
-        // Check if file exists before trying to access it
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw NSError(domain: "ExternalFileStore", code: 404, userInfo: [
-                NSLocalizedDescriptionKey: "File not found at \(url.path)"
-            ])
-        }
-        
-        // Ensure file is downloaded from iCloud if needed
-        try await ensureFileDownloaded(at: url)
-        
-        // Resolve any iCloud conflicts before opening
-        try await resolveConflicts(at: url)
-        
         print("📂 Attempting to open: \(url.path)")
-        print("   File exists: \(FileManager.default.fileExists(atPath: url.path))")
-        print("   Is readable: \(FileManager.default.isReadableFile(atPath: url.path))")
-        
-        // Try to access security-scoped resource
+
+        // Try to access security-scoped resource FIRST
         let didStart = url.startAccessingSecurityScopedResource()
         print("   Security scope started: \(didStart)")
-        
+
         defer {
             if didStart {
                 url.stopAccessingSecurityScopedResource()
             }
         }
+
+        // Ensure file is downloaded from iCloud if needed (BEFORE checking if it exists)
+        try await ensureFileDownloaded(at: url)
+
+        // NOW check if file exists (after download attempt)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "ExternalFileStore", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "File not found at \(url.path)"
+            ])
+        }
+
+        print("   File exists: \(FileManager.default.fileExists(atPath: url.path))")
+        print("   Is readable: \(FileManager.default.isReadableFile(atPath: url.path))")
+
+        // Resolve any iCloud conflicts before opening
+        try await resolveConflicts(at: url)
         
         // Try direct read first (simpler, works for most cases)
         var content: Data?
