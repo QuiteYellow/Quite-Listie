@@ -15,6 +15,7 @@
 
 import SwiftUI
 import MarkdownUI
+import Textual
 import UniformTypeIdentifiers
 
 struct MarkdownExportView: View {
@@ -44,36 +45,40 @@ struct MarkdownExportView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-
+                
                 // Options section
                 HStack {
-                Text("Include:")
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                    Text("Include:")
+                        .font(.headline)
+                        .foregroundColor(.primary)
                     Spacer()  // Pushes content to the left
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
                 .padding(.vertical, 12)
                 .background(Color(.secondarySystemBackground))
                 HStack {
                     
-                                    Toggle(isOn: $showActiveOnly) {
-                                        Label("Completed", systemImage: "circle")
-                                    }
-                                    
-                                    Divider()
-                                        .frame(height: 20)
-                                        .padding(.horizontal, 16)
-                                    
-                                    Toggle(isOn: $includeNotes) {
-                                        Label("Notes", systemImage: "note.text")
-                                    }
-                                }
-                                .padding(.horizontal)
-                                .padding(.vertical, 12)
-                                .background(Color(.secondarySystemBackground))
+                    Toggle(isOn: $showActiveOnly) {
+                        Label("Completed", systemImage: "circle")
+                    }
+                    .toggleStyle(.switch)
+                    
+                    Divider()
+                        .frame(height: 20)
+                        .padding(.horizontal, 16)
+                    
+                    Toggle(isOn: $includeNotes) {
+                        Label("Notes", systemImage: "note.text")
+                    }
+                    .toggleStyle(.switch)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
                 .scrollDisabled(true)
+                
                 
                 Divider()
                 
@@ -97,6 +102,22 @@ struct MarkdownExportView: View {
                         ScrollView {
                             Markdown(markdownText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            StructuredText(
+                              markdown: """
+                                ## The Problem
+
+                                > After merging PR #347, users reported that tapping "Back" from the detail view would sometimes
+                                > navigate to a completely random screen. One user ended up in Settings while trying to return to
+                                > their inbox. Another saw the onboarding flow. Creative, but not ideal.
+
+                                Here's what we knew going in:
+
+                                - The issue only appeared **after** the state restoration changes
+                                - It happened _inconsistently_—maybe 1 in 5 back navigations
+                                - The stack trace was... let's call it "unhelpful"
+                                """
+                            )
+                            
                         }
                     }
                     .padding()
@@ -123,20 +144,29 @@ struct MarkdownExportView: View {
             .navigationTitle("Export Markdown")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") { dismiss() }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .symbolRenderingMode(.hierarchical)
                             }
+                            .help("Close")
+                            
+                }
+                
+                
                 ToolbarSpacer(.fixed, placement: .cancellationAction)
-                            
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button {
-                                    showRawMarkdown.toggle()
-                                } label: {
-                                    Image(systemName: showRawMarkdown ? "doc.richtext" : "doc.plaintext")
-                                }
-                            }
-                            
-                            ToolbarItemGroup(placement: .primaryAction) {
+                
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        showRawMarkdown.toggle()
+                    } label: {
+                        Image(systemName: showRawMarkdown ? "doc.richtext" : "doc.plaintext")
+                    }
+                }
+                
+                ToolbarItemGroup(placement: .primaryAction) {
                     Button {
                         copyToClipboard()
                     } label: {
@@ -185,14 +215,14 @@ struct MarkdownExportView: View {
                 }
             )
             .onAppear {
-                           showActiveOnly = !activeOnly  // Initialize from parameter
-                       }
-                   }
-
+                showActiveOnly = !activeOnly  // Initialize from parameter
+            }
+        }
+        
 #if targetEnvironment(macCatalyst) || os(macOS)
-        .frame(minHeight: 800)
+        .frame(minHeight: 500)
 #endif
-
+        
     }
     
     private func copyToClipboard() {

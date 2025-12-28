@@ -75,9 +75,13 @@ struct AddItemView: View {
                     .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
                     }
+                    .help("Cancel")
                 }
             }
             .alert("Failed to Add Item", isPresented: $showError) {
@@ -179,6 +183,7 @@ struct EditItemView: View {
 
     let item: ShoppingItem
     let list: ShoppingListSummary
+    let unifiedList: UnifiedList
 
     @State private var itemName: String = ""
     @State private var selectedLabel: ShoppingLabel? = nil
@@ -219,7 +224,7 @@ struct EditItemView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItemGroup(placement: .confirmationAction) {
-                        if !list.isReadOnlyExample {
+                        if !unifiedList.isReadOnly {
                             Button("Delete") {
                                 showDeleteConfirmation = true
                             }
@@ -248,9 +253,13 @@ struct EditItemView: View {
                     }
                     
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
+                        Button {
                             dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .symbolRenderingMode(.hierarchical)
                         }
+                        .help("Cancel")
                     }
                 }
             }
@@ -448,7 +457,13 @@ struct MarkdownEditorView: View {
                                 Button("Done") { dismiss() }
                             }
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Cancel") { dismiss() }
+                                Button {
+                                    dismiss()
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .symbolRenderingMode(.hierarchical)
+                                }
+                                .help("Cancel")
                             }
                         }
                     }
@@ -478,7 +493,13 @@ struct MarkdownEditorView: View {
                             Button("Done") { dismiss() }
                         }
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { dismiss() }
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .symbolRenderingMode(.hierarchical)
+                            }
+                            .help("Cancel")
                         }
                     }
                 }

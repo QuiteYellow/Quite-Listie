@@ -228,24 +228,10 @@ protocol ShoppingListProvider {
     func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws
 }
 
-// MARK: - Convenience Extensions
-extension ShoppingListSummary {
-    var isLocal: Bool {
-        id.hasPrefix("local-")
-    }
-    
-    var isReadOnlyExample: Bool {
-        id == "example-welcome-list"
-    }
-}
 
 extension ShoppingItem {
     var isLocal: Bool {
         shoppingListId?.hasPrefix("local-") ?? true
-    }
-    
-    var isFromReadOnlyList: Bool {
-        shoppingListId == "example-welcome-list"
     }
 }
 
