@@ -14,12 +14,18 @@ actor LocalShoppingListStore: ShoppingListProvider {
     private var listDocuments: [String: ListDocument] = [:]
     
     private let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-
-    init() {
-        Task {
-            await loadAllLists()
-        }
+    
+    
+    private var hasLoaded = false
+    
+    init() { }
+    
+    private func ensureInitialized() async {
+        guard !hasLoaded else { return }
+        await loadAllLists()
+        hasLoaded = true
     }
+    
 
     // MARK: - File Management
     
@@ -117,10 +123,12 @@ actor LocalShoppingListStore: ShoppingListProvider {
     // MARK: - Lists
 
     func fetchShoppingLists() async throws -> [ShoppingListSummary] {
+        await ensureInitialized()
         return listDocuments.values.map { $0.list }
     }
 
     func createList(_ list: ShoppingListSummary) async throws {
+        await ensureInitialized()
         print("ðŸ“ [Local V2] Creating list: \(list.name)")
         
         // Ensure we're using clean ID (no "local-" prefix)
@@ -135,6 +143,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws {
+        await ensureInitialized()
         let cleanId = list.cleanId
         guard var document = listDocuments[cleanId] else {
             throw NSError(domain: "List not found", code: 1, userInfo: nil)
@@ -166,6 +175,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func deleteList(_ list: ShoppingListSummary) async throws {
+        await ensureInitialized()
         let cleanId = list.cleanId
         listDocuments.removeValue(forKey: cleanId)
         try await deleteListFile(cleanId)
@@ -174,6 +184,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     // MARK: - Items
 
     func fetchItems(for listId: String) async throws -> [ShoppingItem] {
+        await ensureInitialized()
         let cleanId = cleanListId(listId)
         guard let document = listDocuments[cleanId] else {
             return []
@@ -182,6 +193,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func addItem(_ item: ShoppingItem, to listId: String) async throws {
+        await ensureInitialized()
         let cleanId = cleanListId(listId)
         guard var document = listDocuments[cleanId] else {
             throw NSError(domain: "List not found", code: 1, userInfo: nil)
@@ -197,6 +209,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func deleteItem(_ item: ShoppingItem) async throws {
+        await ensureInitialized()
         // Find which list contains this item
         for (listId, var document) in listDocuments {
             if let index = document.items.firstIndex(where: { $0.id == item.id }) {
@@ -215,6 +228,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
     
     func restoreItem(_ item: ShoppingItem) async throws {
+        await ensureInitialized()
         for (listId, var document) in listDocuments {
             if let index = document.items.firstIndex(where: { $0.id == item.id }) {
                 document.items[index].isDeleted = false
@@ -230,6 +244,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func permanentlyDeleteItem(_ item: ShoppingItem) async throws {
+        await ensureInitialized()
         for (listId, var document) in listDocuments {
             if let index = document.items.firstIndex(where: { $0.id == item.id }) {
                 document.items.remove(at: index)
@@ -243,6 +258,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func fetchDeletedItems(for listId: String) async throws -> [ShoppingItem] {
+        await ensureInitialized()
         let cleanId = cleanListId(listId)
         guard let document = listDocuments[cleanId] else {
             return []
@@ -251,6 +267,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func updateItem(_ item: ShoppingItem) async throws {
+        await ensureInitialized()
         // Find which list contains this item
         for (listId, var document) in listDocuments {
             if let index = document.items.firstIndex(where: { $0.id == item.id }) {
@@ -270,6 +287,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     // MARK: - Labels
 
     func saveLabel(_ label: ShoppingLabel) async throws {
+        await ensureInitialized()
         // Labels are now stored per-list, need to find which list
         guard let targetListId = label.listId else {
             throw NSError(domain: "Label must have a listId", code: 1, userInfo: nil)
@@ -290,6 +308,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func updateLabel(_ label: ShoppingLabel) async throws {
+        await ensureInitialized()
         // Find which list contains this label
         for (listId, var document) in listDocuments {
             if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
@@ -305,6 +324,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func deleteLabel(_ label: ShoppingLabel) async throws {
+        await ensureInitialized()
         // Find which list contains this label
         for (listId, var document) in listDocuments {
             if document.labels.contains(where: { $0.id == label.id }) {
@@ -320,6 +340,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func fetchLabels(for list: ShoppingListSummary) async throws -> [ShoppingLabel] {
+        await ensureInitialized()
         let cleanId = list.cleanId
         guard let document = listDocuments[cleanId] else {
             return []
@@ -329,6 +350,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     }
 
     func fetchAllLocalLabels() async throws -> [ShoppingLabel] {
+        await ensureInitialized()
         // Return all labels from all lists
         return listDocuments.values.flatMap { $0.labels }
     }

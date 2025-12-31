@@ -18,8 +18,14 @@ import SwiftUI
 struct MarkdownListImportView: View {
     let list: UnifiedList
     let provider: UnifiedListProvider
-    let existingItems: [ShoppingItem]
-    let existingLabels: [ShoppingLabel]
+    
+    let initialMarkdown: String?
+    let autoPreview: Bool
+
+    
+    @State private var existingItems: [ShoppingItem]
+    @State private var existingLabels: [ShoppingLabel]
+    
     
     @Environment(\.dismiss) var dismiss
     @State private var markdownText: String = ""
@@ -27,6 +33,23 @@ struct MarkdownListImportView: View {
     @State private var parsedList: ParsedList?
     @State private var createUnmatchedLabels = true
     @State private var isSaving = false
+    
+    
+    init(
+        list: UnifiedList,
+        provider: UnifiedListProvider,
+        existingItems: [ShoppingItem] = [],
+        existingLabels: [ShoppingLabel] = [],
+        initialMarkdown: String? = nil,
+        autoPreview: Bool = false
+    ) {
+        self.list = list
+        self.provider = provider
+        self._existingItems = State(initialValue: existingItems)
+        self._existingLabels = State(initialValue: existingLabels)
+        self.initialMarkdown = initialMarkdown
+        self.autoPreview = autoPreview
+    }
     
     var body: some View {
         NavigationView {
@@ -50,6 +73,7 @@ struct MarkdownListImportView: View {
                     .help("Cancel")
                 }
                 
+                
                 ToolbarItem(placement: .confirmationAction) {
                     if showPreview {
                         Button("Import") {
@@ -64,6 +88,7 @@ struct MarkdownListImportView: View {
                     }
                 }
                 
+                
                 if showPreview {
                     ToolbarItem(placement: .navigationBarLeading) {
 
@@ -77,6 +102,54 @@ struct MarkdownListImportView: View {
                     }
                 }
             }
+            .onAppear {
+                if let initial = initialMarkdown {
+                    markdownText = initial
+                    if autoPreview {
+                        parseAndPreview()
+                    }
+                }
+            }
+            .task {
+                print("🎬 [MarkdownImport] View task started")
+                print("   List: \(list.summary.name)")
+                print("   Initial items count: \(existingItems.count)")
+                print("   Initial labels count: \(existingLabels.count)")
+                print("   Has initial markdown: \(initialMarkdown != nil)")
+                print("   Auto-preview: \(autoPreview)")
+                
+                // Load existing items and labels if needed (for deeplinks)
+                if existingItems.isEmpty || existingLabels.isEmpty {
+                    print("📦 [MarkdownImport] Loading existing data...")
+                    do {
+                        let items = try await provider.fetchItems(for: list)
+                        let labels = try await provider.fetchLabels(for: list)
+                        
+                        print("   Loaded \(items.count) items, \(labels.count) labels")
+                        
+                        await MainActor.run {
+                            self.existingItems = items
+                            self.existingLabels = labels
+                            print("   ✅ Updated state")
+                        }
+                    } catch {
+                        print("   ❌ Failed to load existing data: \(error)")
+                    }
+                }
+                
+                // Apply initial markdown if provided
+                if let initial = initialMarkdown {
+                    print("📝 [MarkdownImport] Applying initial markdown (\(initial.count) chars)")
+                    markdownText = initial
+                    
+                    if autoPreview {
+                        print("   🔍 Auto-previewing...")
+                        parseAndPreview()
+                    }
+                }
+                
+                print("✅ [MarkdownImport] Task complete")
+            }
         }
     }
     
@@ -85,6 +158,18 @@ struct MarkdownListImportView: View {
     private var editorView: some View {
         VStack(spacing: 0) {
             Form {
+                Section {
+                    HStack {
+                        Image(systemName: list.summary.icon ?? "list.bullet")
+                            .foregroundColor(.secondary)
+                        Text(list.summary.name)
+                            .font(.headline)
+                        Spacer()
+                    }
+                } header: {
+                    Text("Importing to")
+                }
+                
                 Section {
                     TextEditor(text: $markdownText)
                         .frame(minHeight: 200)
@@ -121,6 +206,18 @@ struct MarkdownListImportView: View {
     
     private func previewView(_ parsed: ParsedList) -> some View {
         Form {
+            Section {
+                HStack {
+                    Image(systemName: list.summary.icon ?? "list.bullet")
+                        .foregroundColor(.secondary)
+                    Text(list.summary.name)
+                        .font(.headline)
+                    Spacer()
+                }
+            } header: {
+                Text("Importing to")
+            }
+            
             Section {
                 Toggle("Create New Labels for Unmatched", isOn: $createUnmatchedLabels)
                     .toggleStyle(.switch)

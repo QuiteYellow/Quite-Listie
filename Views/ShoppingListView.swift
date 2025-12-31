@@ -99,6 +99,7 @@ struct ItemRowView: View {
 struct MarkdownExport: Identifiable {
     let id = UUID()
     let listName: String
+    let listId: String?
     let items: [ShoppingItem]
     let labels: [ShoppingLabel]
     let activeOnly: Bool
@@ -428,6 +429,7 @@ struct ShoppingListView: View {
                             Button {
                                 markdownToExport = MarkdownExport(
                                     listName: list.name,
+                                    listId: unifiedList.originalFileId ?? unifiedList.id,
                                     items: viewModel.items,
                                     labels: viewModel.labels,
                                     activeOnly: true
@@ -521,6 +523,7 @@ struct ShoppingListView: View {
         .sheet(item: $markdownToExport) { export in
             MarkdownExportView(
                 listName: export.listName,
+                listId: export.listId,
                 items: export.items,
                 labels: export.labels,
                 activeOnly: export.activeOnly
@@ -566,6 +569,7 @@ struct ShoppingListView: View {
                 // Trigger markdown export
                 markdownToExport = MarkdownExport(
                     listName: list.name,
+                    listId: unifiedList.originalFileId ?? unifiedList.id,
                     items: viewModel.items,
                     labels: viewModel.labels,
                     activeOnly: true
