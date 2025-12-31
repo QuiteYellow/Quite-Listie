@@ -81,7 +81,7 @@ struct WelcomeView: View {
                         Button {
                             showFileImporter = true
                         } label: {
-                            Label("Open JSON File", systemImage: "folder.badge.plus")
+                            Label("Open File...", systemImage: "folder.badge.plus")
                         }
                     } label: {
                         Image(systemName: "plus")
@@ -175,7 +175,7 @@ struct WelcomeView: View {
         }
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: [.json],
+            allowedContentTypes: [.listie, .json],
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -214,7 +214,7 @@ struct WelcomeView: View {
                 }
             ),
             document: exportingDocument ?? ListDocumentFile.empty(name: "New List"),
-            contentType: .json,
+            contentType: .listie,
             defaultFilename: exportingDocument?.document.list.name ?? "new-list"
         ) { result in
             let exportType = pendingExportType  // Capture before reset

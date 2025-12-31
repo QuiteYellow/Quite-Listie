@@ -23,13 +23,13 @@ struct ShoppingListApp: App {
                     print("📱 [Deeplink] Received URL: \(url)")
                     
                     // Handle external JSON files (existing)
-                    if url.pathExtension == "json" {
-                        print("📄 [Deeplink] Detected JSON file, posting OpenExternalFile notification")
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("OpenExternalFile"),
-                            object: url
-                        )
-                    }
+                    if url.pathExtension == "listie" || url.pathExtension == "json" {
+                            print("📄 [Deeplink] Detected file, posting OpenExternalFile notification")
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("OpenExternalFile"),
+                                object: url
+                            )
+                        }
                     // Handle deeplink imports
                     else if url.scheme == "listie" {
                         print("🔗 [Deeplink] Detected listie:// URL scheme")
@@ -148,7 +148,7 @@ struct ShoppingListApp: App {
 
                 Divider()
                 
-                Button("Open JSON File...") {
+                Button("Open File...") {
                     fileImporter = true
                 }
                 .keyboardShortcut("O", modifiers: .command)
@@ -168,7 +168,7 @@ struct ShoppingListApp: App {
                     .keyboardShortcut("E", modifiers: .command)
                     .disabled(exportMarkdown == nil || isReadOnly == true)
                     
-                    Button("JSON (Backup)...") {
+                    Button("Listie File...") {
                         exportJSON = true
                     }
                     .keyboardShortcut("E", modifiers: [.command, .shift])
