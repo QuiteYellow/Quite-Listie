@@ -577,6 +577,10 @@ actor ExternalFileStore {
         fileModificationDates.removeAll()
     }
     
+    private func preferredFileExtension() -> String {
+        return "listie"  // Use .listie for new files
+    }
+    
     func updateCache(_ document: ListDocument, at url: URL) async {
         openedFiles[url.path] = (url, document)
         

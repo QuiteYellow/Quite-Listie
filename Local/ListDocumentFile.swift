@@ -9,13 +9,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static var shoppingList: UTType {
-        UTType(exportedAs: "com.listie.shopping-list", conformingTo: .json)
+    static var listie: UTType {
+        UTType(exportedAs: "com.listie.list")  // Must match Info.plist UTTypeIdentifier
     }
 }
 
 struct ListDocumentFile: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
+    static var readableContentTypes: [UTType] { [.listie, .json] }
     
     var document: ListDocument
     

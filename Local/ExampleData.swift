@@ -51,7 +51,7 @@ Listie is a powerful list app that works **your way** — keep lists private on 
 Tap the **+** button in the sidebar:
 1. **New List (Private)** — Quick personal list on this device
 2. **New List As File...** — Create a shareable file
-3. **Open JSON File** — Import existing lists
+3. **Open File** — Import existing lists
 
 Or use keyboard shortcuts:
 - `⌘N` — New private list

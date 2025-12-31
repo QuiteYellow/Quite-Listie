@@ -53,7 +53,10 @@ actor LocalShoppingListStore: ShoppingListProvider {
                 includingPropertiesForKeys: nil
             )
             
-            let listFiles = fileURLs.filter { $0.lastPathComponent.hasPrefix("list_") && $0.pathExtension == "json" }
+            let listFiles = fileURLs.filter {
+                $0.lastPathComponent.hasPrefix("list_") &&
+                ($0.pathExtension == "json" || $0.pathExtension == "listie")  // Accept both
+            }
             
             print("ðŸ“‚ [Local Load V2] Found \(listFiles.count) list files")
             

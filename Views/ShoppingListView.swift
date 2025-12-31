@@ -444,7 +444,7 @@ struct ShoppingListView: View {
                             Button {
                                 onExportJSON?()
                             } label: {
-                                Label("JSON (Backup)", systemImage: "doc.badge.gearshape")
+                                Label("Listie File...", systemImage: "doc.badge.gearshape")
                             }
                             .disabled(unifiedList.isReadOnly)
                         }
