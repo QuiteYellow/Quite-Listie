@@ -29,6 +29,15 @@ struct WelcomeView: View {
     @State private var showSettings = false
     @AppStorage("hideWelcomeList") private var hideWelcomeList = false
     
+    @State private var deeplinkMarkdown: String? = nil
+    @State private var deeplinkListId: String? = nil
+    @State private var deeplinkShouldPreview = false
+    
+    @State private var showDeeplinkErrorAlert = false
+    @State private var deeplinkErrorMessage = ""
+    
+    @State private var showMarkdownImportForDeeplink = false
+    
     enum ExportType {
         case newConnectedList
         case exportExisting
@@ -142,6 +151,25 @@ struct WelcomeView: View {
                 Task {
                     await unifiedProvider.loadAllLists()
                     await welcomeViewModel.loadLists()
+                }
+            }
+        }
+        .sheet(isPresented: $showMarkdownImportForDeeplink) {
+            if let listID = selectedListID,
+               let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }),
+               let markdown = deeplinkMarkdown {
+                MarkdownListImportView(
+                    list: unifiedList,
+                    provider: unifiedProvider,
+                    existingItems: [], // Will load in task
+                    existingLabels: [], // Will load in task
+                    initialMarkdown: markdown,
+                    autoPreview: deeplinkShouldPreview
+                )
+                .onDisappear {
+                    deeplinkMarkdown = nil
+                    deeplinkListId = nil
+                    deeplinkShouldPreview = false
                 }
             }
         }
@@ -267,6 +295,11 @@ struct WelcomeView: View {
         } message: {
             Text("This file's ID matches an existing local list. Generate a new ID to open it, or cancel.")
         }
+        .alert("Import Failed", isPresented: $showDeeplinkErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deeplinkErrorMessage)
+        }
         .task {
             await unifiedProvider.loadAllLists()
             await welcomeViewModel.loadLists()
@@ -276,17 +309,17 @@ struct WelcomeView: View {
         .focusedSceneValue(\.newListSheet, $isPresentingNewList)
         .focusedSceneValue(\.fileImporter, $showFileImporter)
         .focusedSceneValue(\.newConnectedExporter, $showNewConnectedExporter)
-        .onChange(of: selectedListID) { oldValue, newValue in
+        /*.onChange(of: selectedListID) { oldValue, newValue in
             guard let listID = newValue else { return }
             
             // Find the selected list
             if let list = unifiedProvider.allLists.first(where: { $0.id == listID }) {
                 Task {
-                    // NEW: Sync before displaying
+                    // Sync before displaying
                     try? await unifiedProvider.syncIfNeeded(for: list)
                 }
             }
-        }
+        }*/ ///In theory this is needed and just slows down loading, the .task in ShoppingListView already handles this.
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task {
                 await unifiedProvider.syncAllExternalLists()
@@ -303,6 +336,158 @@ struct WelcomeView: View {
                 } catch {
                     print("Failed to open file from URL: \(error)")
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ImportMarkdownDeeplink"))) { notification in
+            print("📬 [WelcomeView] Received ImportMarkdownDeeplink notification")
+            
+            guard let userInfo = notification.userInfo else {
+                print("❌ [WelcomeView] No userInfo in notification")
+                return
+            }
+            
+            // Check for error first
+            if let error = userInfo["error"] as? String {
+                print("❌ [WelcomeView] Deeplink error: \(error)")
+                deeplinkErrorMessage = error
+                showDeeplinkErrorAlert = true
+                return
+            }
+            
+            // Wait for lists to be loaded before processing
+            Task {
+                // Ensure lists are loaded
+                if unifiedProvider.allLists.isEmpty {
+                    print("⏳ [WelcomeView] Lists not loaded yet, loading now...")
+                    await unifiedProvider.loadAllLists()
+                }
+                
+                guard let markdown = userInfo["markdown"] as? String else {
+                    print("❌ [WelcomeView] No markdown in userInfo")
+                    return
+                }
+                
+                print("✅ [WelcomeView] Extracted markdown: \(markdown.count) chars")
+                
+                // List ID is REQUIRED
+                guard let listIdentifier = userInfo["listId"] as? String else {
+                    print("❌ [WelcomeView] No list ID provided (required)")
+                    await MainActor.run {
+                        deeplinkErrorMessage = "No list ID specified. Please provide a list ID in the URL:\n\nlistie://import?list=YOUR-LIST-ID&markdown=BASE64_ENCODED_MARKDOWN"
+                        showDeeplinkErrorAlert = true
+                    }
+                    return
+                }
+                
+                await MainActor.run {
+                    deeplinkMarkdown = markdown
+                    deeplinkListId = listIdentifier
+                    deeplinkShouldPreview = userInfo["preview"] as? Bool ?? false
+                }
+                
+                print("   List ID: \(listIdentifier)")
+                print("   Auto-preview: \(deeplinkShouldPreview)")
+                print("   Available lists: \(unifiedProvider.allLists.count)")
+                
+                print("🔍 [WelcomeView] Looking for list with ID: \(listIdentifier)")
+                
+                // Match by runtime ID or original file ID
+                let targetList = unifiedProvider.allLists.first(where: { list in
+                    // Match runtime ID (for local lists)
+                    if list.id == listIdentifier {
+                        return true
+                    }
+                    // Match original file ID (for external lists)
+                    if let originalId = list.originalFileId, originalId == listIdentifier {
+                        return true
+                    }
+                    return false
+                })
+                
+                if let targetList = targetList {
+                    print("✅ [WelcomeView] Found list: \(targetList.summary.name)")
+                    await MainActor.run {
+                        selectedListID = targetList.id
+                        showMarkdownImportForDeeplink = true
+                    }
+                } else {
+                    print("❌ [WelcomeView] List not found!")
+                    
+                    // Build helpful error message with available IDs
+                    var availableIDs: [String] = []
+                    for list in unifiedProvider.allLists where !list.isReadOnly {
+                        if let originalId = list.originalFileId {
+                            availableIDs.append("• \(list.summary.name): \(originalId)")
+                        } else {
+                            availableIDs.append("• \(list.summary.name): \(list.id)")
+                        }
+                    }
+                    
+                    await MainActor.run {
+                        deeplinkErrorMessage = """
+                        No list found with ID: \(listIdentifier)
+                        
+                        Available lists:
+                        \(availableIDs.joined(separator: "\n"))
+                        """
+                        
+                        showDeeplinkErrorAlert = true
+                    }
+                    
+                    print("   Available IDs:")
+                    for list in unifiedProvider.allLists where !list.isReadOnly {
+                        print("      - \(list.summary.name)")
+                        print("        Runtime ID: \(list.id)")
+                        if let originalId = list.originalFileId {
+                            print("        File ID: \(originalId)")
+                        }
+                    }
+                }
+            }
+        }
+        .overlay {
+            if unifiedProvider.isDownloadingFile {
+                ZStack {
+                    Color.black.opacity(0)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 20) {
+                        // Cloud icon with progress indicator
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.2))
+                                .frame(width: 80, height: 80)
+                            
+                            Image(systemName: "icloud.and.arrow.down")
+                                .font(.system(size: 36))
+                                .symbolEffect(.pulse)
+                        }
+                        
+                        VStack(spacing: 8) {
+                            Text("Downloading from iCloud")
+                                .font(.headline)
+                            
+                            Text("This may take a moment...")
+                                .font(.subheadline)
+                        }
+                        
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(1.2)
+                    }
+                    .padding(40)
+                    .background {
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.ultraThinMaterial)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            }
+                    }
+                    .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: unifiedProvider.isDownloadingFile)
             }
         }
     }

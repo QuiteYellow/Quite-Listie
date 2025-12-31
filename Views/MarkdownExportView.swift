@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 
 struct MarkdownExportView: View {
     let listName: String
+    let listId: String? 
     let items: [ShoppingItem]
     let labels: [ShoppingLabel]
     let activeOnly: Bool
@@ -29,6 +30,12 @@ struct MarkdownExportView: View {
     @State private var showRawMarkdown = false  // Toggle between raw and preview
     @State private var includeNotes = false  // Toggle for including item notes
     @State private var showActiveOnly = true  // Toggle for active items only
+    
+    @State private var showDeeplinkSheet = false
+    
+    private var generatedDeeplinkURL: String {
+        generateDeeplinkURL()
+    }
     
     // Generate markdown from items and labels
     private var markdownText: String {
@@ -139,15 +146,13 @@ struct MarkdownExportView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
-                                dismiss()
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .symbolRenderingMode(.hierarchical)
-                            }
-                            .help("Close")
-                            
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .help("Close")
                 }
-                
                 
                 ToolbarSpacer(.fixed, placement: .cancellationAction)
                 
@@ -161,6 +166,12 @@ struct MarkdownExportView: View {
                 
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
+                        showDeeplinkSheet = true
+                    } label: {
+                        Label("Share as Link", systemImage: "link")
+                    }
+                    
+                    Button {
                         copyToClipboard()
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
@@ -170,6 +181,51 @@ struct MarkdownExportView: View {
                         showFileExporter = true
                     } label: {
                         Label("Download", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
+            .sheet(isPresented: $showDeeplinkSheet) {
+                NavigationView {
+                    Form {
+                        Section {
+                            Text("Anyone with this link can import these items into their Listie app.")
+                                .font(.callout)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Section {
+                            Text(generatedDeeplinkURL)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .lineLimit(nil)
+                        } header: {
+                            Text("Deeplink URL")
+                        } footer: {
+                            Text("This link includes \(items.filter { !$0.checked }.count) active items\(includeNotes ? " with notes" : "").")
+                                .font(.caption)
+                        }
+                        
+                        Section {
+                            Button {
+                                UIPasteboard.general.string = generatedDeeplinkURL
+                                showDeeplinkSheet = false  // Just close the sheet, not the whole view
+                            } label: {
+                                Label("Copy Link", systemImage: "doc.on.doc")
+                            }
+                            
+                            ShareLink(item: generatedDeeplinkURL) {
+                                Label("Share Link", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    }
+                    .navigationTitle("Share as Link")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                showDeeplinkSheet = false
+                            }
+                        }
                     }
                 }
             }
@@ -236,7 +292,51 @@ struct MarkdownExportView: View {
         let invalidCharacters = CharacterSet(charactersIn: ":/\\?%*|\"<>")
         return name.components(separatedBy: invalidCharacters).joined(separator: "-")
     }
+    
+    private func generateDeeplinkURL() -> String {
+        print("🔗 [Deeplink Generation] Starting...")
+        
+        // Get active items only
+        let activeItems = items.filter { !$0.checked }
+        print("   Active items: \(activeItems.count)")
+        
+        // Generate markdown for active items
+        let markdown = MarkdownListGenerator.generate(
+            listName: listName,
+            items: activeItems,
+            labels: labels,
+            activeOnly: true,  // Only active items
+            includeNotes: includeNotes
+        )
+        
+        print("   Generated markdown: \(markdown.count) chars")
+        print("   Markdown preview: \(markdown.prefix(100))...")
+        
+        // Base64 encode
+        guard let base64 = markdown.data(using: .utf8)?.base64EncodedString() else {
+            print("   ❌ Failed to encode markdown to base64")
+            return "Error encoding markdown"
+        }
+        
+        print("   Base64 length: \(base64.count) chars")
+        
+        // Use provided list ID or show error
+        guard let id = listId else {
+            print("   ❌ No list ID available")
+            return "Error: List ID not available. Cannot generate deeplink."
+        }
+        
+        print("   List ID: \(id)")
+        
+        // Build URL
+        let url = "listie://import?list=\(id)&markdown=\(base64)&preview=true"
+        print("   ✅ Generated URL: \(url.prefix(200))...")
+        
+        return url
+    }
 }
+
+
 
 // MARK: - Markdown Document for FileDocument
 
@@ -270,6 +370,7 @@ struct MarkdownDocument: FileDocument {
 #Preview {
     MarkdownExportView(
         listName: "My Shopping List",
+        listId: "preview-list-123",
         items: [
             ShoppingItem(
                 id: UUID(),

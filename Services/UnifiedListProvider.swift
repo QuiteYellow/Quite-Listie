@@ -49,7 +49,11 @@ class UnifiedListProvider: ObservableObject {
     // REACTIVE cache for external labels
     @Published var externalLabels: [URL: [ShoppingLabel]] = [:]
     
+    @Published var isDownloadingFile = false
+    
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
+    
+    private var activeSyncs: Set<String> = []  // Track which lists are currently syncing
     
     enum SaveStatus { case saved, saving, unsaved, failed(String) }
     
@@ -137,6 +141,10 @@ class UnifiedListProvider: ObservableObject {
             return existing.id
         }
         
+        // Show loading indicator
+        isDownloadingFile = true
+        defer { isDownloadingFile = false }
+        
         // Open the file (this saves the bookmark)
         let document = try await ExternalFileStore.shared.openFile(at: url)
         
@@ -152,22 +160,7 @@ class UnifiedListProvider: ObservableObject {
             ])
         }
         
-        // Reload all lists (picks up the new bookmark)
-        await loadAllLists()
-        
-        // Find the newly opened list
-        if let newList = allLists.first(where: {
-            if case .external(let listURL) = $0.source {
-                return listURL.path == url.path
-            }
-            return false
-        }) {
-            print("✅ Opened and selected: \(newList.summary.name)")
-            return newList.id
-        }
-        
-        // If not found (read-only file without bookmark), add manually
-        print("⚠️ File not in bookmarks, adding manually")
+        // Create the new unified list
         let runtimeId = "external:\(url.path)"
         var modifiedSummary = document.list
         modifiedSummary.id = runtimeId
@@ -181,12 +174,12 @@ class UnifiedListProvider: ObservableObject {
             isReadOnly: isReadOnly
         )
         
-        await MainActor.run {
-            allLists.append(newList)
-            externalLabels[url] = document.labels
-        }
+        // Add to allLists directly (no need to reload everything!)
+        allLists.append(newList)
+        externalLabels[url] = document.labels
+        saveStatus[runtimeId] = .saved
         
-        print("✅ Manually added and selected: \(newList.summary.name)")
+        print("✅ Opened and selected: \(newList.summary.name)")
         return newList.id
     }
     
@@ -219,8 +212,18 @@ class UnifiedListProvider: ObservableObject {
     func syncIfNeeded(for list: UnifiedList) async throws {
         guard case .external(let url) = list.source else { return }
         
+        // Prevent duplicate syncs for same list
+        guard !activeSyncs.contains(list.id) else {
+            print("⏸️ [Sync] Already syncing \(list.summary.name), skipping")
+            return
+        }
+        
         if await ExternalFileStore.shared.hasFileChanged(at: url) {
             print("🔄 File changed, syncing: \(list.summary.name)")
+            
+            activeSyncs.insert(list.id)
+            defer { activeSyncs.remove(list.id) }
+            
             let mergedDoc = try await ExternalFileStore.shared.syncFile(at: url)
             
             // Update cache and UI

@@ -125,36 +125,41 @@ actor ExternalFileStore {
 
     // Ensures an iCloud file is downloaded, triggering download if needed
     private func ensureFileDownloaded(at url: URL) async throws {
+        // Check if it's an iCloud file
         let values = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
         
-        guard let status = values.ubiquitousItemDownloadingStatus else {
-            // Not an iCloud file, nothing to do
+        guard values.ubiquitousItemDownloadingStatus != nil else {
+            // Not an iCloud file
             return
         }
         
-        if status != .current {
-            print("☁️ [iCloud] File not downloaded, triggering download: \(url.lastPathComponent)")
-            
-            // Trigger download
+        // If not current, trigger download
+        if values.ubiquitousItemDownloadingStatus != .current {
+            print("☁️ [iCloud] File not fully downloaded, requesting: \(url.lastPathComponent)")
             try FileManager.default.startDownloadingUbiquitousItem(at: url)
             
-            // Wait for download to complete (with timeout)
-            let startTime = Date()
-            let timeout: TimeInterval = 30
-            
-            while Date().timeIntervalSince(startTime) < timeout {
-                let currentValues = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-                if currentValues.ubiquitousItemDownloadingStatus == .current {
-                    print("✅ [iCloud] Download complete: \(url.lastPathComponent)")
-                    return
-                }
-                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-            }
-            
-            throw NSError(domain: "ExternalFileStore", code: 5, userInfo: [
-                NSLocalizedDescriptionKey: "iCloud download timeout"
-            ])
+            // Wait a moment for iCloud to respond
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         }
+        
+        // Now try to read the file - this will block until iCloud downloads it
+        print("☁️ [iCloud] Attempting file access (will auto-download if needed)...")
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        var fileSize: Int64 = 0
+        
+        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &error) { readURL in
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: readURL.path),
+               let size = attributes[.size] as? Int64 {
+                fileSize = size
+            }
+        }
+        
+        if let error = error {
+            throw error
+        }
+        
+        print("✅ [iCloud] File accessible: \(url.lastPathComponent) (\(fileSize) bytes)")
     }
     
     
@@ -163,21 +168,13 @@ actor ExternalFileStore {
     // MARK: - File Management
     
     func openFile(at url: URL, forceReload: Bool = false) async throws -> ListDocument {
-        // Check if we need to invalidate cache due to iCloud eviction
-        let needsDownload = try? !isFileDownloaded(at: url)
-        
-        // Return cached document if available, not expired, file is downloaded, and not forcing reload
-        if !forceReload, needsDownload != true, let cached = getOpenedFile(at: url) {
+        // Return cached document if available and not forcing reload
+        if !forceReload, let cached = getOpenedFile(at: url) {
             print("✅ [Cache] Using cached document for \(url.lastPathComponent)")
             return cached
         }
-        
-        // If cache expired or file needs download
-        if needsDownload == true {
-            print("☁️ [Cache] File evicted from iCloud - cache invalidated")
-        } else {
-            print("📂 [Cache] Cache miss/expired for \(url.lastPathComponent) - loading from disk")
-        }
+
+        print("📂 [Cache] Cache miss/expired for \(url.lastPathComponent) - loading from disk")
         
         print("📂 Attempting to open: \(url.path)")
 
@@ -255,10 +252,11 @@ actor ExternalFileStore {
     }
     
     func hasFileChanged(at url: URL) -> Bool {
-        // If file was evicted, consider it changed
-        if let downloaded = try? isFileDownloaded(at: url), !downloaded {
-            print("☁️ [iCloud] File evicted, will trigger sync: \(url.lastPathComponent)")
-            return true
+        // Check if file is downloaded - if not, DON'T treat as changed
+        // (just means iOS evicted it to save space)
+        guard let downloaded = try? isFileDownloaded(at: url), downloaded else {
+            print("☁️ [Sync] File evicted but not changed: \(url.lastPathComponent)")
+            return false  // Eviction is NOT a change
         }
         
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -266,7 +264,12 @@ actor ExternalFileStore {
               let storedModDate = fileModificationDates[url.path] else {
             return false
         }
-        return currentModDate > storedModDate
+        
+        let changed = currentModDate > storedModDate
+        if changed {
+            print("📝 [Sync] File actually modified: \(url.lastPathComponent)")
+        }
+        return changed
     }
     
     func saveFile(_ document: ListDocument, to url: URL, bypassOptimisticCheck: Bool = false) async throws {
