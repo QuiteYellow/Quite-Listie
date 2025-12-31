@@ -34,6 +34,8 @@ struct MarkdownListImportView: View {
     @State private var createUnmatchedLabels = true
     @State private var isSaving = false
     
+    @State private var selectedItemIndices: Set<Int> = []
+    
     
     init(
         list: UnifiedList,
@@ -205,7 +207,8 @@ struct MarkdownListImportView: View {
     // MARK: - Preview View
     
     private func previewView(_ parsed: ParsedList) -> some View {
-        Form {
+        List {
+            // Importing to section
             Section {
                 HStack {
                     Image(systemName: list.summary.icon ?? "list.bullet")
@@ -218,6 +221,7 @@ struct MarkdownListImportView: View {
                 Text("Importing to")
             }
             
+            // Options section
             Section {
                 Toggle("Create New Labels for Unmatched", isOn: $createUnmatchedLabels)
                     .toggleStyle(.switch)
@@ -228,105 +232,79 @@ struct MarkdownListImportView: View {
                     .font(.caption)
             }
             
+            // Summary section
             Section {
-                Text("**\(parsed.items.count)** items will be imported")
+                let selectedItems = parsed.items.enumerated().filter { selectedItemIndices.contains($0.offset) }
+                let stats = calculateMergeStats(for: selectedItems.map(\.element))
+                
+                Text("**\(selectedItems.count)** of **\(parsed.items.count)** items selected")
                     .font(.headline)
                 
-                let mergeStats = calculateMergeStats(parsed)
-                
-                if mergeStats.newItems > 0 {
-                    Label("\(mergeStats.newItems) new items", systemImage: "plus.circle.fill")
+                if stats.newItems > 0 {
+                    Label("\(stats.newItems) new items", systemImage: "plus.circle.fill")
                         .foregroundColor(.green)
                 }
                 
-                if mergeStats.updatedItems > 0 {
-                    Label("\(mergeStats.updatedItems) existing items (checked: replace qty, active: add qty)", systemImage: "arrow.triangle.2.circlepath")
+                if stats.updatedItems > 0 {
+                    Label("\(stats.updatedItems) existing items will be updated", systemImage: "arrow.triangle.2.circlepath")
                         .foregroundColor(.blue)
                 }
                 
-                if mergeStats.newLabels > 0 {
-                    Label("\(mergeStats.newLabels) new labels will be created", systemImage: "tag.fill")
+                if stats.newLabels > 0 {
+                    Label("\(stats.newLabels) new labels will be created", systemImage: "tag.fill")
                         .foregroundColor(.purple)
                 }
                 
-                if mergeStats.matchedLabels > 0 {
-                    Label("\(mergeStats.matchedLabels) labels matched to existing", systemImage: "checkmark.circle.fill")
+                if stats.matchedLabels > 0 {
+                    Label("\(stats.matchedLabels) labels matched to existing", systemImage: "checkmark.circle.fill")
                         .foregroundColor(.green)
                 }
                 
-                if mergeStats.unmatchedLabels > 0 && !createUnmatchedLabels {
-                    Label("\(mergeStats.unmatchedLabels) items will have no label", systemImage: "tag.slash")
+                if stats.unmatchedLabels > 0 && !createUnmatchedLabels {
+                    Label("\(stats.unmatchedLabels) items will have no label", systemImage: "tag.slash")
                         .foregroundColor(.orange)
                 }
             } header: {
                 Text("Summary")
             }
             
-            Section {
-                ForEach(Array(parsed.items.enumerated()), id: \.offset) { index, item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            if item.quantity > 1 {
-                                Text("\(Int(item.quantity))")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Text(item.note)
-                                .font(.body)
-                            
-                            Spacer()
-                            
-                            if item.checked {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                        }
-                        
-                        if let labelName = item.labelName {
-                            let labelColor = labelColor(for: labelName)
-                            HStack(spacing: 4) {
-                                Image(systemName: "tag.fill")
-                                    .foregroundColor(labelColor)
-                                    .imageScale(.small)
-                                Text(labelName)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        if let notes = item.markdownNotes {
-                            Text(notes)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.leading, 16)
-                        }
-                        
-                        // Show if this will update an existing item
-                        if let existing = existingItems.first(where: { $0.note.lowercased() == item.note.lowercased() }) {
-                            if existing.checked {
-                                Text("Will update existing item (quantity → \(Int(item.quantity)))")
-                                    .font(.caption2)
-                                    .foregroundColor(.blue)
-                                    .italic()
-                            } else {
-                                let newQty = existing.quantity + item.quantity
-                                Text("Will update existing item (quantity: \(Int(existing.quantity)) + \(Int(item.quantity)) = \(Int(newQty)))")
-                                    .font(.caption2)
-                                    .foregroundColor(.blue)
-                                    .italic()
-                            }
-                        }
+            // Items grouped by label (ShoppingListView style)
+            let grouped = Dictionary(grouping: parsed.items.enumerated()) { (index, item) -> String in
+                item.labelName ?? "No Label"
+            }
+            
+            let sortedLabelNames = grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            
+            ForEach(sortedLabelNames, id: \.self) { labelName in
+                let itemsInLabel = grouped[labelName] ?? []
+                let selectedInLabel = itemsInLabel.filter { selectedItemIndices.contains($0.offset) }
+                
+                Section {
+                    ForEach(itemsInLabel, id: \.offset) { index, item in
+                        importItemRow(item: item, index: index, labelName: labelName)
                     }
-                    .padding(.vertical, 4)
+                } header: {
+                    importSectionHeader(
+                        labelName: labelName,
+                        totalCount: itemsInLabel.count,
+                        selectedCount: selectedInLabel.count
+                    )
                 }
-            } header: {
-                Text("Items Preview")
             }
         }
+        .listStyle(.insetGrouped)
     }
     
     // MARK: - Helper Functions
+    
+    private func parseAndPreview() {
+        parsedList = MarkdownListParser.parse(markdownText, listTitle: list.summary.name)
+        // Select all items by default
+        selectedItemIndices = Set(0..<(parsedList?.items.count ?? 0))
+        withAnimation {
+            showPreview = true
+        }
+    }
     
     private struct MergeStats {
         let newItems: Int
@@ -336,13 +314,13 @@ struct MarkdownListImportView: View {
         let unmatchedLabels: Int
     }
     
-    private func calculateMergeStats(_ parsed: ParsedList) -> MergeStats {
+    private func calculateMergeStats(for items: [ParsedListItem]) -> MergeStats {
         let existingItemNames = Set(existingItems.map { $0.note.lowercased() })
         
         var newItems = 0
         var updatedItems = 0
         
-        for item in parsed.items {
+        for item in items {
             if existingItemNames.contains(item.note.lowercased()) {
                 updatedItems += 1
             } else {
@@ -350,12 +328,14 @@ struct MarkdownListImportView: View {
             }
         }
         
-        // Always try to match existing labels by name (case-insensitive)
+        // Calculate label stats based on selected items
+        let labelNamesInSelection = Set(items.compactMap { $0.labelName })
         let existingLabelNames = Set(existingLabels.map { $0.name.lowercased() })
+        
         var matchedLabels = 0
         var unmatchedLabels = 0
         
-        for labelName in parsed.labelNames {
+        for labelName in labelNamesInSelection {
             if existingLabelNames.contains(labelName.lowercased()) {
                 matchedLabels += 1
             } else {
@@ -363,7 +343,6 @@ struct MarkdownListImportView: View {
             }
         }
         
-        // Only count as "new labels" if we're creating them
         let newLabels = createUnmatchedLabels ? unmatchedLabels : 0
         
         return MergeStats(
@@ -383,12 +362,109 @@ struct MarkdownListImportView: View {
         // Purple indicates it will be created (or no label if createUnmatchedLabels is off)
         return createUnmatchedLabels ? .purple : .secondary
     }
+
     
-    private func parseAndPreview() {
-        parsedList = MarkdownListParser.parse(markdownText, listTitle: list.summary.name)
-        withAnimation {
-            showPreview = true
+    @ViewBuilder
+    private func importSectionHeader(labelName: String, totalCount: Int, selectedCount: Int) -> some View {
+        HStack {
+            Image(systemName: "tag.fill")
+                .foregroundColor(labelColor(for: labelName).adjusted(forBackground: Color(.systemBackground)))
+            
+            Text(labelName)
+                .foregroundColor(.primary)
+            
+            // Show label status indicator
+            if labelName != "No Label" {
+                let existingLabel = existingLabels.first(where: { $0.name.lowercased() == labelName.lowercased() })
+                if existingLabel != nil {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .imageScale(.small)
+                } else if createUnmatchedLabels {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.purple)
+                        .imageScale(.small)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .imageScale(.small)
+                }
+            }
+            
+            Spacer()
+            
+            // Show selection count
+            Text("\(selectedCount)/\(totalCount)")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
         }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func importItemRow(item: ParsedListItem, index: Int, labelName: String) -> some View {
+        let isSelected = selectedItemIndices.contains(index)
+        
+        HStack(spacing: 12) {
+            // Quantity indicator (like ShoppingListView)
+            if item.quantity > 1 {
+                Text(Int(item.quantity).formatted(.number.precision(.fractionLength(0))))
+                    .font(.subheadline)
+                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .frame(minWidth: 12, alignment: .leading)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.note)
+                    .font(.body)
+                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .strikethrough(!isSelected, color: .gray)
+                
+                // Show if this will update an existing item
+                if let existing = existingItems.first(where: { $0.note.lowercased() == item.note.lowercased() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundColor(.blue)
+                            .imageScale(.small)
+                        
+                        if existing.checked {
+                                    Text("Quantity from \(Int(existing.quantity)) to \(Int(item.quantity))")
+                                } else {
+                                    let newQty = existing.quantity + item.quantity
+                                    Text("Quantity from \(Int(existing.quantity)) to \(Int(newQty))")
+                                }
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                }
+                
+                // Show markdown notes if present
+                if let notes = item.markdownNotes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 16)
+                }
+            }
+            
+            Spacer()
+            
+            // Selection toggle (like checkbox in ShoppingListView)
+            Button(action: {
+                if isSelected {
+                    selectedItemIndices.remove(index)
+                } else {
+                    selectedItemIndices.insert(index)
+                }
+            }) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? .accentColor : .gray)
+                    .imageScale(.large)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
+        .opacity(isSelected ? 1.0 : 0.5)
     }
     
     // MARK: - Import Logic
@@ -399,17 +475,22 @@ struct MarkdownListImportView: View {
         isSaving = true
         defer { isSaving = false }
         
+        // Filter to only selected items
+        let itemsToImport = parsed.items.enumerated()
+            .filter { selectedItemIndices.contains($0.offset) }
+            .map { $0.element }
+        
+        // Get unique label names from selected items
+        let labelNamesInSelection = Set(itemsToImport.compactMap { $0.labelName })
+        
         do {
-            // Step 1: Create/match labels
+            // Step 1: Create/match labels (only for selected items)
             var labelMap: [String: ShoppingLabel] = [:]
             
-            for labelName in parsed.labelNames {
-                // Always try to match existing labels first (case-insensitive)
+            for labelName in labelNamesInSelection {
                 if let existing = existingLabels.first(where: { $0.name.lowercased() == labelName.lowercased() }) {
-                    // Use existing label
                     labelMap[labelName] = existing
                 } else if createUnmatchedLabels {
-                    // Create new label only if toggle is on
                     let newLabel = ModelHelpers.createNewLabel(
                         name: labelName,
                         color: Color.random().toHex(),
@@ -418,43 +499,36 @@ struct MarkdownListImportView: View {
                     try await provider.createLabel(newLabel, for: list)
                     labelMap[labelName] = newLabel
                 }
-                // If createUnmatchedLabels is false and no match, labelMap[labelName] stays nil
             }
             
-            // Step 2: Import items
-            for parsedItem in parsed.items {
-                // Check if item exists (case-insensitive match)
+            // Step 2: Import selected items
+            for parsedItem in itemsToImport {
+                // [Rest of the import logic stays the same]
                 if let existingItem = existingItems.first(where: {
                     $0.note.lowercased() == parsedItem.note.lowercased()
                 }) {
-                    // Update existing item
                     var updated = existingItem
                     
-                    // If item is checked (inactive), replace quantity
-                    // If item is active, add quantities together
                     if existingItem.checked {
                         updated.quantity = parsedItem.quantity
                     } else {
                         updated.quantity = existingItem.quantity + parsedItem.quantity
                     }
                     
-                    updated.checked = false // Make active
+                    updated.checked = false
                     updated.modifiedAt = Date()
                     
-                    // Update label if provided
                     if let labelName = parsedItem.labelName,
                        let label = labelMap[labelName] {
                         updated.labelId = label.id
                     }
                     
-                    // Update notes if provided
                     if let notes = parsedItem.markdownNotes {
                         updated.markdownNotes = notes
                     }
                     
                     try await provider.updateItem(updated, in: list)
                 } else {
-                    // Create new item
                     let label = parsedItem.labelName.flatMap { labelMap[$0] }
                     
                     let newItem = ModelHelpers.createNewItem(
@@ -471,7 +545,7 @@ struct MarkdownListImportView: View {
             
             dismiss()
         } catch {
-            print("âŒ Failed to import items: \(error)")
+            print("❌ Failed to import items: \(error)")
         }
     }
 }
