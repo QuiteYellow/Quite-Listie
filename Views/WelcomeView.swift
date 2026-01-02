@@ -27,13 +27,13 @@ struct WelcomeView: View {
     @State private var pendingExportType: ExportType? = nil
     
     @State private var showSettings = false
-    @AppStorage("hideWelcomeList") private var hideWelcomeList = false
     
     @State private var detailSearchText = ""
     
-    private var searchPrompt: String {
-        selectedListID != nil ? "Search items" : "Select a list to search"
-    }
+    @AppStorage("hideWelcomeList") private var hideWelcomeList = false
+    @AppStorage("hideQuickAdd") private var hideQuickAdd = false
+    
+    private var searchPrompt: String {selectedListID != nil ? "Search items" : "Select a list to search"}
     
     enum ExportType {
         case newConnectedList
@@ -130,7 +130,7 @@ struct WelcomeView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(hideWelcomeList: $hideWelcomeList)
+            SettingsView(hideWelcomeList: $hideWelcomeList, hideQuickAdd: $hideQuickAdd)
         }
         .sheet(item: $editingUnifiedList, onDismiss: {
             NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
