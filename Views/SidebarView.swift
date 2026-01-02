@@ -135,8 +135,8 @@ struct SidebarView: View {
         }
         .navigationTitle("All Lists")
         .navigationBarTitleDisplayMode(.large)
-        .animation(.none, value: welcomeViewModel.uncheckedCounts)
-        .animation(.none, value: unifiedProvider.allLists)
+        //.animation(.none, value: welcomeViewModel.uncheckedCounts)
+        //.animation(.none, value: unifiedProvider.allLists)
         
         .alert("Delete List?", isPresented: $showingDeleteConfirmation, presenting: listToDelete) { list in
             Button("Delete", role: .destructive) {
@@ -203,13 +203,8 @@ struct SidebarView: View {
             }
             
             // Unchecked count
-            if let count = welcomeViewModel.uncheckedCounts[list.summary.id], count >= 0 {
-                Text("\(count)")
-                    .foregroundColor(.secondary)
-            } else {
-                Text("0")
-                    .foregroundColor(.secondary)
-            }
+            Text("\(welcomeViewModel.uncheckedCounts[list.summary.id] ?? 0)")
+                .foregroundColor(.secondary)
         }
         .tag(list.id)
         .contextMenu {
@@ -269,8 +264,7 @@ struct SidebarView: View {
         case .saved:
             EmptyView()
         case .saving:
-            ProgressView()
-                .scaleEffect(0.6)
+            EmptyView()
         case .unsaved:
             Image(systemName: "circle.fill")
                 .foregroundColor(.orange)

@@ -14,6 +14,9 @@ class ShoppingListViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var labels: [ShoppingLabel] = []
     
+    @Published var expandedSections: [String: Bool] = [:]
+    @Published var showCompletedAtBottom: Bool = false
+    
     @Published var searchText: String = ""
     
     let list: UnifiedList
@@ -24,6 +27,19 @@ class ShoppingListViewModel: ObservableObject {
     init(list: UnifiedList, provider: UnifiedListProvider) {
         self.list = list
         self.provider = provider
+        
+        // Load expanded sections for this list
+        if let data = UserDefaults.standard.data(forKey: "expandedSections"),
+           let allData = try? JSONDecoder().decode([String: [String: Bool]].self, from: data),
+           let sections = allData[list.id] {
+            self.expandedSections = sections
+        }
+        
+        // Load show completed preference for this list
+        if let data = UserDefaults.standard.data(forKey: "showCompletedAtBottom"),
+           let dict = try? JSONDecoder().decode([String: Bool].self, from: data) {
+            self.showCompletedAtBottom = dict[list.id] ?? false
+        }
     }
     
     func loadItems() async {
@@ -264,5 +280,40 @@ class ShoppingListViewModel: ObservableObject {
         let newQty = max(item.quantity - 1, 1)  // ← Remove ?? 1
         _ = await updateItem(item, note: item.note, label: labelForItem(item), quantity: newQty)
         return true
+    }
+    
+    func toggleSection(_ labelName: String) {
+        expandedSections[labelName] = !(expandedSections[labelName] ?? true)
+        saveExpandedSections()
+    }
+    
+    func initializeExpandedSections(for labels: [String]) {
+        for label in labels where expandedSections[label] == nil {
+            expandedSections[label] = true
+        }
+        saveExpandedSections()
+    }
+    
+    func setShowCompletedAtBottom(_ value: Bool) {
+        showCompletedAtBottom = value
+        saveShowCompletedPreference()
+    }
+    
+    private func saveExpandedSections() {
+        var allData = (try? JSONDecoder().decode([String: [String: Bool]].self,
+                                                 from: UserDefaults.standard.data(forKey: "expandedSections") ?? Data())) ?? [:]
+        allData[list.id] = expandedSections
+        if let data = try? JSONEncoder().encode(allData) {
+            UserDefaults.standard.set(data, forKey: "expandedSections")
+        }
+    }
+    
+    private func saveShowCompletedPreference() {
+        var dict = (try? JSONDecoder().decode([String: Bool].self,
+                                              from: UserDefaults.standard.data(forKey: "showCompletedAtBottom") ?? Data())) ?? [:]
+        dict[list.id] = showCompletedAtBottom
+        if let data = try? JSONEncoder().encode(dict) {
+            UserDefaults.standard.set(data, forKey: "showCompletedAtBottom")
+        }
     }
 }

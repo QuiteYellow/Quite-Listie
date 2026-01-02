@@ -52,8 +52,8 @@ actor ExternalFileStore {
         
         // Merge each conflict version
         for conflictVersion in conflicts {
-            if let conflictURL = try? conflictVersion.url,
-               let conflictData = try? Data(contentsOf: conflictURL),
+            let conflictURL = conflictVersion.url
+            if  let conflictData = try? Data(contentsOf: conflictURL),
                let conflictDoc = try? ListDocumentMigration.loadDocument(from: conflictData) {
                 
                 if let existing = mergedDocument {

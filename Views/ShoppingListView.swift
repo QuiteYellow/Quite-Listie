@@ -127,48 +127,10 @@ struct ShoppingListView: View {
     @State private var triggerJSONExport = false
     
     @State private var showContent = false
-    
     @State private var isPerformingBulkAction = false
+    @State private var showingRecycleBin = false
     
     @Binding var searchText: String
-    
-    // Store per-list preference in UserDefaults
-    @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
-    
-    
-    // Computed property to get/set for this specific list
-    private var showCompletedAtBottom: Bool {
-        get {
-            let dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
-            return dict[unifiedList.id] ?? false
-        }
-        nonmutating set {
-            var dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
-            dict[unifiedList.id] = newValue
-            if let data = try? JSONEncoder().encode(dict) {
-                showCompletedAtBottomData = data
-            }
-        }
-    }
-    
-    @AppStorage("expandedSections") private var expandedSectionsData: Data = Data()
-    
-    // Computed property to get/set for this specific list
-    private var expandedSections: [String: Bool] {
-        get {
-            let allData = (try? JSONDecoder().decode([String: [String: Bool]].self, from: expandedSectionsData)) ?? [:]
-            return allData[unifiedList.id] ?? [:]
-        }
-        nonmutating set {
-            var allData = (try? JSONDecoder().decode([String: [String: Bool]].self, from: expandedSectionsData)) ?? [:]
-            allData[unifiedList.id] = newValue
-            if let data = try? JSONEncoder().encode(allData) {
-                expandedSectionsData = data
-            }
-        }
-    }
-    
-    @State private var showingRecycleBin = false
     
     init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, onExportJSON exportJSON: (() -> Void)? = nil) {
         self.list = list
@@ -189,32 +151,15 @@ struct ShoppingListView: View {
             welcomeViewModel.uncheckedCounts[listID] = count
         }
     }
-    
-    private func toggleSection(_ labelName: String) {
-        withAnimation(.easeInOut) {
-            var sections = expandedSections
-            sections[labelName] = !(sections[labelName] ?? true)
-            expandedSections = sections
-        }
-    }
-    
-    private func initializeExpandedSections(for labels: [String]) {
-        var sections = expandedSections
-        for label in labels {
-            if sections[label] == nil {
-                sections[label] = true
-            }
-        }
-        expandedSections = sections
-    }
+
     
     @ViewBuilder
     private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
-        let isExpanded = expandedSections[labelName] ?? true
+        let isExpanded = viewModel.expandedSections[labelName] ?? true
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
         
-        let itemsToShow = showCompletedAtBottom && labelName != "Completed"
+        let itemsToShow =  viewModel.showCompletedAtBottom && labelName != "Completed"
         ? uncheckedItems
         : uncheckedItems + checkedItems
         
@@ -299,14 +244,14 @@ struct ShoppingListView: View {
                 isExpanded: isExpanded,
                 uncheckedCount: uncheckedItems.count,
                 checkedCount: checkedItems.count,
-                onToggle: { toggleSection(labelName) }
+                onToggle: { viewModel.toggleSection(labelName) }
             )
         }
     }
     
     var body: some View {
         List {
-            if showCompletedAtBottom {
+            if  viewModel.showCompletedAtBottom {
                 // Use viewModel properties instead:
                 let keysToShow = viewModel.filteredSortedLabelKeys.filter { labelName in
                     if labelName == "Completed" {
@@ -427,12 +372,12 @@ struct ShoppingListView: View {
                     
                     Button {
                         withAnimation(.easeInOut) {
-                            showCompletedAtBottom.toggle()
+                            viewModel.setShowCompletedAtBottom(!viewModel.showCompletedAtBottom)
                         }
                     } label: {
                         Label(
-                            showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
-                            systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
+                            viewModel.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                            systemImage:  viewModel.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
                         )
                     }
                     .disabled(unifiedList.isReadOnly)
@@ -488,7 +433,7 @@ struct ShoppingListView: View {
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
-            initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
+            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
             
             showContent = true
         }
@@ -497,7 +442,7 @@ struct ShoppingListView: View {
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
-            initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
+            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
         }
         
         .fullScreenCover(isPresented: $showingAddView) {

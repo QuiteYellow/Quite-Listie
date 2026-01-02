@@ -540,6 +540,25 @@ class UnifiedListProvider: ObservableObject {
         await syncAllExternalLists()
     }
     
+    func prepareExport(for list: UnifiedList) async throws -> ListDocument {
+        // Fetch all data
+        let items = try await fetchItems(for: list)
+        let labels = try await fetchLabels(for: list)
+        
+        // Use original ID if available (for external lists)
+        var exportList = list.summary
+        if let originalId = list.originalFileId {
+            exportList.id = originalId
+        }
+        
+        // Create and return document
+        return ListDocument(
+            list: exportList,
+            items: items,
+            labels: labels
+        )
+    }
+    
     // MARK: - Auto-cleanup
 
     /// Permanently deletes items that have been in recycle bin for more than 30 days
