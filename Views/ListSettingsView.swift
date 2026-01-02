@@ -230,7 +230,7 @@ struct ListSettingsView: View {
                     Button("Save") {
                         // Create legacy extras format for backward compatibility
                         // The storage layer will convert this to direct fields
-                        var extras = [
+                        let extras = [
                             "listsForMealieListIcon": icon,
                             "hiddenLabels": Array(hiddenLabelIDs).joined(separator: ",")
                         ]
