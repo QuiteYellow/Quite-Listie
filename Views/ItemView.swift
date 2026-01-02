@@ -323,7 +323,7 @@ struct EditItemView: View {
         .onAppear {
             // Initialize state values from item
             itemName = item.note
-            quantity = Int(item.quantity ?? 1)
+            quantity = Int(item.quantity)
             
             // Read markdown notes - V2 (direct field) or V1 (extras)
             mdNotes = item.markdownNotes ?? item.extras?["markdownNotes"] ?? ""

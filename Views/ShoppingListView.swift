@@ -55,13 +55,13 @@ struct ItemRowView: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            if item.quantity ?? 0 > 1 {
-                Text((item.quantity ?? 0).formatted(.number.precision(.fractionLength(0))))
+            if item.quantity > 1 {
+                Text(item.quantity.formatted(.number.precision(.fractionLength(0))))
                     .font(.subheadline)
-                    .strikethrough(item.checked && (item.quantity ?? 0) >= 2,
+                    .strikethrough(item.checked && item.quantity >= 2,
                                    color: (item.checked ? .gray : .primary))
                     .foregroundColor(
-                        (item.quantity ?? 0) < 2 ? Color.clear :
+                        item.quantity < 2 ? Color.clear :
                             (item.checked ? .gray : .primary)
                     )
                     .frame(minWidth: 12, alignment: .leading)
@@ -237,17 +237,14 @@ struct ShoppingListView: View {
                         },
                         onIncrement: {
                             Task {
-                                let newQty = (item.quantity ?? 1) + 1
-                                _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                                await viewModel.incrementQuantity(for: item)  // ← Centralized!
                             }
                         },
                         onDecrement: {
-                            if (item.quantity ?? 1) <= 1 {
-                                itemToDelete = item
-                            } else {
-                                Task {
-                                    let newQty = max((item.quantity ?? 1) - 1, 1)
-                                    _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                            Task {
+                                let shouldKeep = await viewModel.decrementQuantity(for: item)  // ← Centralized!
+                                if !shouldKeep {
+                                    itemToDelete = item
                                 }
                             }
                         },
@@ -256,27 +253,24 @@ struct ShoppingListView: View {
                     .swipeActions(edge: .trailing) {
                         if !unifiedList.isReadOnly {
                             Button(role: .none) {
-                                if (item.quantity ?? 1) < 2 {
-                                    itemToDelete = item
-                                } else {
-                                    Task {
-                                        let newQty = max((item.quantity ?? 1) - 1, 1)
-                                        _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
-                                        
+                                Task {
+                                    let shouldKeep = await viewModel.decrementQuantity(for: item)  // ← Centralized!
+                                    if !shouldKeep {
+                                        itemToDelete = item
                                     }
                                 }
                             } label: {
-                                Label((item.quantity ?? 1) < 2 ? "Delete" : "Decrease", systemImage: (item.quantity ?? 1) < 2 ? "trash" : "minus")
+                                Label(item.quantity < 2 ? "Delete" : "Decrease",
+                                      systemImage: item.quantity < 2 ? "trash" : "minus")
                             }
-                            .tint((item.quantity ?? 1) < 2 ? .red : .orange)
+                            .tint(item.quantity < 2 ? .red : .orange)
                         }
                     }
                     .swipeActions(edge: .leading) {
                         if !unifiedList.isReadOnly {
                             Button {
                                 Task {
-                                    let newQty = (item.quantity ?? 1) + 1
-                                    _ = await viewModel.updateItem(item, note: item.note, label: viewModel.labelForItem(item), quantity: newQty)
+                                    await viewModel.incrementQuantity(for: item)  // ← Centralized!
                                 }
                             } label: {
                                 Label("Increase", systemImage: "plus")
@@ -551,7 +545,7 @@ struct ShoppingListView: View {
             Button("Delete", role: .destructive) {
                 if let item = itemToDelete {
                     Task {
-                        await viewModel.deleteItem(item)
+                        _ = await viewModel.deleteItem(item)
                         await MainActor.run { itemToDelete = nil }
                     }
                 }
