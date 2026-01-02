@@ -130,6 +130,11 @@ struct ShoppingListView: View {
     @State private var isPerformingBulkAction = false
     @State private var showingRecycleBin = false
     
+    @AppStorage("hideQuickAdd") private var hideQuickAdd = false
+    @State private var activeInlineAdd: String? = nil  // Track which section is active
+    @State private var inlineAddText: String = ""
+    @FocusState private var inlineAddFocused: Bool
+    
     @Binding var searchText: String
     
     init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, onExportJSON exportJSON: (() -> Void)? = nil) {
@@ -159,13 +164,10 @@ struct ShoppingListView: View {
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
         
-        let itemsToShow =  viewModel.showCompletedAtBottom && labelName != "Completed"
-        ? uncheckedItems
-        : uncheckedItems + checkedItems
-        
         Section {
             if isExpanded {
-                ForEach(itemsToShow) { item in
+                // Active items
+                ForEach(uncheckedItems) { item in
                     ItemRowView(
                         item: item,
                         isLast: false,
@@ -182,12 +184,12 @@ struct ShoppingListView: View {
                         },
                         onIncrement: {
                             Task {
-                                await viewModel.incrementQuantity(for: item)  // ← Centralized!
+                                await viewModel.incrementQuantity(for: item)
                             }
                         },
                         onDecrement: {
                             Task {
-                                let shouldKeep = await viewModel.decrementQuantity(for: item)  // ← Centralized!
+                                let shouldKeep = await viewModel.decrementQuantity(for: item)
                                 if !shouldKeep {
                                     itemToDelete = item
                                 }
@@ -199,7 +201,7 @@ struct ShoppingListView: View {
                         if !unifiedList.isReadOnly {
                             Button(role: .none) {
                                 Task {
-                                    let shouldKeep = await viewModel.decrementQuantity(for: item)  // ← Centralized!
+                                    let shouldKeep = await viewModel.decrementQuantity(for: item)
                                     if !shouldKeep {
                                         itemToDelete = item
                                     }
@@ -215,7 +217,7 @@ struct ShoppingListView: View {
                         if !unifiedList.isReadOnly {
                             Button {
                                 Task {
-                                    await viewModel.incrementQuantity(for: item)  // ← Centralized!
+                                    await viewModel.incrementQuantity(for: item)
                                 }
                             } label: {
                                 Label("Increase", systemImage: "plus")
@@ -236,6 +238,86 @@ struct ShoppingListView: View {
                         .tint(.red)
                     }
                 }
+                
+                // Inline add row (only for non-Completed sections and if not read-only)
+                if !hideQuickAdd && labelName != "Completed" && !unifiedList.isReadOnly {
+                    inlineAddRow(for: labelName, color: color)  // ✅ CORRECT
+                }
+                
+                // Completed items (if showing inline)
+                if !viewModel.showCompletedAtBottom {
+                    ForEach(checkedItems) { item in
+                        ItemRowView(
+                            item: item,
+                            isLast: false,
+                            onTap: {
+                                Task {
+                                    await viewModel.toggleChecked(for: item, didUpdate: { count in
+                                        await updateUncheckedCount(for: list.id, with: count)
+                                    })
+                                }
+                            },
+                            onTextTap: {
+                                editingItem = item
+                                showingEditView = true
+                            },
+                            onIncrement: {
+                                Task {
+                                    await viewModel.incrementQuantity(for: item)
+                                }
+                            },
+                            onDecrement: {
+                                Task {
+                                    let shouldKeep = await viewModel.decrementQuantity(for: item)
+                                    if !shouldKeep {
+                                        itemToDelete = item
+                                    }
+                                }
+                            },
+                            isReadOnly: unifiedList.isReadOnly
+                        )
+                        .swipeActions(edge: .trailing) {
+                            if !unifiedList.isReadOnly {
+                                Button(role: .none) {
+                                    Task {
+                                        let shouldKeep = await viewModel.decrementQuantity(for: item)
+                                        if !shouldKeep {
+                                            itemToDelete = item
+                                        }
+                                    }
+                                } label: {
+                                    Label(item.quantity < 2 ? "Delete" : "Decrease",
+                                          systemImage: item.quantity < 2 ? "trash" : "minus")
+                                }
+                                .tint(item.quantity < 2 ? .red : .orange)
+                            }
+                        }
+                        .swipeActions(edge: .leading) {
+                            if !unifiedList.isReadOnly {
+                                Button {
+                                    Task {
+                                        await viewModel.incrementQuantity(for: item)
+                                    }
+                                } label: {
+                                    Label("Increase", systemImage: "plus")
+                                }
+                                .tint(.green)
+                            }
+                        }
+                        .contextMenu {
+                            Button("Edit Item...") {
+                                editingItem = item
+                                showingEditView = true
+                            }
+                            Button(role: .none) {
+                                itemToDelete = item
+                            } label: {
+                                Label("Delete Item...", systemImage: "trash")
+                            }
+                            .tint(.red)
+                        }
+                    }
+                }
             }
         } header: {
             SectionHeaderView(
@@ -248,6 +330,48 @@ struct ShoppingListView: View {
             )
         }
     }
+    
+    @ViewBuilder
+        private func inlineAddRow(for labelName: String, color: Color?) -> some View {
+            if activeInlineAdd == labelName {
+                // Active state - show text field
+                HStack(spacing: 12) {
+                    TextField("Item name", text: $inlineAddText)
+                        .focused($inlineAddFocused)
+                        .onSubmit {
+                            addInlineItem(to: labelName)
+                        }
+                    
+                    Button {
+                        addInlineItem(to: labelName)
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.accentColor)
+                            .imageScale(.large)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.vertical, 8)
+            } else {
+                // Inactive state - show "+ Add Item" button
+                Button {
+                    activeInlineAdd = labelName
+                    inlineAddFocused = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus.circle")
+                            .foregroundColor(.secondary)
+                            .imageScale(.large)
+                        Text("Add Item")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 4)
+            }
+        }
     
     var body: some View {
         List {
@@ -286,6 +410,15 @@ struct ShoppingListView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded { _ in
+                    if activeInlineAdd != nil && !inlineAddFocused {
+                        activeInlineAdd = nil
+                        inlineAddText = ""
+                    }
+                }
+        )
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar(id: "LIST_ACTIONS") {
@@ -564,5 +697,30 @@ struct ShoppingListView: View {
             }
         }
         .padding(.horizontal, 4)
+    }
+    
+    private func addInlineItem(to labelName: String) {
+        let trimmedText = inlineAddText.trimmingCharacters(in: .whitespaces)
+        guard !trimmedText.isEmpty else { return }
+        
+        // Find the label
+        let label = viewModel.labels.first { $0.name == labelName }
+        
+        Task {
+            let success = await viewModel.addItem(
+                note: trimmedText,
+                label: label,
+                quantity: 1,
+                markdownNotes: nil
+            )
+            
+            if success {
+                await MainActor.run {
+                    inlineAddText = ""
+                    // Keep focus for quick consecutive adds
+                    inlineAddFocused = true
+                }
+            }
+        }
     }
 }

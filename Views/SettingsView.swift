@@ -17,7 +17,10 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
+    
     @Binding var hideWelcomeList: Bool
+    @Binding var hideQuickAdd: Bool
+
     
     var body: some View {
         NavigationView {
@@ -32,6 +35,18 @@ struct SettingsView: View {
                     Text("Getting Started")
                 } footer: {
                     Text("The welcome list contains helpful information about using Listie.")
+                }
+                
+                Section {
+                    Toggle("Quick Add Items", isOn: Binding(
+                        get: { !hideQuickAdd },
+                        set: { hideQuickAdd = !$0 }
+                    ))
+                    .toggleStyle(.switch)
+                } header: {
+                    Text("List Items")
+                } footer: {
+                    Text("Show an inline '+ Add Item' button under each label for faster item creation.")
                 }
                 
                 // Future settings sections can go here
@@ -55,5 +70,5 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(hideWelcomeList: .constant(false))
+    SettingsView(hideWelcomeList: .constant(false), hideQuickAdd: .constant(false))
 }

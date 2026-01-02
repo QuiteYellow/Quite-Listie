@@ -142,7 +142,7 @@ enum ListDocumentMigration {
             return ShoppingItem(
                 id: oldItem.id,
                 note: oldItem.note,
-                quantity: oldItem.quantity ?? 1,
+                quantity: oldItem.quantity,
                 checked: oldItem.checked,
                 labelId: newLabelId,
                 markdownNotes: markdownNotes,
