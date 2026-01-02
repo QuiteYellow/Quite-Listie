@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+
 @main
 struct ShoppingListApp: App {
     @FocusedBinding(\.newListSheet) private var newListSheet: Bool?
@@ -19,6 +20,11 @@ struct ShoppingListApp: App {
     var body: some Scene {
         WindowGroup {
             WelcomeView()
+                .onAppear {
+                #if targetEnvironment(macCatalyst)
+                    configureMacWindow()
+                #endif
+                }
                 .onOpenURL { url in
                     print("📱 [Deeplink] Received URL: \(url)")
                     
@@ -134,7 +140,7 @@ struct ShoppingListApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New List (Private)") {
+                Button("New Private List") {
                     newListSheet = true
                 }
                 .keyboardShortcut("N", modifiers: .command)
@@ -177,4 +183,22 @@ struct ShoppingListApp: App {
             }
         }
     }
+#if targetEnvironment(macCatalyst)
+func configureMacWindow() {
+    // Get the first UIWindowScene
+    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+          let titlebar = windowScene.titlebar else { return }
+
+    print("✅ [Catalyst] Configuring window titlebar")
+
+    // Hide the window title
+    titlebar.titleVisibility = .hidden
+
+    // Use expanded unified toolbar style
+    titlebar.toolbarStyle = .expanded
+
+}
+#endif
+
+
 }

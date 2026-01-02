@@ -191,7 +191,7 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     var itemsGroupedByLabel: [String: [ShoppingItem]] {
-        let grouped = Dictionary(grouping: items) { item in
+        let grouped = Dictionary(grouping: items) { item in  // ← Change back to `items`
             // Use the helper to get label, works with both V1 and V2
             labelForItem(item)?.name ?? "No Label"
         }

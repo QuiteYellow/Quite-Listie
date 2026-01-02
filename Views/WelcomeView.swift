@@ -38,6 +38,9 @@ struct WelcomeView: View {
     
     @State private var showMarkdownImportForDeeplink = false
     
+    @State private var detailSearchText = ""
+    
+    
     enum ExportType {
         case newConnectedList
         case exportExisting
@@ -61,42 +64,48 @@ struct WelcomeView: View {
                 //await Task.yield()
             }
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            isPresentingNewList = true
+                
+                    ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
+                        Menu {
+                            Button {
+                                isPresentingNewList = true
+                            } label: {
+                                Label("New Private List", systemImage: "doc.badge.plus")
+                            }
+                            
+                            Button {
+                                pendingExportType = .newConnectedList
+                                showNewConnectedExporter = true
+                            } label: {
+                                Label("New List As File...", systemImage: "doc.badge.plus")
+                            }
+                            
+                            Divider()
+                            
+                            Button {
+                                showFileImporter = true
+                            } label: {
+                                Label("Open File...", systemImage: "folder.badge.plus")
+                            }
                         } label: {
-                            Label("New List (Private)", systemImage: "doc.badge.plus")
+                            Image(systemName: "plus")
                         }
-                        
-                        Button {
-                            pendingExportType = .newConnectedList
-                            showNewConnectedExporter = true
-                        } label: {
-                            Label("New List As File...", systemImage: "doc.badge.plus")
-                        }
-                        
-                        Divider()
-                        
-                        Button {
-                            showFileImporter = true
-                        } label: {
-                            Label("Open File...", systemImage: "folder.badge.plus")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
                     }
                     
-                    Menu {
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label("Settings...", systemImage: "gear")
+                    ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
+                    
+                    ToolbarItem(id: "setings", placement: .navigationBarTrailing) {
+                        Menu {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Label("Settings...", systemImage: "gear")
+                            }
+                        } label: {  // Move this out here
+                            Image(systemName: "ellipsis")
                         }
-                    } label: {  // Move this out here
-                        Image(systemName: "ellipsis.circle")
                     }
-                }
+                
             }
         } detail: {
             ZStack {
@@ -110,6 +119,7 @@ struct WelcomeView: View {
                         unifiedList: unifiedList,
                         unifiedProvider: unifiedProvider,
                         welcomeViewModel: welcomeViewModel,
+                        searchText: $detailSearchText,
                         onExportJSON: {
                             Task {
                                 await exportList(unifiedList.summary)
@@ -121,6 +131,14 @@ struct WelcomeView: View {
                     ContentUnavailableView("Select a list", systemImage: "list.bullet")
                 }
             }
+            .searchable(text: $detailSearchText, prompt: "Search items")
+             // Putting at the welcomeView fixes the flickery search placement!
+            .searchToolbarBehavior(.minimize)
+            .toolbar {
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            }
+            
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(hideWelcomeList: $hideWelcomeList)
@@ -490,6 +508,10 @@ struct WelcomeView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: unifiedProvider.isDownloadingFile)
             }
         }
+        .onChange(of: selectedListID) { _, _ in
+            detailSearchText = ""
+        }
+        
     }
     
     @MainActor
@@ -564,6 +586,13 @@ struct SidebarView: View {
         setFavouriteListIDs(ids)
     }
     
+    private func folderName(for list: UnifiedList) -> String {
+        if case .external(let url) = list.source {
+            return url.deletingLastPathComponent().lastPathComponent
+        }
+        return ""
+    }
+    
     var body: some View {
         let favourites = unifiedProvider.allLists.filter { list in
             favouriteListIDs.contains(list.summary.id)
@@ -579,7 +608,7 @@ struct SidebarView: View {
             if !hideWelcomeList {
                 let welcomeList = unifiedProvider.allLists.first(where: { $0.id == "example-welcome-list" })
                 if let welcome = welcomeList {
-                    Section(header: Text("Getting Started")) {
+                    Section(header: Text("Getting Started").foregroundColor(.purple)) {
                         listRow(for: welcome)
                             .swipeActions(edge: .trailing) {
                                 Button {
@@ -615,12 +644,21 @@ struct SidebarView: View {
                 }
             }
             
-            // MARK: - External / Linked Lists
+            // MARK: - External / Linked Lists (Grouped by Folder)
             let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal && !$0.isReadOnly }
             if !externalLists.isEmpty {
-                Section(header: Text("Connected")) {
-                    ForEach(externalLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
-                        listRow(for: list)
+                // Group by folder
+                let grouped = Dictionary(grouping: externalLists) { list in
+                    folderName(for: list)
+                }
+                
+                let sortedFolders = grouped.keys.sorted()
+                
+                ForEach(sortedFolders, id: \.self) { folder in
+                    Section(header: Text(folder.isEmpty ? "Connected" : folder)) {
+                        ForEach(grouped[folder]!.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
+                            listRow(for: list)
+                        }
                     }
                 }
             }
@@ -678,6 +716,12 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.summary.name)
                 
+                // Show folder name as caption for favorited external lists
+                if isFavourited && list.isExternal {
+                    Text(folderName(for: list))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             
             Spacer()

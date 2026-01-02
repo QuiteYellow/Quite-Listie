@@ -33,8 +33,6 @@ struct IsReadOnlyKey: FocusedValueKey {
     typealias Value = Bool
 }
 
-
-
 extension FocusedValues {
     var newListSheet: Binding<Bool>? {
         get { self[NewListSheetKey.self] }
