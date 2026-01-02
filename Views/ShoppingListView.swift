@@ -337,11 +337,25 @@ struct ShoppingListView: View {
                 // Active state - show text field
                 HStack(spacing: 12) {
                     TextField("Item name", text: $inlineAddText)
+                        .font(.subheadline)
                         .focused($inlineAddFocused)
                         .onSubmit {
                             addInlineItem(to: labelName)
                         }
                     
+                    // Cancel button
+                    Button {
+                        activeInlineAdd = nil
+                        inlineAddText = ""
+                        inlineAddFocused = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .imageScale(.large)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Add button
                     Button {
                         addInlineItem(to: labelName)
                     } label: {
@@ -362,9 +376,10 @@ struct ShoppingListView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "plus.circle")
                             .foregroundColor(.secondary)
-                            .imageScale(.large)
+                            .imageScale(.medium)
                         Text("Add Item")
                             .foregroundColor(.secondary)
+                            .font(.subheadline)
                         Spacer()
                     }
                 }
