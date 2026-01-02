@@ -130,6 +130,8 @@ struct ShoppingListView: View {
     
     @State private var isPerformingBulkAction = false
     
+    @Binding var searchText: String
+    
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
 
@@ -165,13 +167,50 @@ struct ShoppingListView: View {
         }
     }
     
+    private var filteredItems: [ShoppingItem] {
+        guard !searchText.isEmpty else { return viewModel.items }
+        
+        return viewModel.items.filter { item in
+            // Search in item name
+            if item.note.localizedCaseInsensitiveContains(searchText) {
+                return true
+            }
+            
+            // Search in markdown notes if present
+            if let notes = item.markdownNotes,
+               notes.localizedCaseInsensitiveContains(searchText) {
+                return true
+            }
+            
+            return false
+        }
+    }
+    
+    private var filteredItemsGroupedByLabel: [String: [ShoppingItem]] {
+        let grouped = Dictionary(grouping: filteredItems) { item in
+            viewModel.labelForItem(item)?.name ?? "No Label"
+        }
+        
+        // Sort items within each group alphabetically
+        return grouped.mapValues { items in
+            items.sorted { item1, item2 in
+                item1.note.localizedCaseInsensitiveCompare(item2.note) == .orderedAscending
+            }
+        }
+    }
+
+    private var filteredSortedLabelKeys: [String] {
+        filteredItemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+    }
+    
     @State private var showingRecycleBin = false
     
-    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, onExportJSON exportJSON: (() -> Void)? = nil) {
+    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, onExportJSON exportJSON: (() -> Void)? = nil) {
         self.list = list
         self.unifiedList = unifiedList
         self.unifiedProvider = unifiedProvider
         self.welcomeViewModel = welcomeViewModel
+        self._searchText = searchText  // Binding
         self.onExportJSON = exportJSON
         self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
     }
@@ -310,30 +349,30 @@ struct ShoppingListView: View {
         List {
             if showCompletedAtBottom {
                 // Filter keys to show only sections with unchecked items
-                let keysToShow = viewModel.sortedLabelKeys.filter { labelName in
+                let keysToShow = filteredSortedLabelKeys.filter { labelName in
                     if labelName == "Completed" {
                         return false
                     }
-                    let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                    let items = filteredItemsGroupedByLabel[labelName] ?? []
                     return items.contains(where: { !$0.checked })
                 }
                 
                 ForEach(keysToShow, id: \.self) { labelName in
-                    let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                    let items = filteredItemsGroupedByLabel[labelName] ?? []
                     let color = viewModel.colorForLabel(name: labelName)
                     renderSection(labelName: labelName, items: items, color: color)
                 }
                 
-                let completedItems = viewModel.items.filter { $0.checked }
+                let completedItems = filteredItems.filter { $0.checked }
                 if !completedItems.isEmpty {
                     renderSection(labelName: "Completed", items: completedItems, color: .primary)
                 }
                 
             } else {
-                let keysToShow = viewModel.sortedLabelKeys.filter { $0 != "Completed" }
+                let keysToShow = filteredSortedLabelKeys.filter { $0 != "Completed" }
                 
                 ForEach(keysToShow, id: \.self) { labelName in
-                    let items = viewModel.itemsGroupedByLabel[labelName] ?? []
+                    let items = filteredItemsGroupedByLabel[labelName] ?? []
                     if !items.isEmpty {
                         let color = viewModel.colorForLabel(name: labelName)
                         renderSection(labelName: labelName, items: items, color: color)
@@ -345,124 +384,141 @@ struct ShoppingListView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if isPerformingBulkAction {
-                    // Show only a spinner during bulk operations
-                    ProgressView()   // ← THIS SPINNER
-                        .scaleEffect(0.7)
-                    
-                } else {
-                    // Save status indicator (like writie.md)
-                    saveStatusView
-                    
-                    // Add item button
+        .toolbar(id: "LIST_ACTIONS") {
+            
+            // Save status indicator - always present, just hidden
+            ToolbarItem(id: "save-status", placement: .navigationBarTrailing) {
+                Group {
+                    switch saveStatus {
+                    case .saved:
+                        EmptyView()
+                    case .saving:
+                        EmptyView()
+                    case .unsaved:
+                        Image(systemName: "circle.fill")
+                            .foregroundColor(.orange)
+                    case .failed(let message):
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                            .help(message)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            
+            // Add button - always present, just hidden/disabled
+            ToolbarItem(id: "add", placement: .navigationBarTrailing) {
+                Button {
+                    showingAddView = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(unifiedList.isReadOnly)
+            }
+            
+            ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
+            
+            // Menu - always present, just hidden/disabled
+            ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
+                Menu {
                     Button {
-                        showingAddView = true
+                        showingMarkdownImport = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Import from Markdown", systemImage: "square.and.arrow.down")
                     }
                     .disabled(unifiedList.isReadOnly)
                     
-                    // Menu with list actions
-                    Menu {
+                    Divider()
+                    
+                    Menu("Mark All Items As…") {
                         Button {
-                            showingMarkdownImport = true
+                            Task {
+                                isPerformingBulkAction = true
+                                
+                                await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
+                                    await updateUncheckedCount(for: list.id, with: count)
+                                }
+                                
+                                await MainActor.run {
+                                    isPerformingBulkAction = false
+                                }
+                            }
                         } label: {
-                            Label("Import from Markdown", systemImage: "square.and.arrow.down")
+                            Label("Completed", systemImage: "checkmark.circle.fill")
                         }
                         .disabled(unifiedList.isReadOnly)
-                        
-                        Divider()
-                        
-                        Menu("Mark All Items As…") {
-                            Button {
-                                Task {
-                                    isPerformingBulkAction = true
-                                    
-                                    await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
-                                        await updateUncheckedCount(for: list.id, with: count)
-                                    }
-                                    
-                                    await MainActor.run {
-                                        isPerformingBulkAction = false
-                                    }
-                                }
-                            } label: {
-                                Label("Completed", systemImage: "checkmark.circle.fill")
-                            }
-                            .disabled(unifiedList.isReadOnly)
 
-                            Button {
-                                Task {
-                                    isPerformingBulkAction = true
-                                    
-                                    await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
-                                        await updateUncheckedCount(for: list.id, with: count)
-                                    }
-                                    
-                                    await MainActor.run {
-                                        isPerformingBulkAction = false
-                                    }
+                        Button {
+                            Task {
+                                isPerformingBulkAction = true
+                                
+                                await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
+                                    await updateUncheckedCount(for: list.id, with: count)
                                 }
-                            } label: {
-                                Label("Active", systemImage: "circle")
-                            }
-                            .disabled(unifiedList.isReadOnly)
-                        }
-                        
-                        Button {
-                            withAnimation(.easeInOut) {
-                                showCompletedAtBottom.toggle()
+                                
+                                await MainActor.run {
+                                    isPerformingBulkAction = false
+                                }
                             }
                         } label: {
-                            Label(
-                                showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
-                                systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
-                            )
+                            Label("Active", systemImage: "circle")
                         }
                         .disabled(unifiedList.isReadOnly)
-                        
-                        Divider()
-                        
-                        Menu("Export As…") {
-                            Button {
-                                markdownToExport = MarkdownExport(
-                                    listName: list.name,
-                                    listId: unifiedList.originalFileId ?? unifiedList.id,
-                                    items: viewModel.items,
-                                    labels: viewModel.labels,
-                                    activeOnly: true
-                                )
-                            } label: {
-                                Label("Markdown", systemImage: "doc.text")
-                            }
-                            .disabled(unifiedList.isReadOnly)
-                            
-                            Divider()
-                            
-                            Button {
-                                onExportJSON?()
-                            } label: {
-                                Label("Listie File...", systemImage: "doc.badge.gearshape")
-                            }
-                            .disabled(unifiedList.isReadOnly)
-                        }
-                        
-                        Divider()
-                        
-                        Button {
-                            showingRecycleBin = true
-                        } label: {
-                            Label("Recycle Bin", systemImage: "trash")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-                        
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
                     }
+                    
+                    Button {
+                        withAnimation(.easeInOut) {
+                            showCompletedAtBottom.toggle()
+                        }
+                    } label: {
+                        Label(
+                            showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                            systemImage: showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
+                        )
+                    }
+                    .disabled(unifiedList.isReadOnly)
+                    
+                    Divider()
+                    
+                    Menu("Export As…") {
+                        Button {
+                            markdownToExport = MarkdownExport(
+                                listName: list.name,
+                                listId: unifiedList.originalFileId ?? unifiedList.id,
+                                items: viewModel.items,
+                                labels: viewModel.labels,
+                                activeOnly: true
+                            )
+                        } label: {
+                            Label("Markdown", systemImage: "doc.text")
+                        }
+                        .disabled(unifiedList.isReadOnly)
+                        
+                        Divider()
+                        
+                        Button {
+                            onExportJSON?()
+                        } label: {
+                            Label("Listie File...", systemImage: "doc.badge.gearshape")
+                        }
+                        .disabled(unifiedList.isReadOnly)
+                    }
+                    
+                    Divider()
+                    
+                    Button {
+                        showingRecycleBin = true
+                    } label: {
+                        Label("Recycle Bin", systemImage: "trash")
+                    }
+                    .disabled(unifiedList.isReadOnly)
+                    
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
+                //.disabled(isPerformingBulkAction)
             }
+            
         }
         .animation(nil, value: isPerformingBulkAction)
         .refreshable {
@@ -471,7 +527,7 @@ struct ShoppingListView: View {
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
-            initializeExpandedSections(for: viewModel.sortedLabelKeys)
+            initializeExpandedSections(for: filteredSortedLabelKeys)
         }
         .task {
             showContent = false  // Reset on appear
@@ -483,12 +539,12 @@ struct ShoppingListView: View {
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
-            initializeExpandedSections(for: viewModel.sortedLabelKeys)
+            initializeExpandedSections(for: filteredSortedLabelKeys)
             
             // Fade in after loading
-                    withAnimation {
-                        showContent = true
-                    }
+            
+            showContent = true
+            
         }
         
         .fullScreenCover(isPresented: $showingAddView) {
