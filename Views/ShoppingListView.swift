@@ -134,7 +134,8 @@ struct ShoppingListView: View {
     
     // Store per-list preference in UserDefaults
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
-
+    
+    
     // Computed property to get/set for this specific list
     private var showCompletedAtBottom: Bool {
         get {
@@ -151,7 +152,7 @@ struct ShoppingListView: View {
     }
     
     @AppStorage("expandedSections") private var expandedSectionsData: Data = Data()
-
+    
     // Computed property to get/set for this specific list
     private var expandedSections: [String: Bool] {
         get {
@@ -165,42 +166,6 @@ struct ShoppingListView: View {
                 expandedSectionsData = data
             }
         }
-    }
-    
-    private var filteredItems: [ShoppingItem] {
-        guard !searchText.isEmpty else { return viewModel.items }
-        
-        return viewModel.items.filter { item in
-            // Search in item name
-            if item.note.localizedCaseInsensitiveContains(searchText) {
-                return true
-            }
-            
-            // Search in markdown notes if present
-            if let notes = item.markdownNotes,
-               notes.localizedCaseInsensitiveContains(searchText) {
-                return true
-            }
-            
-            return false
-        }
-    }
-    
-    private var filteredItemsGroupedByLabel: [String: [ShoppingItem]] {
-        let grouped = Dictionary(grouping: filteredItems) { item in
-            viewModel.labelForItem(item)?.name ?? "No Label"
-        }
-        
-        // Sort items within each group alphabetically
-        return grouped.mapValues { items in
-            items.sorted { item1, item2 in
-                item1.note.localizedCaseInsensitiveCompare(item2.note) == .orderedAscending
-            }
-        }
-    }
-
-    private var filteredSortedLabelKeys: [String] {
-        filteredItemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
     }
     
     @State private var showingRecycleBin = false
@@ -232,7 +197,7 @@ struct ShoppingListView: View {
             expandedSections = sections
         }
     }
-
+    
     private func initializeExpandedSections(for labels: [String]) {
         var sections = expandedSections
         for label in labels {
@@ -348,31 +313,31 @@ struct ShoppingListView: View {
     var body: some View {
         List {
             if showCompletedAtBottom {
-                // Filter keys to show only sections with unchecked items
-                let keysToShow = filteredSortedLabelKeys.filter { labelName in
+                // Use viewModel properties instead:
+                let keysToShow = viewModel.filteredSortedLabelKeys.filter { labelName in
                     if labelName == "Completed" {
                         return false
                     }
-                    let items = filteredItemsGroupedByLabel[labelName] ?? []
+                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
                     return items.contains(where: { !$0.checked })
                 }
                 
                 ForEach(keysToShow, id: \.self) { labelName in
-                    let items = filteredItemsGroupedByLabel[labelName] ?? []
+                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
                     let color = viewModel.colorForLabel(name: labelName)
                     renderSection(labelName: labelName, items: items, color: color)
                 }
                 
-                let completedItems = filteredItems.filter { $0.checked }
+                let completedItems = viewModel.filteredItems.filter { $0.checked }
                 if !completedItems.isEmpty {
                     renderSection(labelName: "Completed", items: completedItems, color: .primary)
                 }
                 
             } else {
-                let keysToShow = filteredSortedLabelKeys.filter { $0 != "Completed" }
+                let keysToShow = viewModel.filteredSortedLabelKeys.filter { $0 != "Completed" }
                 
                 ForEach(keysToShow, id: \.self) { labelName in
-                    let items = filteredItemsGroupedByLabel[labelName] ?? []
+                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
                     if !items.isEmpty {
                         let color = viewModel.colorForLabel(name: labelName)
                         renderSection(labelName: labelName, items: items, color: color)
@@ -447,7 +412,7 @@ struct ShoppingListView: View {
                             Label("Completed", systemImage: "checkmark.circle.fill")
                         }
                         .disabled(unifiedList.isReadOnly)
-
+                        
                         Button {
                             Task {
                                 isPerformingBulkAction = true
@@ -521,37 +486,31 @@ struct ShoppingListView: View {
             
         }
         .animation(nil, value: isPerformingBulkAction)
-        .refreshable {
-            // NEW: Sync external files before refreshing
-            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
-            
-            await viewModel.loadLabels()
-            await viewModel.loadItems()
-            initializeExpandedSections(for: filteredSortedLabelKeys)
-        }
+        
         .task {
-            showContent = false  // Reset on appear
-            // Sync on open
+            showContent = false
             try? await unifiedProvider.syncIfNeeded(for: unifiedList)
-
-            // NEW: Cleanup old deleted items
             await unifiedProvider.cleanupOldDeletedItems(for: unifiedList)
             
             await viewModel.loadLabels()
             await viewModel.loadItems()
-            initializeExpandedSections(for: filteredSortedLabelKeys)
-            
-            // Fade in after loading
+            initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
             
             showContent = true
+        }
+        .refreshable {
+            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
             
+            await viewModel.loadLabels()
+            await viewModel.loadItems()
+            initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
         }
         
         .fullScreenCover(isPresented: $showingAddView) {
             AddItemView(list: list, viewModel: viewModel)
         }
         .fullScreenCover(item: $editingItem) { item in
-            EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList) 
+            EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList)
         }
         .sheet(isPresented: $showingRecycleBin) {
             RecycleBinView(list: unifiedList, provider: unifiedProvider) {
@@ -619,7 +578,7 @@ struct ShoppingListView: View {
         }
         .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
         .focusedSceneValue(\.exportJSON, $triggerJSONExport)
-        .focusedSceneValue(\.isReadOnly, unifiedList.isReadOnly) 
+        .focusedSceneValue(\.isReadOnly, unifiedList.isReadOnly)
         .onChange(of: triggerMarkdownExport) { oldValue, newValue in
             if newValue {
                 // Trigger markdown export
@@ -639,6 +598,9 @@ struct ShoppingListView: View {
                 onExportJSON?()
                 triggerJSONExport = false
             }
+        }
+        .onChange(of: searchText) { _, newValue in
+            viewModel.searchText = newValue  // ← Sync search text to ViewModel
         }
     }
     
