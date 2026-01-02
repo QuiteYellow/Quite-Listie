@@ -14,16 +14,18 @@ class ShoppingListViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var labels: [ShoppingLabel] = []
     
+    @Published var searchText: String = ""
+    
     let list: UnifiedList
     let provider: UnifiedListProvider
     
     var shoppingListId: String { list.summary.id }
-
+    
     init(list: UnifiedList, provider: UnifiedListProvider) {
         self.list = list
         self.provider = provider
     }
-
+    
     func loadItems() async {
         isLoading = true
         do {
@@ -43,7 +45,45 @@ class ShoppingListViewModel: ObservableObject {
             print("Error loading labels: \(error)")
         }
     }
-
+    
+    // MARK: - Filtering & Grouping
+    
+    var filteredItems: [ShoppingItem] {
+        guard !searchText.isEmpty else { return items }
+        
+        return items.filter { item in
+            // Search in item name
+            if item.note.localizedCaseInsensitiveContains(searchText) {
+                return true
+            }
+            
+            // Search in markdown notes if present
+            if let notes = item.markdownNotes,
+               notes.localizedCaseInsensitiveContains(searchText) {
+                return true
+            }
+            
+            return false
+        }
+    }
+    
+    var filteredItemsGroupedByLabel: [String: [ShoppingItem]] {
+        let grouped = Dictionary(grouping: filteredItems) { item in
+            labelForItem(item)?.name ?? "No Label"
+        }
+        
+        // Sort items within each group alphabetically
+        return grouped.mapValues { items in
+            items.sorted { item1, item2 in
+                item1.note.localizedCaseInsensitiveCompare(item2.note) == .orderedAscending
+            }
+        }
+    }
+    
+    var filteredSortedLabelKeys: [String] {
+        filteredItemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+    }
+    
     @MainActor
     func addItem(note: String, label: ShoppingLabel?, quantity: Double?, markdownNotes: String?) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
