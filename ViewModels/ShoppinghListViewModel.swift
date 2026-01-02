@@ -31,7 +31,7 @@ class ShoppingListViewModel: ObservableObject {
         do {
             let allItems = try await provider.fetchItems(for: list)
             // Filter out soft-deleted items
-            items = allItems.filter { !($0.isDeleted ?? false) }
+            items = allItems.filter { !($0.isDeleted) }
         } catch {
             print("Error loading items: \(error)")
         }
@@ -246,5 +246,23 @@ class ShoppingListViewModel: ObservableObject {
 
     var sortedLabelKeys: [String] {
         itemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+    }
+    
+    // MARK: - Quantity Management
+    
+    /// Increments item quantity by 1
+    func incrementQuantity(for item: ShoppingItem) async {
+        let newQty = item.quantity + 1  // ← Remove ?? 1
+        _ = await updateItem(item, note: item.note, label: labelForItem(item), quantity: newQty)
+    }
+
+    /// Decrements item quantity by 1. Returns false if item should be deleted (qty would be 0)
+    func decrementQuantity(for item: ShoppingItem) async -> Bool {
+        if item.quantity <= 1 {  // ← Remove ?? 1
+            return false
+        }
+        let newQty = max(item.quantity - 1, 1)  // ← Remove ?? 1
+        _ = await updateItem(item, note: item.note, label: labelForItem(item), quantity: newQty)
+        return true
     }
 }
