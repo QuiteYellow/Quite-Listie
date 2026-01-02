@@ -539,7 +539,8 @@ struct CustomTextEditor: UIViewRepresentable {
 
         hostingController.view.backgroundColor = UIColor.systemGroupedBackground
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        hostingController.view.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44)
+        hostingController.view.frame.size.height = 44
+        // hostingController.view.frame = CGRect(x: 0, y: 0, width: textView.window?.windowScene?.screen.bounds.width ?? 0, height: 44) /// comment out this and remove "hostingController.view.frame.size.height = 44" if width is an issue.
 
         textView.inputAccessoryView = hostingController.view
 
