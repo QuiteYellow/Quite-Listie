@@ -107,71 +107,20 @@ enum ModelHelpers {
         return updated
     }
     
-    // MARK: - Migration Helpers
-    
-    /// Extracts icon from legacy extras
-    static func extractIcon(from extras: [String: String]?) -> String? {
-        return extras?["listsForMealieListIcon"]
-    }
-    
-    /// Extracts hidden labels from legacy extras
-    static func extractHiddenLabels(from extras: [String: String]?) -> [String]? {
-        if let hiddenString = extras?["hiddenLabels"], !hiddenString.isEmpty {
-            return hiddenString.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
-        }
-        return nil
-    }
-    
-    /// Extracts markdown notes from legacy extras
-    static func extractMarkdownNotes(from extras: [String: String]?) -> String? {
-        if let notes = extras?["markdownNotes"], !notes.isEmpty {
-            return notes
-        }
-        return nil
-    }
-}
-
-// MARK: - Convenience Extensions
-
-extension ShoppingListSummary {
-    /// Creates legacy-style extras dictionary for backward compatibility
-    var legacyExtras: [String: String] {
-        var extras: [String: String] = [:]
+    /// Updates a list summary with new values from extras
+    static func updateListFromExtras(
+        _ list: inout ShoppingListSummary,
+        name: String,
+        extras: [String: String]
+    ) {
+        list.name = name
+        list.modifiedAt = Date()
         
-        if let icon = icon {
-            extras["listsForMealieListIcon"] = icon
+        // Extract icon from extras
+        if let icon = extras["listsForMealieListIcon"], !icon.isEmpty {
+            list.icon = icon
         }
         
-        if let hiddenLabels = hiddenLabels, !hiddenLabels.isEmpty {
-            extras["hiddenLabels"] = hiddenLabels.joined(separator: ",")
-        }
-        
-        return extras
-    }
-}
-
-extension ShoppingItem {
-    /// Creates legacy-style extras dictionary for backward compatibility
-    var legacyExtras: [String: String] {
-        var extras: [String: String] = [:]
-        
-        if let notes = markdownNotes {
-            extras["markdownNotes"] = notes
-        }
-        
-        return extras
     }
     
-    /// Updates extras with new values (for backward compatibility)
-    func updatedExtras(with updates: [String: String?]) -> [String: String] {
-        var merged = self.legacyExtras
-        for (key, value) in updates {
-            if let value = value {
-                merged[key] = value
-            } else {
-                merged.removeValue(forKey: key)
-            }
-        }
-        return merged
-    }
 }

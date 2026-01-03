@@ -28,7 +28,7 @@ struct ShoppingListApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Private List") {
+                Button("New Private List...") {
                     newListSheet = true
                 }
                 .keyboardShortcut("N", modifiers: .command)

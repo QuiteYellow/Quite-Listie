@@ -7,7 +7,7 @@
 
 import Foundation
 
-actor LocalShoppingListStore: ShoppingListProvider {
+actor LocalShoppingListStore {
     static let shared = LocalShoppingListStore()
 
     // In-memory cache of all list documents
@@ -45,7 +45,7 @@ actor LocalShoppingListStore: ShoppingListProvider {
     // MARK: - Data Persistence
 
     private func loadAllLists() async {
-        print("ðŸ“‚ [Local Load V2] Discovering list files...")
+        print("📂 [Local Load] Discovering list files...")
         
         do {
             let fileURLs = try FileManager.default.contentsOfDirectory(
@@ -54,49 +54,36 @@ actor LocalShoppingListStore: ShoppingListProvider {
             )
             
             let listFiles = fileURLs.filter {
-                $0.lastPathComponent.hasPrefix("list_") &&
-                ($0.pathExtension == "json" || $0.pathExtension == "listie")  // Accept both
+                $0.lastPathComponent.hasPrefix("list_") && $0.pathExtension == "json"
             }
             
-            print("ðŸ“‚ [Local Load V2] Found \(listFiles.count) list files")
+            print("📂 [Local Load] Found \(listFiles.count) list files")
             
             for fileURL in listFiles {
                 do {
                     let data = try Data(contentsOf: fileURL)
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
                     
-                    // Use migration utility to load and migrate if necessary
-                    var document = try ListDocumentMigration.loadDocument(from: data)
+                    var document = try decoder.decode(ListDocument.self, from: data)
                     
                     // Store using clean ID
                     let cleanId = document.list.cleanId
                     if document.list.id != cleanId {
-                        // Update document to use clean ID
                         document.list.id = cleanId
-                        // Save the migrated version back to disk
                         try await saveList(cleanId)
                     }
                     
                     listDocuments[cleanId] = document
-                    print("âœ… [Local Load V2] Loaded list: \(document.list.name) (V\(document.version))")
+                    print("✅ [Local Load] Loaded list: \(document.list.name)")
                 } catch {
-                    print("❌ [Local Load V2] Failed to load \(fileURL.lastPathComponent): \(error)")
-                    
-                    // DON'T auto-delete - could be temporary error!
-                    // Instead, try to read raw data and report issue
-                    if let rawData = try? Data(contentsOf: fileURL),
-                       let rawString = String(data: rawData, encoding: .utf8) {
-                        print("⚠️ [Local Load V2] File contents (first 200 chars): \(rawString.prefix(200))")
-                    }
-                    
-                    // Only delete if explicitly corrupted AND user confirms
-                    // For now, just log and skip
-                    print("⚠️ [Local Load V2] Skipping file - manual intervention needed")
+                    print("❌ [Local Load] Failed to load \(fileURL.lastPathComponent): \(error)")
                 }
             }
             
-            print("âœ… [Local Load V2] Loaded \(listDocuments.count) lists total")
+            print("✅ [Local Load] Loaded \(listDocuments.count) lists total")
         } catch {
-            print("âŒ [Local Load V2] Failed to read directory: \(error)")
+            print("❌ [Local Load] Failed to read directory: \(error)")
         }
     }
 
@@ -106,12 +93,14 @@ actor LocalShoppingListStore: ShoppingListProvider {
         }
         
         let fileURL = fileURL(for: listId)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         
-        // Use migration utility to save in V2 format
-        let data = try ListDocumentMigration.saveDocument(document)
+        let data = try encoder.encode(document)
         try data.write(to: fileURL)
         
-        print("âœ… [Local Save V2] Saved list \(document.list.name) to \(fileURL.lastPathComponent)")
+        print("✅ [Local Save] Saved list \(document.list.name)")
     }
     
     private func deleteListFile(_ listId: String) async throws {
@@ -145,26 +134,18 @@ actor LocalShoppingListStore: ShoppingListProvider {
         try await saveList(cleanList.id)
     }
 
-    func updateList(_ list: ShoppingListSummary, with name: String, extras: [String: String], items: [ShoppingItem]) async throws {
+    func updateList(_ list: ShoppingListSummary, name: String, icon: String?, hiddenLabels: [String]?, items: [ShoppingItem]) async throws {
         await ensureInitialized()
         let cleanId = list.cleanId
         guard var document = listDocuments[cleanId] else {
             throw NSError(domain: "List not found", code: 1, userInfo: nil)
         }
         
-        // Update list metadata
+        // Update list directly
         document.list.name = name
+        document.list.icon = icon
+        document.list.hiddenLabels = hiddenLabels
         document.list.modifiedAt = Date()
-        
-        // Update icon from extras if present
-        if let icon = extras["listsForMealieListIcon"], !icon.isEmpty {
-            document.list.icon = icon
-        }
-        
-        // Update hidden labels from extras if present
-        if let hiddenString = extras["hiddenLabels"], !hiddenString.isEmpty {
-            document.list.hiddenLabels = hiddenString.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
-        }
         
         // Update items
         document.items = items.map { item in
@@ -289,15 +270,11 @@ actor LocalShoppingListStore: ShoppingListProvider {
 
     // MARK: - Labels
 
-    func saveLabel(_ label: ShoppingLabel) async throws {
+    func saveLabel(_ label: ShoppingLabel, to listId: String) async throws {
         await ensureInitialized()
-        // Labels are now stored per-list, need to find which list
-        guard let targetListId = label.listId else {
-            throw NSError(domain: "Label must have a listId", code: 1, userInfo: nil)
-        }
         
         // Clean the list ID (remove "local-" prefix if present)
-        let cleanId = cleanListId(targetListId)
+        let cleanId = cleanListId(listId)
         
         guard var document = listDocuments[cleanId] else {
             throw NSError(domain: "List not found: \(cleanId)", code: 1, userInfo: nil)

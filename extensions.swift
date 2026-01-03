@@ -231,19 +231,7 @@ extension UIColor {
 
 
 
-extension ShoppingListSummary {
-    func updatedExtras(with updates: [String: String?]) -> [String: String] {
-        var merged = self.extras ?? [:]
-        for (key, value) in updates {
-            if let value = value {
-                merged[key] = value
-            } else {
-                merged.removeValue(forKey: key)
-            }
-        }
-        return merged
-    }
-}
+
 
 /* USAGE (NOT HERE!!!)
  

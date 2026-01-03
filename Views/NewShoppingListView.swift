@@ -76,7 +76,7 @@ struct NewShoppingListView: View {
         let newList = ModelHelpers.createNewList(name: name, icon: icon)
         
         do {
-            try await LocalOnlyProvider.shared.createList(newList)
+            try await  LocalShoppingListStore.shared.createList(newList)
             onCreate()
             dismiss()
         } catch {

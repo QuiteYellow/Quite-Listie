@@ -32,6 +32,8 @@ struct WelcomeView: View {
     
     @AppStorage("hideWelcomeList") private var hideWelcomeList = false
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
+    @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
+
     
     private var searchPrompt: String {selectedListID != nil ? "Search items" : "Select a list to search"}
     
@@ -59,7 +61,7 @@ struct WelcomeView: View {
                         Button {
                             isPresentingNewList = true
                         } label: {
-                            Label("New Private List", systemImage: "doc.badge.plus")
+                            Label("New Private List...", systemImage: "doc.badge.plus")
                         }
                         
                         Button {
@@ -130,7 +132,11 @@ struct WelcomeView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(hideWelcomeList: $hideWelcomeList, hideQuickAdd: $hideQuickAdd)
+            SettingsView(
+                hideWelcomeList: $hideWelcomeList,
+                hideQuickAdd: $hideQuickAdd,
+                hideEmptyLabels: $hideEmptyLabels
+            )
         }
         .sheet(item: $editingUnifiedList, onDismiss: {
             NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
@@ -266,9 +272,17 @@ struct WelcomeView: View {
             list: unifiedList.summary,
             unifiedList: unifiedList,
             unifiedProvider: unifiedProvider
-        ) { updatedName, extras in
+        ) { updatedName, icon, hiddenLabels in  // Updated signature
             Task {
-                await updateList(unifiedList, name: updatedName, extras: extras)
+                let items = try? await unifiedProvider.fetchItems(for: unifiedList)
+                try? await unifiedProvider.updateList(
+                    unifiedList,
+                    name: updatedName,
+                    icon: icon,
+                    hiddenLabels: hiddenLabels,
+                    items: items ?? []
+                )
+                await unifiedProvider.loadAllLists()
             }
         }
     }
@@ -296,18 +310,6 @@ struct WelcomeView: View {
         await unifiedProvider.loadAllLists()
         await welcomeViewModel.loadLists()
         await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
-    }
-    
-    private func updateList(_ unifiedList: UnifiedList, name: String, extras: [String: String]) async {
-        let items = try? await unifiedProvider.fetchItems(for: unifiedList)
-        try? await unifiedProvider.updateList(
-            unifiedList,
-            name: name,
-            extras: extras,
-            items: items ?? []
-        )
-        await unifiedProvider.loadAllLists()
-        await welcomeViewModel.loadLists()
     }
     
     @MainActor
