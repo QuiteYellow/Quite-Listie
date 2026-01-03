@@ -8,8 +8,158 @@
 import SwiftUI
 import MarkdownView
 
-struct AddItemView: View {
+// MARK: - Shared Item Form View
+struct ItemFormView: View {
+    @Binding var itemName: String
+    @Binding var quantity: Int
+    @Binding var selectedLabel: ShoppingLabel?
+    @Binding var checked: Bool
+    @Binding var mdNotes: String
+    @Binding var showMarkdownEditor: Bool
     
+    let availableLabels: [ShoppingLabel]
+    let isLoading: Bool
+    
+    var body: some View {
+        GeometryReader { geometry in
+            let isWide = geometry.size.width > 700
+            
+            if isWide {
+                HStack(spacing: 0) {
+                    formLeft
+                        .frame(width: geometry.size.width * 0.4)
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 0) {
+                        
+                        formRight
+                    }
+                    .frame(width: geometry.size.width * 0.6)
+                }
+            } else {
+                Form {
+                    formLeftContent
+                    
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Markdown Notes")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .padding(.bottom, 8)
+                        
+                        Divider()
+                            .padding(.top, 8)
+                            .padding(.bottom, 8)
+                        
+                        formRightContent
+                    }
+                    .frame(minHeight: 200)
+                    .listRowBackground(Color.clear)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Button {
+                        showMarkdownEditor = true
+                    } label: {
+                        Label("Edit Notes", systemImage: "square.and.pencil")
+                    }
+                    .buttonStyle(.glass)
+                    .padding(20)
+                }
+            }
+        }
+    }
+    
+    private var formLeft: some View {
+        Form {
+            formLeftContent
+        }
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var formRight: some View {
+        ZStack(alignment: .bottomTrailing) {
+            formRightContent
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .frame(maxWidth: .infinity)
+            
+            Button {
+                showMarkdownEditor = true
+            } label: {
+                Label("Edit Notes", systemImage: "square.and.pencil")
+            }
+            .buttonStyle(.glass)
+            .padding(20)
+        }
+    }
+    
+    private var formLeftContent: some View {
+        Section(header: Text("Details")) {
+            HStack {
+                Label("Name", systemImage: "textformat")
+                Spacer()
+                TextField("Item name", text: $itemName)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 200)
+            }
+            
+            HStack {
+                Label("Quantity:", systemImage: "number")
+                Spacer()
+                Stepper(value: $quantity, in: 1...100) {
+                    Text("\(quantity)")
+                }
+            }
+            
+            HStack {
+                Label("Label", systemImage: "tag")
+                Spacer()
+                if isLoading {
+                    ProgressView()
+                } else {
+                    Picker("", selection: $selectedLabel) {
+                        Text("No Label").tag(Optional<ShoppingLabel>(nil))
+                        
+                        ForEach(availableLabels, id: \.id) { label in
+                            Text(label.name.removingLabelNumberPrefix())
+                                .tag(Optional(label))
+                        }
+                    }
+                    .labelsHidden()
+                }
+            }
+            
+            HStack {
+                Label("Completed", systemImage: "checkmark.circle")
+                Spacer()
+                Toggle("", isOn: $checked)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+        }
+    }
+    
+    private var formRightContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if mdNotes.isEmpty {
+                    Text("Click \"Edit Notes\" to add a note, use Markdown for Sublists, links, images and more.")
+                        .foregroundStyle(.placeholder)
+                } else {
+                    MarkdownView(mdNotes)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color.clear)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct AddItemView: View {
     let list: ShoppingListSummary
     
     @Environment(\.dismiss) var dismiss
@@ -18,41 +168,25 @@ struct AddItemView: View {
     @State private var itemName = ""
     @State private var selectedLabel: ShoppingLabel? = nil
     @State private var availableLabels: [ShoppingLabel] = []
+    @State private var checked: Bool = false
     @State private var isLoading = true
     @State private var quantity: Int = 1
     @State private var showError = false
-    
     @State private var mdNotes = ""
     @State private var showMarkdownEditor = false
 
     var body: some View {
         NavigationView {
-            GeometryReader { geometry in
-                let isWide = geometry.size.width > 700
-                
-                Group {
-                    if isWide {
-                        HStack(spacing: 0) {
-                            formLeft
-                                .frame(width: geometry.size.width * 0.4)
-                            
-                            Divider()
-                            
-                            formRight
-                                .frame(width: geometry.size.width * 0.6)
-                        }
-                    } else {
-                        Form {
-                            formLeftContent
-                            
-                            Section(header: Text("Preview")) {
-                                formRightContent
-                                    .padding(.top, 8)
-                            }
-                        }
-                    }
-                }
-            }
+            ItemFormView(
+                itemName: $itemName,
+                quantity: $quantity,
+                selectedLabel: $selectedLabel,
+                checked: $checked,
+                mdNotes: $mdNotes,
+                showMarkdownEditor: $showMarkdownEditor,
+                availableLabels: availableLabels,
+                isLoading: isLoading
+            )
             .navigationTitle("Add Item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -63,6 +197,7 @@ struct AddItemView: View {
                                 note: itemName,
                                 label: selectedLabel,
                                 quantity: Double(quantity),
+                                checked: checked,
                                 markdownNotes: mdNotes.isEmpty ? nil : mdNotes
                             )
                             if success {
@@ -95,91 +230,17 @@ struct AddItemView: View {
             .task {
                 do {
                     let labels = try await viewModel.provider.fetchLabels(for: viewModel.list)
-                    
-                    // Extract hidden label IDs
                     let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
-
-                    // Filter out hidden labels
                     availableLabels = labels.filter { !hiddenLabelIDs.contains($0.id) }
-                    
-                    // Sort
                     availableLabels.sort {
                         $0.name.localizedStandardCompare($1.name) == .orderedAscending
                     }
                 } catch {
                     print("⚠️ Failed to fetch labels:", error)
                 }
-                
                 isLoading = false
             }
         }
-    }
-    
-    private var formLeft: some View {
-        Form {
-            formLeftContent
-        }
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .frame(maxWidth: .infinity)
-    }
-
-    private var formRight: some View {
-        formRightContent
-            .padding(20)
-            .frame(maxWidth: .infinity)
-    }
-
-    private var formLeftContent: some View {
-        Group {
-            Section(header: Text("Name")) {
-                TextField("Item name", text: $itemName)
-            }
-
-            Section(header: Text("Quantity")) {
-                Stepper(value: $quantity, in: 1...100) {
-                    Text("\(quantity)")
-                }
-            }
-
-            Section(header: Text("Label")) {
-                if isLoading {
-                    ProgressView("Loading Labels...")
-                } else {
-                    Picker("Label", selection: $selectedLabel) {
-                        Text("No Label").tag(Optional<ShoppingLabel>(nil))
-                        
-                        ForEach(availableLabels, id: \.id) { label in
-                            Text(label.name.removingLabelNumberPrefix())
-                                .tag(Optional(label))
-                        }
-                    }
-                }
-            }
-            
-            Section(header: Text("Notes")) {
-                Button("Edit Notes in Markdown") {
-                    showMarkdownEditor = true
-                }
-            }
-        }
-    }
-
-    private var formRightContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if mdNotes.isEmpty {
-                    Text("No notes")
-                        .foregroundColor(.secondary)
-                } else {
-                    MarkdownView(mdNotes)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Color.clear)
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -198,6 +259,7 @@ struct EditItemView: View {
     @State private var quantity: Int = 1
     @State private var mdNotes: String = ""
     @State private var availableLabels: [ShoppingLabel] = []
+    @State private var checked: Bool = false
     @State private var isLoading = true
     @State private var showDeleteConfirmation = false
     @State private var showError = false
@@ -205,74 +267,56 @@ struct EditItemView: View {
 
     var body: some View {
         NavigationView {
-            GeometryReader { geometry in
-                let isWide = geometry.size.width > 700
-                
-                Group {
-                    if isWide {
-                        HStack(spacing: 0) {
-                            formLeft
-                                .frame(width: geometry.size.width * 0.4)
-                            Divider()
-                            
-                            formRight
-                                .frame(width: geometry.size.width * 0.6)
+            ItemFormView(
+                itemName: $itemName,
+                quantity: $quantity,
+                selectedLabel: $selectedLabel,
+                checked: $checked,
+                mdNotes: $mdNotes,
+                showMarkdownEditor: $showMarkdownEditor,
+                availableLabels: availableLabels,
+                isLoading: isLoading
+            )
+            .navigationTitle("Edit Item")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    if !unifiedList.isReadOnly {
+                        Button("Delete") {
+                            showDeleteConfirmation = true
                         }
-                    } else {
-                        Form {
-                            formLeftContent
-                            Section(header: Text("Preview")) {
-                                formRightContent
-                                    .padding(.top, 8)
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Edit Item")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItemGroup(placement: .confirmationAction) {
-                        if !unifiedList.isReadOnly {
-                            Button("Delete") {
-                                showDeleteConfirmation = true
-                            }
-                            .foregroundColor(.red)
-                            
-                            Button("Save") {
-                                Task {
-                                    // V2: Pass markdownNotes directly, no extras manipulation
-                                    let success = await viewModel.updateItem(
-                                        item,
-                                        note: itemName,
-                                        label: selectedLabel,
-                                        quantity: Double(quantity),
-                                        markdownNotes: mdNotes.isEmpty ? nil : mdNotes
-                                    )
-                                    
-                                    if success {
-                                        dismiss()
-                                    } else {
-                                        showError = true
-                                    }
+                        .foregroundColor(.red)
+                        
+                        Button("Save") {
+                            Task {
+                                let success = await viewModel.updateItem(
+                                    item,
+                                    note: itemName,
+                                    labelId: selectedLabel?.id,
+                                    quantity: Double(quantity),
+                                    checked: checked,
+                                    markdownNotes: mdNotes.isEmpty ? nil : mdNotes
+                                )
+                                if success {
+                                    dismiss()
+                                } else {
+                                    showError = true
                                 }
                             }
-                            .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                    }
-                    
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .symbolRenderingMode(.hierarchical)
-                        }
-                        .help("Cancel")
+                        .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
-            }
-            .fullScreenCover(isPresented: $showMarkdownEditor) {
-                MarkdownEditorView(text: $mdNotes)
+                
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .help("Cancel")
+                }
             }
             .alert("Delete Item?", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
@@ -290,23 +334,17 @@ struct EditItemView: View {
             .alert("Failed to Save Changes", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             }
+            .fullScreenCover(isPresented: $showMarkdownEditor) {
+                MarkdownEditorView(text: $mdNotes)
+            }
             .task {
                 do {
                     let labels = try await viewModel.provider.fetchLabels(for: viewModel.list)
-                    
-                    // Extract hidden label IDs - handle both V2 (array) and V1 (string)
                     let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
-
-                    
-                    // Filter out hidden labels
                     availableLabels = labels.filter { !hiddenLabelIDs.contains($0.id) }
-                    
-                    // Sort
                     availableLabels.sort {
                         $0.name.localizedStandardCompare($1.name) == .orderedAscending
                     }
-                    
-                    // Match selectedLabel
                     if let labelId = item.labelId {
                         selectedLabel = availableLabels.first(where: { $0.id == labelId })
                     } else {
@@ -315,89 +353,15 @@ struct EditItemView: View {
                 } catch {
                     print("⚠️ Failed to fetch labels:", error)
                 }
-                
                 isLoading = false
             }
         }
         .onAppear {
-            // Initialize state values from item
             itemName = item.note
             quantity = Int(item.quantity)
-            
-            // Read markdown notes - V2 (direct field) or V1 (extras)
             mdNotes = item.markdownNotes ?? ""
-            
-            // Selected label will be set in .task after labels load
+            checked = item.checked
         }
-    }
-
-    // MARK: - Forms and Content
-
-    private var formLeft: some View {
-        Form {
-            formLeftContent
-        }
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .frame(maxWidth: .infinity)
-    }
-
-    private var formRight: some View {
-        formRightContent
-            .padding(20)
-            .frame(maxWidth: .infinity)
-    }
-
-    private var formLeftContent: some View {
-        Group {
-            Section(header: Text("Name")) {
-                TextField("Item name", text: $itemName)
-            }
-
-            Section(header: Text("Quantity")) {
-                Stepper(value: $quantity, in: 1...100) {
-                    Text("\(quantity)")
-                }
-            }
-
-            Section(header: Text("Label")) {
-                if isLoading {
-                    ProgressView("Loading Labels...")
-                } else {
-                    Picker("Label", selection: $selectedLabel) {
-                        Text("No Label").tag(Optional<ShoppingLabel>(nil))
-                        
-                        ForEach(availableLabels, id: \.id) { label in
-                            Text(label.name.removingLabelNumberPrefix())
-                                .tag(Optional(label))
-                        }
-                    }
-                }
-            }
-            
-            Section(header: Text("Notes")) {
-                Button("Edit Notes in Markdown") {
-                    showMarkdownEditor = true
-                }
-            }
-        }
-    }
-
-    private var formRightContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if mdNotes.isEmpty {
-                    Text("No notes")
-                        .foregroundColor(.secondary)
-                } else {
-                    MarkdownView(mdNotes)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Color.clear)
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -406,6 +370,8 @@ struct EditItemView: View {
 struct MarkdownEditorView: View {
     @Binding var text: String
     @Environment(\.dismiss) var dismiss
+    @State private var selectedTab = 0
+    @FocusState private var isTextEditorFocused: Bool
     
     var body: some View {
         GeometryReader { geometry in
@@ -422,13 +388,22 @@ struct MarkdownEditorView: View {
                         HStack(spacing: 0) {
                             VStack(alignment: .leading, spacing: 8) {
                                 ZStack {
-                                    Color(.secondarySystemGroupedBackground)
                                     
+              
+                                    TextEditor(text: $text)
+                                    .padding()
+                                    .focused($isTextEditorFocused)
+                                        .onAppear {
+                                            isTextEditorFocused = true
+                                        }
+                                    
+                                    
+                                    /*
                                     CustomTextEditor(text: $text)
                                         .padding(8)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                         .padding(15)
-                                        .frame(minHeight: usableHeight)
+                                        .frame(minHeight: usableHeight)*/
                                 }
                             }
                             .background(.clear)
@@ -455,60 +430,65 @@ struct MarkdownEditorView: View {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Done") { dismiss() }
                             }
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button {
-                                    dismiss()
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .symbolRenderingMode(.hierarchical)
-                                }
-                                .help("Cancel")
-                            }
+                            
                         }
                     }
                 }
                 .navigationViewStyle(StackNavigationViewStyle())
             } else {
                 NavigationView {
-                    Form {
-                        Section(header: Text("Edit Markdown Notes")) {
-                            CustomTextEditor(text: $text)
-                                .padding(8)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .padding(15)
-                                .frame(minHeight: 300)
-                        }
-                        
-                        Section(header: Text("Preview")) {
-                            ScrollView {
-                                MarkdownView(text).padding(.vertical)
+                    VStack(spacing: 0) {
+                        // Content area
+                        Group {
+                            if selectedTab == 0 {
+                                // Edit view
+                                TextEditor(text: $text)
+                                .padding()
+                                .focused($isTextEditorFocused)
+                                    .onAppear {
+                                        isTextEditorFocused = true
+                                    }
+                                
+                                //CustomTextEditor(text: $text)
+                                  //  .frame(maxWidth: .infinity, alignment: .leading)
+                                    //.padding()
+                                    //.background(Color(.secondarySystemGroupedBackground))
+                            } else {
+                                // Preview view
+                                ScrollView {
+                                    MarkdownView(text)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding()
+                                }
+                                .background(Color(.systemGroupedBackground))
                             }
                         }
+                        //.ignoresSafeArea(edges: .top)
                     }
-                    .navigationTitle("Edit Notes")
+                    .navigationTitle("Item Notes")
                     .navigationBarTitleDisplayMode(.inline)
+                    
                     .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button {
+                                selectedTab = selectedTab == 0 ? 1 : 0
+                            } label: {
+                                Image(systemName: selectedTab == 0 ? "eye" : "pencil")
+                            }
+                        }
+                        
+                        ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
+                        
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { dismiss() }
                         }
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button {
-                                dismiss()
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .symbolRenderingMode(.hierarchical)
-                            }
-                            .help("Cancel")
-                        }
+                        
                     }
                 }
-                .navigationViewStyle(StackNavigationViewStyle())
             }
         }
     }
 }
-
-// MARK: - Custom Text Editor
 
 // MARK: - Custom Text Editor
 

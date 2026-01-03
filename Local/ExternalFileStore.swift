@@ -315,15 +315,22 @@ actor ExternalFileStore {
             if let currentAttrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                let currentDate = currentAttrs[.modificationDate] as? Date,
                currentDate > lastKnownDate {
-                print("⚠️ File changed externally since last load - merging before save")
+                print("⚠️ [OPTIMISTIC LOCK] File changed externally - triggering merge")
+                print("   Last known: \(lastKnownDate)")
+                print("   Current:    \(currentDate)")   
                 
                 let mergedDocument = try await syncFile(at: url)
+                print("   After merge: \(mergedDocument.labels.count) labels")
+                
                 
                 // Recursive call with bypass flag to prevent infinite loop
                 try await saveFile(mergedDocument, to: url, bypassOptimisticCheck: true)
                 return
             }
         }
+        
+        print("💾 [DIRECT SAVE] Writing \(document.labels.count) labels to disk")
+
         
         // Resolve any conflicts before saving
         try await resolveConflicts(at: url)
@@ -333,7 +340,24 @@ actor ExternalFileStore {
             encoder.dateEncodingStrategy = .iso8601
             
         let data = try encoder.encode(document)
-        
+
+        // Use NSFileCoordinator for iCloud-aware writes
+        let coordinator = NSFileCoordinator()
+        var coordinatorError: NSError?
+        var writeError: Error?
+
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinatorError) { writeURL in
+            do {
+                try data.write(to: writeURL, options: .atomic)
+            } catch {
+                writeError = error
+            }
+        }
+
+        if let error = coordinatorError ?? writeError {
+            throw error
+        }
+
         // Update cache
         openedFiles[url.path] = (url, document)
         
@@ -348,7 +372,6 @@ actor ExternalFileStore {
         
         // Save bookmark
         try await saveBookmark(for: url)
-        
         
         print("✅ Saved external file: \(document.list.name) (V2)")
     }
@@ -684,21 +707,10 @@ actor ExternalFileStore {
     }
     
     /// Merges labels from cache and disk
+    /// Merges labels from cache and disk
     private func mergeLabels(cached: [ShoppingLabel], disk: [ShoppingLabel]) -> [ShoppingLabel] {
-        var labelsById: [String: ShoppingLabel] = [:]
-        
-        // Add all disk labels
-        for label in disk {
-            labelsById[label.id] = label
-        }
-        
-        // Add cached labels not in disk
-        for label in cached {
-            if labelsById[label.id] == nil {
-                labelsById[label.id] = label
-            }
-        }
-        
-        return Array(labelsById.values)
+        // LATEST SAVE WINS - just use cached labels (what we're about to save)
+        // Merging labels is unnecessary complexity for a low-risk operation
+        return cached
     }
 }
