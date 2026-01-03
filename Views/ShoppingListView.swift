@@ -355,9 +355,11 @@ struct ShoppingListView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .foregroundColor(.red.opacity(0.75))
+                    
                     //.imageScale(.medium)
                 }
                 .buttonStyle(.glass)
+                .keyboardShortcut(.cancelAction)
                 
                 // Add button
                 Button {
@@ -762,7 +764,14 @@ struct ShoppingListView: View {
     
     private func addInlineItem(to labelName: String) {
         let trimmedText = inlineAddText.trimmingCharacters(in: .whitespaces)
-        guard !trimmedText.isEmpty else { return }
+        
+        // If empty, treat as cancel
+        if trimmedText.isEmpty {
+            activeInlineAdd = nil
+            inlineAddText = ""
+            inlineAddFocused = false
+            return
+        }
         
         // Find the label
         let label = viewModel.labels.first { $0.name == labelName }
@@ -778,8 +787,11 @@ struct ShoppingListView: View {
             if success {
                 await MainActor.run {
                     inlineAddText = ""
-                    // Keep focus for quick consecutive adds
-                    inlineAddFocused = true
+                    // Briefly defocus and refocus to trigger scroll recalculation
+                    inlineAddFocused = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        inlineAddFocused = true
+                    }
                 }
             }
         }
