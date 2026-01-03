@@ -14,7 +14,8 @@ struct ListSettingsView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    let onSave: (String, [String: String]) -> Void  // Keep signature for compatibility
+    let onSave: (String, String?, [String]?) -> Void  // (name, icon, hiddenLabels)
+
     
     @Environment(\.dismiss) var dismiss
     @State private var name: String = ""
@@ -228,14 +229,7 @@ struct ListSettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        // Create legacy extras format for backward compatibility
-                        // The storage layer will convert this to direct fields
-                        let extras = [
-                            "listsForMealieListIcon": icon,
-                            "hiddenLabels": Array(hiddenLabelIDs).joined(separator: ",")
-                        ]
-                        
-                        // Save favorite state to UserDefaults
+                        /// Save favorite state to UserDefaults
                         var ids = favouriteListIDs
                         if isFavourited {
                             ids.insert(list.id)
@@ -245,13 +239,15 @@ struct ListSettingsView: View {
                         setFavouriteListIDs(ids)
                         
                         // Save show completed setting
-                            var dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
-                            dict[list.id] = showCompletedAtBottom
-                            if let data = try? JSONEncoder().encode(dict) {
-                                showCompletedAtBottomData = data
-                            }
+                        var dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
+                        dict[list.id] = showCompletedAtBottom
+                        if let data = try? JSONEncoder().encode(dict) {
+                            showCompletedAtBottomData = data
+                        }
                         
-                        onSave(name, extras)
+                        // Call with direct values (convert Set to Array)
+                        let hiddenArray = hiddenLabelIDs.isEmpty ? nil : Array(hiddenLabelIDs)
+                        onSave(name, icon, hiddenArray)
                         dismiss()
                     }
                 }
@@ -310,28 +306,26 @@ struct ListSettingsView: View {
                 Text("Are you sure you want to delete \"\(label.name)\"? Items using this label will not be deleted.")
             }
         }
-        .task {
-            name = list.name
-            
-            // Read from direct field first (V2), fall back to extras (V1)
-            icon = list.icon ?? list.extras?["listsForMealieListIcon"] ?? "checklist"
-            
-            // Extract hidden label IDs from array (V2) or string (V1)
-            if let hiddenArray = list.hiddenLabels {
-                hiddenLabelIDs = Set(hiddenArray)
-            } else if let hiddenString = list.extras?["hiddenLabels"], !hiddenString.isEmpty {
-                hiddenLabelIDs = Set(hiddenString.components(separatedBy: ","))
-            }
-            
-            // Load favourite state from UserDefaults
-            isFavourited = favouriteListIDs.contains(list.id)
-            
-            // Load labels for this list
-            await loadLabels()
-            
-            // Load show completed setting
+        .onAppear {
+            Task {
+                // Force reload from storage to get latest data
+                await unifiedProvider.reloadList(unifiedList)
+                
+                // Now read fresh data
+                let currentList = unifiedList.summary
+                
+                name = currentList.name
+                icon = currentList.icon ?? "checklist"
+                hiddenLabelIDs = Set(currentList.hiddenLabels ?? [])
+                
+                print("🔍 Loaded hiddenLabelIDs: \(hiddenLabelIDs)")
+                
+                isFavourited = favouriteListIDs.contains(currentList.id)
+                await loadLabels()
+                
                 let dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
-                showCompletedAtBottom = dict[list.id] ?? false
+                showCompletedAtBottom = dict[currentList.id] ?? false
+            }
         }
     }
 }

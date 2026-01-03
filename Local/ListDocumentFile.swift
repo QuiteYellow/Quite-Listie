@@ -19,37 +19,30 @@ struct ListDocumentFile: FileDocument {
     
     var document: ListDocument
     
-    // MARK: - Default Initializer (V2 Format)
     init(document: ListDocument = ListDocument(
-        list: ModelHelpers.createNewList(
-            name: "New List",
-            icon: "checklist"
-        ),
+        list: ModelHelpers.createNewList(name: "New List", icon: "checklist"),
         items: [],
         labels: []
     )) {
         self.document = document
     }
     
-    // MARK: - Read from File (with Automatic Migration)
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
         
-        // Use migration utility to load and migrate if necessary
-        document = try ListDocumentMigration.loadDocument(from: data)
-        
-        print("📄 [FileDocument] Loaded document: \(document.list.name) (V\(document.version))")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        document = try decoder.decode(ListDocument.self, from: data)
     }
     
-    // MARK: - Write to File (Always V2 Format)
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        // Use migration utility to ensure V2 format
-        let data = try ListDocumentMigration.saveDocument(document)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         
-        print("💾 [FileDocument] Saving document: \(document.list.name) (V2)")
-        
+        let data = try encoder.encode(document)
         return FileWrapper(regularFileWithContents: data)
     }
 }

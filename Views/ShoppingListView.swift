@@ -131,6 +131,8 @@ struct ShoppingListView: View {
     @State private var showingRecycleBin = false
     
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
+    @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
+    
     @State private var activeInlineAdd: String? = nil  // Track which section is active
     @State private var inlineAddText: String = ""
     @FocusState private var inlineAddFocused: Bool
@@ -156,7 +158,7 @@ struct ShoppingListView: View {
             welcomeViewModel.uncheckedCounts[listID] = count
         }
     }
-
+    
     
     @ViewBuilder
     private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
@@ -166,8 +168,10 @@ struct ShoppingListView: View {
         
         Section {
             if isExpanded {
-                // Active items
-                ForEach(uncheckedItems) { item in
+                // Show appropriate items based on section
+                let itemsToShow = labelName == "Completed" ? checkedItems : uncheckedItems
+                
+                ForEach(itemsToShow) { item in
                     ItemRowView(
                         item: item,
                         isLast: false,
@@ -332,108 +336,150 @@ struct ShoppingListView: View {
     }
     
     @ViewBuilder
-        private func inlineAddRow(for labelName: String, color: Color?) -> some View {
-            if activeInlineAdd == labelName {
-                // Active state - show text field
-                HStack(spacing: 12) {
-                    TextField("Item name", text: $inlineAddText)
-                        .font(.subheadline)
-                        .focused($inlineAddFocused)
-                        .onSubmit {
-                            addInlineItem(to: labelName)
-                        }
-                    
-                    // Cancel button
-                    Button {
-                        activeInlineAdd = nil
-                        inlineAddText = ""
-                        inlineAddFocused = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .imageScale(.large)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Add button
-                    Button {
+    private func inlineAddRow(for labelName: String, color: Color?) -> some View {
+        if activeInlineAdd == labelName {
+            // Active state - show text field
+            HStack(spacing: 12) {
+                TextField("Item name", text: $inlineAddText)
+                    .font(.subheadline)
+                    .focused($inlineAddFocused)
+                    .onSubmit {
                         addInlineItem(to: labelName)
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                            .imageScale(.large)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty)
+                
+                // Cancel button
+                Button {
+                    activeInlineAdd = nil
+                    inlineAddText = ""
+                    inlineAddFocused = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .foregroundColor(.red.opacity(0.75))
+                    //.imageScale(.medium)
                 }
-                .padding(.vertical, 8)
-            } else {
-                // Inactive state - show "+ Add Item" button
+                .buttonStyle(.glass)
+                
+                // Add button
+                Button {
+                    addInlineItem(to: labelName)
+                } label: {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(
+                            inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? .secondary
+                            : .accentColor
+                        )
+                    //.imageScale(.medium)
+                }
+                .buttonStyle(.glass)
+                .disabled(inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(.vertical, 1.5)
+        } else {
+            // Inactive state - show "+ Add Item" button
+            HStack {
                 Button {
                     activeInlineAdd = labelName
                     inlineAddFocused = true
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "plus.circle")
-                            .foregroundColor(.secondary)
-                            .imageScale(.medium)
-                        Text("Add Item")
-                            .foregroundColor(.secondary)
-                            .font(.subheadline)
-                        Spacer()
-                    }
+                    
+                    Text("Add Item")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
                 }
-                .buttonStyle(.plain)
-                .padding(.vertical, 4)
+                .buttonStyle(.glass)
+                
+                Spacer()
+                
+                Button {
+                    activeInlineAdd = labelName
+                    inlineAddFocused = true
+                } label: {
+                    Image(systemName: "plus")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.glass)
+                //.padding(.vertical, 4)
             }
         }
+    }
     
     var body: some View {
         List {
-            if  viewModel.showCompletedAtBottom {
-                // Use viewModel properties instead:
-                let keysToShow = viewModel.filteredSortedLabelKeys.filter { labelName in
-                    if labelName == "Completed" {
-                        return false
+            let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
+            
+            if viewModel.showCompletedAtBottom {
+                // Get labels to show
+                let labelsToShow: [String] = {
+                    if hideEmptyLabels {
+                        // Only labels with unchecked items
+                        return viewModel.filteredSortedLabelKeys.filter { labelName in
+                            if labelName == "Completed" {
+                                return false
+                            }
+                            let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
+                            return items.contains(where: { !$0.checked })
+                        }
+                    } else {
+                        // Show all non-hidden labels
+                        var allLabels = viewModel.labels
+                            .filter { !hiddenLabelIDs.contains($0.id) }
+                            .map { $0.name }
+                            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                        
+                        // Add "No Label" if there are items without labels
+                        if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
+                           !noLabelItems.isEmpty {
+                            allLabels.append("No Label")
+                        }
+                        
+                        return allLabels
                     }
-                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
-                    return items.contains(where: { !$0.checked })
-                }
+                }()
                 
-                ForEach(keysToShow, id: \.self) { labelName in
+                ForEach(labelsToShow, id: \.self) { labelName in
                     let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
                     let color = viewModel.colorForLabel(name: labelName)
                     renderSection(labelName: labelName, items: items, color: color)
                 }
                 
-                let completedItems = viewModel.filteredItems.filter { $0.checked }
-                if !completedItems.isEmpty {
-                    renderSection(labelName: "Completed", items: completedItems, color: .primary)
+                // Completed section
+                if !viewModel.filteredCompletedItems.isEmpty {
+                    renderSection(labelName: "Completed", items: viewModel.filteredCompletedItems, color: .primary)
                 }
                 
             } else {
-                let keysToShow = viewModel.filteredSortedLabelKeys.filter { $0 != "Completed" }
-                
-                ForEach(keysToShow, id: \.self) { labelName in
-                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
-                    if !items.isEmpty {
-                        let color = viewModel.colorForLabel(name: labelName)
-                        renderSection(labelName: labelName, items: items, color: color)
+                // Get labels to show (excluding "Completed")
+                let labelsToShow: [String] = {
+                    if hideEmptyLabels {
+                        // Only labels with items
+                        return viewModel.filteredSortedLabelKeys.filter { $0 != "Completed" }
+                    } else {
+                        // Show all non-hidden labels
+                        var allLabels = viewModel.labels
+                            .filter { !hiddenLabelIDs.contains($0.id) }
+                            .map { $0.name }
+                            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                        
+                        // Add "No Label" if there are items without labels
+                        if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
+                           !noLabelItems.isEmpty {
+                            allLabels.append("No Label")
+                        }
+                        
+                        return allLabels
                     }
+                }()
+                
+                ForEach(labelsToShow, id: \.self) { labelName in
+                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
+                    let color = viewModel.colorForLabel(name: labelName)
+                    renderSection(labelName: labelName, items: items, color: color)
                 }
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .simultaneousGesture(
-            TapGesture()
-                .onEnded { _ in
-                    if activeInlineAdd != nil && !inlineAddFocused {
-                        activeInlineAdd = nil
-                        inlineAddText = ""
-                    }
-                }
-        )
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar(id: "LIST_ACTIONS") {

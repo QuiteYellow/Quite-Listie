@@ -23,7 +23,7 @@ class WelcomeViewModel: ObservableObject {
         errorMessage = nil
         
         do {
-            let fetchedLists = try await LocalOnlyProvider.shared.fetchShoppingLists()
+            let fetchedLists = try await  LocalShoppingListStore.shared.fetchShoppingLists()
             
             let sortedLists = fetchedLists.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -44,7 +44,7 @@ class WelcomeViewModel: ObservableObject {
         
         for list in lists {
             do {
-                let items = try await LocalOnlyProvider.shared.fetchItems(for: list.id)
+                let items = try await  LocalShoppingListStore.shared.fetchItems(for: list.id)
                 let count = items.filter { !$0.checked && !$0.isDeleted }.count
                 result[list.id] = count
             } catch {
@@ -55,21 +55,28 @@ class WelcomeViewModel: ObservableObject {
         return result
     }
     
-    func updateListName(listID: String, newName: String, extras: [String: String]) async {
+    func updateListName(listID: String, newName: String, icon: String?, hiddenLabels: [String]?) async {
         guard let index = lists.firstIndex(where: { $0.id == listID }) else { return }
         let list = lists[index]
         
         do {
-            let items = try await LocalOnlyProvider.shared.fetchItems(for: list.id)
+            let items = try await LocalShoppingListStore.shared.fetchItems(for: list.id)
             
-            try await LocalOnlyProvider.shared.updateList(
+            try await LocalShoppingListStore.shared.updateList(
                 list,
-                with: newName,
-                extras: extras,
+                name: newName,
+                icon: icon ?? list.icon,
+                hiddenLabels: hiddenLabels ?? list.hiddenLabels,
                 items: items
             )
             
             lists[index].name = newName
+            if let icon = icon {
+                lists[index].icon = icon
+            }
+            if let hiddenLabels = hiddenLabels {
+                lists[index].hiddenLabels = hiddenLabels
+            }
         } catch {
             print("❌ Failed to update list name: \(error.localizedDescription)")
         }

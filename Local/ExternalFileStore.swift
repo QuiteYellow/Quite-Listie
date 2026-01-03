@@ -47,37 +47,46 @@ actor ExternalFileStore {
         
         // Load current version
         if let currentData = try? Data(contentsOf: url) {
-            mergedDocument = try? ListDocumentMigration.loadDocument(from: currentData)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            mergedDocument = try? decoder.decode(ListDocument.self, from: currentData)
         }
         
         // Merge each conflict version
         for conflictVersion in conflicts {
             let conflictURL = conflictVersion.url
-            if  let conflictData = try? Data(contentsOf: conflictURL),
-               let conflictDoc = try? ListDocumentMigration.loadDocument(from: conflictData) {
-                
-                if let existing = mergedDocument {
-                    // Merge items and labels
-                    let mergedItems = mergeItems(cached: existing.items, disk: conflictDoc.items)
-                    let mergedLabels = mergeLabels(cached: existing.labels, disk: conflictDoc.labels)
+            if let conflictData = try? Data(contentsOf: conflictURL) {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                if let conflictDoc = try? decoder.decode(ListDocument.self, from: conflictData) {
                     
-                    var combined = existing
-                    combined.items = mergedItems
-                    combined.labels = mergedLabels
-                    combined.list.modifiedAt = max(existing.list.modifiedAt, conflictDoc.list.modifiedAt)
-                    
-                    mergedDocument = combined
-                } else {
-                    mergedDocument = conflictDoc
+                    if let existing = mergedDocument {
+                        // Merge items and labels
+                        let mergedItems = mergeItems(cached: existing.items, disk: conflictDoc.items)
+                        let mergedLabels = mergeLabels(cached: existing.labels, disk: conflictDoc.labels)
+                        
+                        var combined = existing
+                        combined.items = mergedItems
+                        combined.labels = mergedLabels
+                        combined.list.modifiedAt = max(existing.list.modifiedAt, conflictDoc.list.modifiedAt)
+                        
+                        mergedDocument = combined
+                    } else {
+                        mergedDocument = conflictDoc
+                    }
                 }
             }
         }
         
         
         // Write merged result back
-        if let merged = mergedDocument {
-            let data = try ListDocumentMigration.saveDocument(merged)
-            try data.write(to: url, options: .atomic)
+            // Write merged result back
+            if let merged = mergedDocument {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
+                let data = try encoder.encode(merged)
+                try data.write(to: url, options: .atomic)
             print("✅ Merged \(conflicts.count) conflicting version(s)")
         } else {
             // Fallback to original behavior if merge failed
@@ -221,14 +230,18 @@ actor ExternalFileStore {
             ])
         }
         
-        // Load and migrate document if necessary
-        var document = try ListDocumentMigration.loadDocument(from: data)
+        // Simple decode - no migration
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let document = try decoder.decode(ListDocument.self, from: data)
         
         // Ensure clean ID
         let cleanId = document.list.cleanId
         if document.list.id != cleanId {
             print("🧹 Cleaning external file ID: \(document.list.id) -> \(cleanId)")
-            document.list.id = cleanId
+            var cleanDoc = document
+            cleanDoc.list.id = cleanId
+            // Don't save here - let user decide if they want to keep it
         }
         
         // Cache the opened file
@@ -315,21 +328,11 @@ actor ExternalFileStore {
         // Resolve any conflicts before saving
         try await resolveConflicts(at: url)
         
-        // Ensure we're saving in V2 format
-        let data = try ListDocumentMigration.saveDocument(document)
-        
-        // Use NSFileCoordinator for writing
-        let coordinator = NSFileCoordinator()
-        var coordinatorError: NSError?
-        
-        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinatorError) { writeURL in
-            try? data.write(to: writeURL, options: .atomic)  // Use try? so error goes to coordinatorError
-        }
-        
-        if let error = coordinatorError {
-            print("   ❌ Coordinator error: \(error)")
-            throw error
-        }
+        let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            
+        let data = try encoder.encode(document)
         
         // Update cache
         openedFiles[url.path] = (url, document)

@@ -85,7 +85,11 @@ class ShoppingListViewModel: ObservableObject {
     
     var filteredItemsGroupedByLabel: [String: [ShoppingItem]] {
         let grouped = Dictionary(grouping: filteredItems) { item in
-            labelForItem(item)?.name ?? "No Label"
+            if let labelId = item.labelId,
+               let label = labels.first(where: { $0.id == labelId }) {
+                return label.name
+            }
+            return "No Label"
         }
         
         // Sort items within each group alphabetically
@@ -98,6 +102,12 @@ class ShoppingListViewModel: ObservableObject {
     
     var filteredSortedLabelKeys: [String] {
         filteredItemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+    }
+    
+    var filteredCompletedItems: [ShoppingItem] {
+        filteredItems.filter { $0.checked }.sorted {
+            $0.note.localizedCaseInsensitiveCompare($1.note) == .orderedAscending
+        }
     }
     
     @MainActor
@@ -236,20 +246,13 @@ class ShoppingListViewModel: ObservableObject {
         }
     }
     
-    // Helper to get label for an item
-    func labelForItem(_ item: ShoppingItem) -> ShoppingLabel? {
-        // First try V2 format (labelId)
-        if let labelId = item.labelId {
-            return labels.first(where: { $0.id == labelId })
-        }
-        // Fall back to V1 format (embedded label)
-        return item.label
-    }
-    
     var itemsGroupedByLabel: [String: [ShoppingItem]] {
-        let grouped = Dictionary(grouping: items) { item in  // ← Change back to `items`
-            // Use the helper to get label, works with both V1 and V2
-            labelForItem(item)?.name ?? "No Label"
+        let grouped = Dictionary(grouping: items) { item in  
+            if let labelId = item.labelId,
+               let label = labels.first(where: { $0.id == labelId }) {
+                return label.name
+            }
+            return "No Label"
         }
         
         // Sort items within each group alphabetically
@@ -269,7 +272,7 @@ class ShoppingListViewModel: ObservableObject {
     /// Increments item quantity by 1
     func incrementQuantity(for item: ShoppingItem) async {
         let newQty = item.quantity + 1  // ← Remove ?? 1
-        _ = await updateItem(item, note: item.note, label: labelForItem(item), quantity: newQty)
+        _ = await updateItem(item, note: item.note, label: item.labelId.flatMap { id in labels.first(where: { $0.id == id }) }, quantity: newQty)
     }
 
     /// Decrements item quantity by 1. Returns false if item should be deleted (qty would be 0)
@@ -278,7 +281,7 @@ class ShoppingListViewModel: ObservableObject {
             return false
         }
         let newQty = max(item.quantity - 1, 1)  // ← Remove ?? 1
-        _ = await updateItem(item, note: item.note, label: labelForItem(item), quantity: newQty)
+        _ = await updateItem(item, note: item.note, label: item.labelId.flatMap { id in labels.first(where: { $0.id == id }) }, quantity: newQty)
         return true
     }
     

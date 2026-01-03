@@ -169,7 +169,7 @@ struct SidebarView: View {
         
         HStack {
             // Icon
-            Image(systemName: list.summary.icon ?? list.summary.extras?["listsForMealieListIcon"] ?? "list.bullet")
+            Image(systemName: list.summary.icon ?? "list.bullet")
                 .frame(minWidth: 30)
                 .foregroundColor(.secondary)
             

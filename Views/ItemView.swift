@@ -89,10 +89,18 @@ struct AddItemView: View {
             } message: {
                 Text("Please check your internet connection or try again.")
             }
+            .fullScreenCover(isPresented: $showMarkdownEditor) {
+                MarkdownEditorView(text: $mdNotes)
+            }
             .task {
                 do {
                     let labels = try await viewModel.provider.fetchLabels(for: viewModel.list)
-                    availableLabels = labels
+                    
+                    // Extract hidden label IDs
+                    let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
+
+                    // Filter out hidden labels
+                    availableLabels = labels.filter { !hiddenLabelIDs.contains($0.id) }
                     
                     // Sort
                     availableLabels.sort {
@@ -287,15 +295,8 @@ struct EditItemView: View {
                     let labels = try await viewModel.provider.fetchLabels(for: viewModel.list)
                     
                     // Extract hidden label IDs - handle both V2 (array) and V1 (string)
-                    let hiddenLabelIDs: Set<String> = {
-                        if let hiddenArray = list.hiddenLabels {
-                            return Set(hiddenArray)
-                        } else if let hiddenString = list.extras?["hiddenLabels"], !hiddenString.isEmpty {
-                            return Set(hiddenString.components(separatedBy: ",")
-                                .map { $0.trimmingCharacters(in: .whitespaces) })
-                        }
-                        return []
-                    }()
+                    let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
+
                     
                     // Filter out hidden labels
                     availableLabels = labels.filter { !hiddenLabelIDs.contains($0.id) }
@@ -308,8 +309,6 @@ struct EditItemView: View {
                     // Match selectedLabel
                     if let labelId = item.labelId {
                         selectedLabel = availableLabels.first(where: { $0.id == labelId })
-                    } else if let embeddedLabel = item.label {
-                        selectedLabel = availableLabels.first(where: { $0.id == embeddedLabel.id })
                     } else {
                         selectedLabel = nil
                     }
@@ -326,7 +325,7 @@ struct EditItemView: View {
             quantity = Int(item.quantity)
             
             // Read markdown notes - V2 (direct field) or V1 (extras)
-            mdNotes = item.markdownNotes ?? item.extras?["markdownNotes"] ?? ""
+            mdNotes = item.markdownNotes ?? ""
             
             // Selected label will be set in .task after labels load
         }
@@ -511,6 +510,8 @@ struct MarkdownEditorView: View {
 
 // MARK: - Custom Text Editor
 
+// MARK: - Custom Text Editor
+
 struct CustomTextEditor: UIViewRepresentable {
     @Binding var text: String
 
@@ -528,21 +529,38 @@ struct CustomTextEditor: UIViewRepresentable {
         textView.autocapitalizationType = .sentences
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let toolbarView = SnippetToolbarView { snippet in
-            if let range = textView.selectedTextRange {
-                textView.replace(range, withText: snippet)
+        // Create pure UIKit toolbar
+        let toolbar = UIToolbar()
+        toolbar.sizeToFit()
+        toolbar.backgroundColor = UIColor.systemGroupedBackground
+        
+        let snippets = ["**bold**", "*italic*", "[Link](URL)", "![Image](URL)", "`code`", "- item", "> quote"]
+        
+        var items: [UIBarButtonItem] = []
+        for snippet in snippets {
+            let button = UIBarButtonItem(title: snippet, style: .plain, target: context.coordinator, action: #selector(Coordinator.insertSnippet(_:)))
+            button.accessibilityLabel = snippet
+            items.append(button)
+        }
+        
+        // Add flexible space to push items together nicely
+        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+        
+        // Intersperse buttons with small fixed spaces
+        var finalItems: [UIBarButtonItem] = []
+        for (index, item) in items.enumerated() {
+            finalItems.append(item)
+            if index < items.count - 1 {
+                let fixedSpace = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
+                fixedSpace.width = 8
+                finalItems.append(fixedSpace)
             }
         }
-
-        let hostingController = UIHostingController(rootView: toolbarView)
-        context.coordinator.toolbarController = hostingController
-
-        hostingController.view.backgroundColor = UIColor.systemGroupedBackground
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        hostingController.view.frame.size.height = 44
-        // hostingController.view.frame = CGRect(x: 0, y: 0, width: textView.window?.windowScene?.screen.bounds.width ?? 0, height: 44) /// comment out this and remove "hostingController.view.frame.size.height = 44" if width is an issue.
-
-        textView.inputAccessoryView = hostingController.view
+        
+        toolbar.items = finalItems
+        textView.inputAccessoryView = toolbar
+        
+        context.coordinator.textView = textView
 
         return textView
     }
@@ -555,7 +573,7 @@ struct CustomTextEditor: UIViewRepresentable {
 
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: CustomTextEditor
-        var toolbarController: UIHostingController<SnippetToolbarView>?
+        weak var textView: UITextView?
 
         init(_ parent: CustomTextEditor) {
             self.parent = parent
@@ -564,32 +582,13 @@ struct CustomTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
         }
-    }
-}
-
-struct SnippetToolbarView: View {
-    var onInsert: (String) -> Void
-
-    private let snippets = ["**bold**", "*italic*", "[LinkTitle](URL)", "![ImageTitle](URL)", "`code`", "- item", "> quote"]
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(snippets, id: \.self) { snippet in
-                    Button {
-                        onInsert(snippet)
-                    } label: {
-                        Text(snippet)
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.secondary.opacity(0.2))
-                            .cornerRadius(8)
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
+        
+        @objc func insertSnippet(_ sender: UIBarButtonItem) {
+            guard let textView = textView,
+                  let snippet = sender.accessibilityLabel,
+                  let range = textView.selectedTextRange else { return }
+            
+            textView.replace(range, withText: snippet)
         }
     }
 }

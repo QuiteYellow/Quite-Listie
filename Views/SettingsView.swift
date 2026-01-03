@@ -20,7 +20,10 @@ struct SettingsView: View {
     
     @Binding var hideWelcomeList: Bool
     @Binding var hideQuickAdd: Bool
+    @Binding var hideEmptyLabels: Bool
 
+    @State private var showQuickAddInfo = false
+    @State private var showEmptyLabelsInfo = false
     
     var body: some View {
         NavigationView {
@@ -38,15 +41,49 @@ struct SettingsView: View {
                 }
                 
                 Section {
-                    Toggle("Quick Add Items", isOn: Binding(
-                        get: { !hideQuickAdd },
-                        set: { hideQuickAdd = !$0 }
-                    ))
-                    .toggleStyle(.switch)
+                    HStack {
+                        Toggle("Quick Add Items", isOn: Binding(
+                            get: { !hideQuickAdd },
+                            set: { hideQuickAdd = !$0 }
+                        ))
+                        .toggleStyle(.switch)
+                        
+                        Button {
+                            showQuickAddInfo = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.glass)
+                    }
+                    
+                    HStack {
+                        Toggle("Show Empty Labels", isOn: Binding(
+                            get: { !hideEmptyLabels },
+                            set: { hideEmptyLabels = !$0 }
+                        ))
+                        .toggleStyle(.switch)
+                        
+                        Button {
+                            showEmptyLabelsInfo = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.glass)
+                    }
                 } header: {
-                    Text("List Items")
-                } footer: {
-                    Text("Show an inline '+ Add Item' button under each label for faster item creation.")
+                    Text("Lists & Labels")
+                }
+                .alert("Quick Add Items", isPresented: $showQuickAddInfo) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Shows an inline '+ Add Item' button under each label for faster item creation.")
+                }
+                .alert("Show Empty Labels", isPresented: $showEmptyLabelsInfo) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Displays all labels even when they have no items, making it easy to add items to any category.")
                 }
                 
                 // Future settings sections can go here
@@ -70,5 +107,9 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(hideWelcomeList: .constant(false), hideQuickAdd: .constant(false))
+    SettingsView(
+        hideWelcomeList: .constant(false),
+        hideQuickAdd: .constant(false),
+        hideEmptyLabels: .constant(false)
+    )
 }
