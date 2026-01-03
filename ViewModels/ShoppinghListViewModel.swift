@@ -49,6 +49,7 @@ class ShoppingListViewModel: ObservableObject {
             // Filter out soft-deleted items
             items = allItems.filter { !($0.isDeleted) }
         } catch {
+        } catch {
             print("Error loading items: \(error)")
         }
         isLoading = false
@@ -111,12 +112,12 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, markdownNotes: String?) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         let newItem = ModelHelpers.createNewItem(
             note: note,
             quantity: quantity ?? 1,
-            checked: false,
+            checked: checked,
             labelId: label?.id,  // Reference by ID, not embedded object
             markdownNotes: markdownNotes
         )
@@ -218,17 +219,12 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func updateItem(
-        _ item: ShoppingItem,
-        note: String,
-        label: ShoppingLabel?,
-        quantity: Double?,
-        markdownNotes: String? = nil
-    ) async -> Bool {
+    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
-        updatedItem.labelId = label?.id  // Use labelId reference instead of embedded object
+        updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
         updatedItem.quantity = quantity ?? 1
+        updatedItem.checked = checked
         updatedItem.markdownNotes = markdownNotes  // Direct field
         updatedItem.modifiedAt = Date()  // Update timestamp
 
@@ -271,17 +267,17 @@ class ShoppingListViewModel: ObservableObject {
     
     /// Increments item quantity by 1
     func incrementQuantity(for item: ShoppingItem) async {
-        let newQty = item.quantity + 1  // ← Remove ?? 1
-        _ = await updateItem(item, note: item.note, label: item.labelId.flatMap { id in labels.first(where: { $0.id == id }) }, quantity: newQty)
+        let newQty = item.quantity + 1
+        _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes)
     }
 
     /// Decrements item quantity by 1. Returns false if item should be deleted (qty would be 0)
     func decrementQuantity(for item: ShoppingItem) async -> Bool {
-        if item.quantity <= 1 {  // ← Remove ?? 1
+        if item.quantity <= 1 {
             return false
         }
-        let newQty = max(item.quantity - 1, 1)  // ← Remove ?? 1
-        _ = await updateItem(item, note: item.note, label: item.labelId.flatMap { id in labels.first(where: { $0.id == id }) }, quantity: newQty)
+        let newQty = max(item.quantity - 1, 1)
+        _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes)
         return true
     }
     

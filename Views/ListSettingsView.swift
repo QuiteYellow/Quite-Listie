@@ -84,6 +84,7 @@ struct ListSettingsView: View {
         do {
             try await unifiedProvider.deleteLabel(label, from: unifiedList)
             await loadLabels()
+            NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
         } catch {
             print("âŒ Could not delete label: \(error)")
         }
@@ -248,6 +249,9 @@ struct ListSettingsView: View {
                         // Call with direct values (convert Set to Array)
                         let hiddenArray = hiddenLabelIDs.isEmpty ? nil : Array(hiddenLabelIDs)
                         onSave(name, icon, hiddenArray)
+                        
+                        NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
+
                         dismiss()
                     }
                 }

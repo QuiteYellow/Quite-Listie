@@ -359,41 +359,63 @@ class UnifiedListProvider: ObservableObject {
     }
     
     func updateLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
+        print("📝 [updateLabel] Starting update for label: \(label.name)")
+        
         switch list.source {
         case .local:
             try await LocalShoppingListStore.shared.updateLabel(label)
+            print("✅ [updateLabel] Local label updated")
         case .external(let url):
+            print("📝 [updateLabel] Loading document from: \(url.lastPathComponent)")
             var document = try await ExternalFileStore.shared.openFile(at: url)
+            print("📝 [updateLabel] Document has \(document.labels.count) labels")
+            
             if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
                 document.labels[index] = label
                 document.list.modifiedAt = Date()
                 await ExternalFileStore.shared.updateCache(document, at: url)
-                triggerAutosave(for: list, document: document)
+                print("💾 [updateLabel] Saving document with updated label...")
+                try await saveExternalFile(document, to: url, listId: list.id)
                 externalLabels[url] = document.labels
+                print("✅ [updateLabel] Label saved successfully")
+            } else {
+                print("⚠️ [updateLabel] Label not found in document!")
             }
         }
     }
-    
+
     func deleteLabel(_ label: ShoppingLabel, from list: UnifiedList) async throws {
+        print("🗑️ [deleteLabel] Starting delete for label: \(label.name)")
+        
         switch list.source {
         case .local:
             try await LocalShoppingListStore.shared.deleteLabel(label)
+            print("✅ [deleteLabel] Local label deleted")
         case .external(let url):
+            print("🗑️ [deleteLabel] Loading document from: \(url.lastPathComponent)")
             var document = try await ExternalFileStore.shared.openFile(at: url)
+            print("🗑️ [deleteLabel] Document has \(document.labels.count) labels before delete")
+            
             document.labels.removeAll { $0.id == label.id }
+            print("🗑️ [deleteLabel] Document has \(document.labels.count) labels after delete")
+            
             document.list.modifiedAt = Date()
             await ExternalFileStore.shared.updateCache(document, at: url)
-            triggerAutosave(for: list, document: document)
+            print("💾 [deleteLabel] Saving document...")
+            try await saveExternalFile(document, to: url, listId: list.id)
             externalLabels[url] = document.labels
+            print("✅ [deleteLabel] Label deleted successfully")
         }
     }
     
     // MARK: - List Management
     
     // Change this function signature:
-    func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?, items: [ShoppingItem]) async throws {
+    func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?) async throws {
         switch list.source {
         case .local:
+            // Fetch items for local (since local storage needs them)
+            let items = try await LocalShoppingListStore.shared.fetchItems(for: list.summary.id)
             try await LocalShoppingListStore.shared.updateList(
                 list.summary,
                 name: name,
@@ -416,26 +438,21 @@ class UnifiedListProvider: ObservableObject {
             }
             
         case .external(let url):
+            print("📋 [updateList] Loading document from: \(url.lastPathComponent)")
             var document = try await ExternalFileStore.shared.openFile(at: url)
+            print("📋 [updateList] Document has \(document.labels.count) labels, \(document.items.count) items")
+            print("📋 [updateList] Labels: \(document.labels.map { $0.name }.joined(separator: ", "))")
             
             document.list.name = name
             document.list.icon = icon
             document.list.hiddenLabels = hiddenLabels
             document.list.modifiedAt = Date()
-            document.items = items
             
+            await ExternalFileStore.shared.updateCache(document, at: url)
+            print("💾 [updateList] Saving document with \(document.labels.count) labels...")
             try await saveExternalFile(document, to: url, listId: list.id)
             
-            // Update allLists with the new data
-            if let index = allLists.firstIndex(where: { $0.id == list.id }) {
-                var updatedList = allLists[index]
-                updatedList.summary = document.list
-                updatedList.summary.id = list.id  // Keep runtime ID
-                allLists[index] = updatedList
-            }
-            
-            // Update label cache
-            externalLabels[url] = document.labels
+            print("✅ [updateList] List updated successfully")
         }
     }
     
@@ -471,6 +488,9 @@ class UnifiedListProvider: ObservableObject {
     }
     
     private func saveExternalFile(_ document: ListDocument, to url: URL, listId: String) async throws {
+        print("💾 [saveExternalFile] Saving to: \(url.lastPathComponent)")
+        print("💾 [saveExternalFile] Document contains \(document.labels.count) labels, \(document.items.count) items")
+        
         var docToSave = document
         if let list = allLists.first(where: { $0.id == listId }),
            let originalId = list.originalFileId {
@@ -480,6 +500,7 @@ class UnifiedListProvider: ObservableObject {
         do {
             try await ExternalFileStore.shared.saveFile(docToSave, to: url)
             await MainActor.run { saveStatus[listId] = .saved }
+            print("✅ [saveExternalFile] Save successful")
         } catch {
             let nsError = error as NSError
             print("❌ Save error: \(error)")

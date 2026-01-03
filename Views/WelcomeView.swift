@@ -279,8 +279,7 @@ struct WelcomeView: View {
                     unifiedList,
                     name: updatedName,
                     icon: icon,
-                    hiddenLabels: hiddenLabels,
-                    items: items ?? []
+                    hiddenLabels: hiddenLabels
                 )
                 await unifiedProvider.loadAllLists()
             }
