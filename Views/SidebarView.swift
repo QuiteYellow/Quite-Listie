@@ -63,7 +63,31 @@ struct SidebarView: View {
     
     var body: some View {
         List(selection: $selectedListID) {
-            
+
+            // MARK: - Loading Indicator (only on initial load)
+            if unifiedProvider.isInitialLoad, let loadingFile = unifiedProvider.currentlyLoadingFile {
+                Section {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .frame(width: 30)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Loading \(loadingFile)...")
+                                .foregroundColor(.secondary)
+
+                            if unifiedProvider.loadingProgress.total > 0 {
+                                Text("\(unifiedProvider.loadingProgress.current) of \(unifiedProvider.loadingProgress.total) files")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                }
+            }
+
             // MARK: - Welcome Section (at the top)
             if !hideWelcomeList {
                 let welcomeList = unifiedProvider.allLists.first(where: { $0.id == "example-welcome-list" })
@@ -105,7 +129,7 @@ struct SidebarView: View {
             }
             
             // MARK: - External / Linked Lists (Grouped by Folder)
-            let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal && !$0.isReadOnly }
+            let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal && !$0.isReadOnly && !$0.isUnavailable }
             if !externalLists.isEmpty {
                 // Group by folder
                 let grouped = Dictionary(grouping: externalLists) { list in
@@ -124,11 +148,21 @@ struct SidebarView: View {
             }
             
             // MARK: - Temporary Read-Only Lists
-            let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && $0.id != "example-welcome-list" }
+            let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && !$0.isUnavailable && $0.id != "example-welcome-list" }
             if !readOnlyLists.isEmpty {
                 Section(header: Text("Temporary (Read Only)")) {
                     ForEach(readOnlyLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                         listRow(for: list)
+                    }
+                }
+            }
+
+            // MARK: - Unavailable Lists
+            let unavailableLists = unifiedProvider.allLists.filter { $0.isUnavailable }
+            if !unavailableLists.isEmpty {
+                Section(header: Label("Unavailable", systemImage: "exclamationmark.triangle.fill").foregroundColor(.orange)) {
+                    ForEach(unavailableLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
+                        unavailableListRow(for: list)
                     }
                 }
             }
@@ -277,5 +311,51 @@ struct SidebarView: View {
                 .foregroundColor(.red)
                 .imageScale(.small)
         }
+    }
+
+    @ViewBuilder
+    private func unavailableListRow(for list: UnifiedList) -> some View {
+        guard let bookmark = list.unavailableBookmark else { return AnyView(EmptyView()) }
+
+        return AnyView(
+            HStack {
+                // Warning icon
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .frame(minWidth: 30)
+                    .foregroundColor(.orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(list.summary.name)
+                        .foregroundColor(.secondary)
+
+                    // Show folder and error reason
+                    Text("\(bookmark.folderName) • \(bookmark.reason.localizedDescription)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                // Show the specific issue icon
+                Image(systemName: bookmark.reason.icon)
+                    .foregroundColor(.secondary)
+                    .imageScale(.small)
+            }
+            .tag(list.id)
+            .contextMenu {
+                Button("Remove from Sidebar") {
+                    Task {
+                        await unifiedProvider.removeUnavailableList(list)
+                    }
+                }
+
+                Button("Retry") {
+                    Task {
+                        await ExternalFileStore.shared.refreshBookmarkAvailability()
+                        await unifiedProvider.loadAllLists()
+                    }
+                }
+            }
+        )
     }
 }

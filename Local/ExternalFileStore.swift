@@ -7,21 +7,66 @@
 
 import Foundation
 
+/// Represents a bookmarked file that is currently unavailable
+struct UnavailableBookmark: Identifiable {
+    let id: String  // The original path used as key
+    let originalPath: String
+    let reason: UnavailabilityReason
+    let fileName: String
+    let folderName: String
+
+    enum UnavailabilityReason {
+        case fileNotFound
+        case inTrash
+        case bookmarkInvalid(Error)
+        case iCloudNotDownloaded
+
+        var localizedDescription: String {
+            switch self {
+            case .fileNotFound:
+                return "File not found"
+            case .inTrash:
+                return "File is in Trash"
+            case .bookmarkInvalid(let error):
+                return "Cannot access file: \(error.localizedDescription)"
+            case .iCloudNotDownloaded:
+                return "File not downloaded from iCloud"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .fileNotFound:
+                return "doc.questionmark"
+            case .inTrash:
+                return "trash"
+            case .bookmarkInvalid:
+                return "lock.slash"
+            case .iCloudNotDownloaded:
+                return "icloud.slash"
+            }
+        }
+    }
+}
+
 actor ExternalFileStore {
     static let shared = ExternalFileStore()
-    
+
     private let defaultsKey = "com.listie.external-files"
-    
+
     // In-memory cache of opened external files
     private var openedFiles: [String: (url: URL, document: ListDocument)] = [:]
-    
+
     // Track file modification dates for change detection
     private var fileModificationDates: [String: Date] = [:]
-    
+
     // TTL for cache
     private var cacheTimestamps: [String: Date] = [:]
     private let cacheTTL: TimeInterval = 30 // 30 seconds
-    
+
+    // Track unavailable bookmarks instead of deleting them
+    private var unavailableBookmarks: [String: UnavailableBookmark] = [:]
+
     init() {
         Task {
             await loadBookmarkedFiles()
@@ -112,7 +157,19 @@ actor ExternalFileStore {
     }
     
     // MARK: - Downloaded or not?
-    
+
+    /// Checks if a URL points to an iCloud file (even if not downloaded locally)
+    /// Returns true if the file has an iCloud download status, meaning it exists in iCloud
+    private func isICloudFile(at url: URL) -> Bool {
+        do {
+            let values = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+            // If we can get a download status, it's an iCloud file
+            return values.ubiquitousItemDownloadingStatus != nil
+        } catch {
+            return false
+        }
+    }
+
     // Checks if an iCloud file is fully downloaded
     private func isFileDownloaded(at url: URL) throws -> Bool {
         let values = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
@@ -454,8 +511,9 @@ actor ExternalFileStore {
                     keysToRemove.append(key)
                 }
             } catch {
-                // If bookmark can't be resolved, remove it anyway
-                keysToRemove.append(key)
+                // Don't remove bookmarks that fail to resolve - they might be temporarily unavailable
+                // (e.g., iCloud not ready, device offline). Only remove when we have a matching URL.
+                continue
             }
         }
         
@@ -515,9 +573,12 @@ actor ExternalFileStore {
     }
     
     private func loadBookmarkedFiles() async {
-        var bookmarks = loadBookmarks()
-        var bookmarksToRemove: [String] = []
-        
+        let bookmarks = loadBookmarks()
+        unavailableBookmarks.removeAll()
+
+        // Track seen resolved paths to avoid duplicates
+        var seenResolvedPaths: Set<String> = []
+
         for (path, bookmarkData) in bookmarks {
             do {
                 var isStale = false
@@ -536,33 +597,110 @@ actor ExternalFileStore {
                     bookmarkDataIsStale: &isStale
                 )
 #endif
-                
-                // Check if file still exists and is not in trash
-                if !FileManager.default.fileExists(atPath: url.path) || url.path.contains("/.Trash/") {
-                    bookmarksToRemove.append(path)
-                    print("🗑️ [External] Removing bookmark for deleted/trashed file: \(path)")
+
+                // Skip if we've already processed a bookmark that resolves to this path
+                guard !seenResolvedPaths.contains(url.path) else {
+                    continue
                 }
+                seenResolvedPaths.insert(url.path)
+
+                // Start security-scoped access to check file attributes
+                let didStartAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didStartAccess {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                let fileName = url.deletingPathExtension().lastPathComponent
+                let folderName = url.deletingLastPathComponent().lastPathComponent
+
+                // If bookmark is stale, try to refresh it while we still have access
+                if isStale && didStartAccess {
+                    print("🔄 [External] Refreshing stale bookmark for: \(url.lastPathComponent)")
+                    do {
+                        try await saveBookmark(for: url)
+                    } catch {
+                        print("⚠️ [External] Failed to refresh stale bookmark: \(error)")
+                    }
+                }
+
+                // If we couldn't start security-scoped access, the bookmark may have lost permissions
+                // This can happen after iOS updates, app reinstalls, or extended time without access
+                if !didStartAccess {
+                    print("⚠️ [External] Security scope access denied for: \(fileName)")
+                    // Don't mark as unavailable yet - the file might still be accessible
+                    // The openFile() call will be the final arbiter
+                }
+
+                // Check if file is in trash
+                if url.path.contains("/.Trash/") {
+                    unavailableBookmarks[url.path] = UnavailableBookmark(
+                        id: path,
+                        originalPath: url.path,
+                        reason: .inTrash,
+                        fileName: fileName,
+                        folderName: folderName
+                    )
+                    print("⚠️ [External] File is in Trash: \(path)")
+                    continue
+                }
+
+                // Check if file exists locally OR is an iCloud placeholder
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    // Check if it's an iCloud file that's just not downloaded
+                    let isICloudPlaceholder = isICloudFile(at: url)
+
+                    if isICloudPlaceholder {
+                        // File exists in iCloud but not downloaded locally - treat as available
+                        // It will be downloaded on-demand when opened via ensureFileDownloaded()
+                        print("☁️ [External] iCloud file not downloaded locally (available): \(fileName)")
+                        continue
+                    }
+
+                    // Truly not found - not an iCloud placeholder
+                    unavailableBookmarks[url.path] = UnavailableBookmark(
+                        id: path,
+                        originalPath: url.path,
+                        reason: .fileNotFound,
+                        fileName: fileName,
+                        folderName: folderName
+                    )
+                    print("⚠️ [External] File not found: \(path)")
+                    continue
+                }
+
+                // File is available - not in unavailableBookmarks
             } catch {
-                // Bookmark can't be resolved - remove it
-                bookmarksToRemove.append(path)
-                print("🗑️ [External] Removing invalid bookmark for \(path): \(error)")
+                // Bookmark can't be resolved - track as unavailable (use bookmark key path)
+                guard !seenResolvedPaths.contains(path) else {
+                    continue
+                }
+                seenResolvedPaths.insert(path)
+
+                let fileName = (path as NSString).deletingPathExtension
+                let folderName = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
+                unavailableBookmarks[path] = UnavailableBookmark(
+                    id: path,
+                    originalPath: path,
+                    reason: .bookmarkInvalid(error),
+                    fileName: (fileName as NSString).lastPathComponent,
+                    folderName: folderName
+                )
+                print("⚠️ [External] Invalid bookmark for \(path): \(error)")
             }
         }
-        
-        // Clean up invalid bookmarks
-        if !bookmarksToRemove.isEmpty {
-            for path in bookmarksToRemove {
-                bookmarks.removeValue(forKey: path)
-            }
-            saveBookmarks(bookmarks)
-            print("✅ [External] Cleaned up \(bookmarksToRemove.count) invalid bookmark(s)")
+
+        if !unavailableBookmarks.isEmpty {
+            print("⚠️ [External] \(unavailableBookmarks.count) bookmark(s) are unavailable")
         }
     }
     
     func getBookmarkedURLs() -> [URL] {
         let bookmarks = loadBookmarks()
         var urls: [URL] = []
-        
+        var seenPaths: Set<String> = []
+
         for (_, bookmarkData) in bookmarks {
             do {
                 var isStale = false
@@ -581,19 +719,41 @@ actor ExternalFileStore {
                     bookmarkDataIsStale: &isStale
                 )
 #endif
-                
-                if FileManager.default.fileExists(atPath: url.path) {
-                    // Skip files in .Trash
-                    if url.path.contains("/.Trash/") {
-                        continue
+
+                // Skip duplicates
+                guard !seenPaths.contains(url.path) else { continue }
+                seenPaths.insert(url.path)
+
+                // Skip files in .Trash (handled by unavailableBookmarks)
+                if url.path.contains("/.Trash/") {
+                    continue
+                }
+
+                // Start security-scoped access to check file attributes
+                let didStartAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didStartAccess {
+                        url.stopAccessingSecurityScopedResource()
                     }
+                }
+
+                // Check if file exists OR is an iCloud placeholder
+                if FileManager.default.fileExists(atPath: url.path) {
+                    urls.append(url)
+                } else if isICloudFile(at: url) {
+                    // iCloud file not downloaded locally - still include it
+                    // openFile() will handle downloading via ensureFileDownloaded()
                     urls.append(url)
                 }
+                // If neither exists nor is iCloud placeholder, skip it
+                // (handled by unavailableBookmarks from loadBookmarkedFiles)
             } catch {
+                // Bookmark resolution failed - skip silently
+                // (handled by unavailableBookmarks from loadBookmarkedFiles)
                 continue
             }
         }
-        
+
         return urls
     }
     
@@ -601,6 +761,26 @@ actor ExternalFileStore {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
         openedFiles.removeAll()
         fileModificationDates.removeAll()
+        unavailableBookmarks.removeAll()
+    }
+
+    /// Returns all bookmarks that are currently unavailable
+    func getUnavailableBookmarks() -> [UnavailableBookmark] {
+        return Array(unavailableBookmarks.values)
+    }
+
+    /// Removes an unavailable bookmark permanently
+    func removeUnavailableBookmark(_ bookmark: UnavailableBookmark) {
+        var bookmarks = loadBookmarks()
+        bookmarks.removeValue(forKey: bookmark.id)
+        saveBookmarks(bookmarks)
+        unavailableBookmarks.removeValue(forKey: bookmark.id)
+        print("🗑️ [External] Removed unavailable bookmark: \(bookmark.fileName)")
+    }
+
+    /// Refreshes the availability status of all bookmarks
+    func refreshBookmarkAvailability() async {
+        await loadBookmarkedFiles()
     }
     
     private func preferredFileExtension() -> String {

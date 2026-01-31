@@ -24,18 +24,23 @@ struct UnifiedList: Identifiable, Hashable {
     let id: String
     let source: ListSource
     var summary: ShoppingListSummary
-    
+
     var originalFileId: String?
-    
+
     var isReadOnly: Bool = false
-    
+
+    /// If non-nil, this file is unavailable and cannot be opened
+    var unavailableBookmark: UnavailableBookmark?
+
+    var isUnavailable: Bool { unavailableBookmark != nil }
+
     var externalURL: URL? {
         if case .external(let url) = source { return url }
         return nil
     }
-    
+
     var isExternal: Bool { if case .external = source { return true } else { return false } }
-    
+
     static func == (lhs: UnifiedList, rhs: UnifiedList) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -50,9 +55,12 @@ class UnifiedListProvider: ObservableObject {
     @Published var externalLabels: [URL: [ShoppingLabel]] = [:]
     
     @Published var isDownloadingFile = false
-    
+    @Published var currentlyLoadingFile: String? = nil
+    @Published var loadingProgress: (current: Int, total: Int) = (0, 0)
+    @Published var isInitialLoad: Bool = true  // Only show loading UI on first load
+
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
-    
+
     private var activeSyncs: Set<String> = []  // Track which lists are currently syncing
     
     enum SaveStatus { case saved, saving, unsaved, failed(String) }
@@ -60,9 +68,12 @@ class UnifiedListProvider: ObservableObject {
     // MARK: - Load Lists
     
     func loadAllLists() async {
+        // Refresh bookmark availability to detect trashed/deleted files
+        await ExternalFileStore.shared.refreshBookmarkAvailability()
+
         var unified: [UnifiedList] = []
         var seenExternalURLs: Set<String> = []
-        
+
         // Local lists
         do {
             let localLists = try await LocalShoppingListStore.shared.fetchShoppingLists()
@@ -88,20 +99,31 @@ class UnifiedListProvider: ObservableObject {
         
         // External lists
         let externalURLs = await ExternalFileStore.shared.getBookmarkedURLs()
+        let totalFiles = externalURLs.count
+        var currentFileIndex = 0
+
         for url in externalURLs {
             guard !seenExternalURLs.contains(url.path) else { continue }
             seenExternalURLs.insert(url.path)
-            
+
+            // Update loading progress (only on initial load)
+            currentFileIndex += 1
+            if isInitialLoad {
+                let fileName = url.deletingPathExtension().lastPathComponent
+                currentlyLoadingFile = fileName
+                loadingProgress = (currentFileIndex, totalFiles)
+            }
+
             do {
                 let document = try await ExternalFileStore.shared.openFile(at: url)
                 let runtimeId = "external:\(url.path)"
-                
+
                 var modifiedSummary = document.list
                 modifiedSummary.id = runtimeId
-                
+
                 // Check if file is writable
                 let isReadOnly = !ExternalFileStore.isFileWritable(at: url)
-                
+
                 unified.append(UnifiedList(
                     id: runtimeId,
                     source: .external(url),
@@ -109,15 +131,76 @@ class UnifiedListProvider: ObservableObject {
                     originalFileId: document.list.id,
                     isReadOnly: isReadOnly
                 ))
-                
+
                 // PRELOAD reactive label cache
                 externalLabels[url] = document.labels
-                
+
             } catch {
                 print("❌ Failed to load external file \(url): \(error)")
-                await ExternalFileStore.shared.closeFile(at: url)
+                // NOTE: Don't call closeFile here - that would remove the bookmark permanently
+                // We want to keep the bookmark so the user can retry later
+
+                // Add as unavailable so it shows in the sidebar with an error
+                let fileName = url.deletingPathExtension().lastPathComponent
+                let folderName = url.deletingLastPathComponent().lastPathComponent
+                let runtimeId = "unavailable:\(url.path)"
+
+                let placeholderSummary = ShoppingListSummary(
+                    id: runtimeId,
+                    name: fileName,
+                    modifiedAt: Date(),
+                    icon: "exclamationmark.triangle",
+                    hiddenLabels: nil
+                )
+
+                // Create an unavailable bookmark to track the error
+                let unavailableBookmark = UnavailableBookmark(
+                    id: url.path,
+                    originalPath: url.path,
+                    reason: .bookmarkInvalid(error),
+                    fileName: fileName,
+                    folderName: folderName
+                )
+
+                unified.append(UnifiedList(
+                    id: runtimeId,
+                    source: .external(url),
+                    summary: placeholderSummary,
+                    originalFileId: nil,
+                    isReadOnly: true,
+                    unavailableBookmark: unavailableBookmark
+                ))
             }
-            
+
+        }
+
+        // Clear loading state and mark initial load complete
+        currentlyLoadingFile = nil
+        loadingProgress = (0, 0)
+        isInitialLoad = false
+
+        // Unavailable external files - show in sidebar with warning
+        let unavailableBookmarks = await ExternalFileStore.shared.getUnavailableBookmarks()
+        for bookmark in unavailableBookmarks {
+            let runtimeId = "unavailable:\(bookmark.id)"
+
+            // Create a placeholder summary for the unavailable file
+            let placeholderSummary = ShoppingListSummary(
+                id: runtimeId,
+                name: bookmark.fileName,
+                modifiedAt: Date(),
+                icon: bookmark.reason.icon,
+                hiddenLabels: nil
+            )
+
+            unified.append(UnifiedList(
+                id: runtimeId,
+                source: .local,  // Use local as placeholder since we can't resolve the URL
+                summary: placeholderSummary,
+                originalFileId: nil,
+                isReadOnly: true,
+                unavailableBookmark: bookmark
+            ))
         }
         
         allLists = unified.sorted { list1, list2 in
@@ -466,6 +549,13 @@ class UnifiedListProvider: ObservableObject {
         }
         allLists.removeAll { $0.id == list.id }
         saveStatus.removeValue(forKey: list.id)
+    }
+
+    /// Removes an unavailable bookmark from the list
+    func removeUnavailableList(_ list: UnifiedList) async {
+        guard let bookmark = list.unavailableBookmark else { return }
+        await ExternalFileStore.shared.removeUnavailableBookmark(bookmark)
+        allLists.removeAll { $0.id == list.id }
     }
     
     // MARK: - Autosave
