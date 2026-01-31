@@ -62,6 +62,7 @@ struct ItemFormView: View {
                     } label: {
                         Label("Edit Notes", systemImage: "square.and.pencil")
                     }
+                    .controlSize(.large)
                     .buttonStyle(.glass)
                     .padding(20)
                 }
@@ -90,6 +91,7 @@ struct ItemFormView: View {
             } label: {
                 Label("Edit Notes", systemImage: "square.and.pencil")
             }
+            .controlSize(.large)
             .buttonStyle(.glass)
             .padding(20)
         }
@@ -110,6 +112,8 @@ struct ItemFormView: View {
                 Spacer()
                 Stepper(value: $quantity, in: 1...100) {
                     Text("\(quantity)")
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.25), value: quantity)
                 }
             }
             
@@ -280,14 +284,17 @@ struct EditItemView: View {
             .navigationTitle("Edit Item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItemGroup(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .automatic) {
                     if !unifiedList.isReadOnly {
-                        Button("Delete") {
+                        Button(role : .destructive) {
                             showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
-                        .foregroundColor(.red)
+                        .labelStyle(.iconOnly)
+                        .tint(.red)
                         
-                        Button("Save") {
+                        Button(role : .close) {
                             Task {
                                 let success = await viewModel.updateItem(
                                     item,
@@ -303,7 +310,10 @@ struct EditItemView: View {
                                     showError = true
                                 }
                             }
+                        } label: {
+                            Label("Save", systemImage: "square.and.arrow.down")
                         }
+                        .tint(.accentColor)
                         .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
@@ -427,8 +437,8 @@ struct MarkdownEditorView: View {
                         .navigationTitle("Edit Notes")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { dismiss() }
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button(role : .close) { dismiss() }
                             }
                             
                         }
@@ -465,22 +475,28 @@ struct MarkdownEditorView: View {
                         }
                         //.ignoresSafeArea(edges: .top)
                     }
+#if targetEnvironment(macCatalyst)
+                    .navigationTitle(selectedTab == 0 ? "Item Notes - Editing" : "Item Notes - Preview")
+#else
                     .navigationTitle("Item Notes")
+                    .navigationSubtitle(selectedTab == 0 ? "Currently Editing" : "Previewing as Markdown")
+#endif
                     .navigationBarTitleDisplayMode(.inline)
                     
                     .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
+                        ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 selectedTab = selectedTab == 0 ? 1 : 0
                             } label: {
-                                Image(systemName: selectedTab == 0 ? "eye" : "pencil")
+                                Image(systemName: selectedTab == 0 ? "eye.slash" : "eye")
                             }
+                            //.tint(selectedTab == 0 ? .primary.opacity(0.2) : .primary)
                         }
                         
-                        ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
+                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
                         
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { dismiss() }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(role : .close) { dismiss() }
                         }
                         
                     }
