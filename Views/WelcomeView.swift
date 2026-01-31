@@ -192,6 +192,13 @@ struct WelcomeView: View {
             Text(deeplinkCoordinator.errorMessage ?? "Unknown error")
         }
         .task {
+            // Run migrations first (one-time migration from old local storage to iCloud)
+            do {
+                try await MigrationManager.shared.runMigrationsIfNeeded()
+            } catch {
+                print("❌ Migration failed: \(error)")
+            }
+
             await unifiedProvider.loadAllLists()
             await welcomeViewModel.loadLists()
             await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
@@ -202,6 +209,13 @@ struct WelcomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task {
                 await unifiedProvider.syncAllExternalLists()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
+            Task {
+                // Reload lists after storage location migration
+                await unifiedProvider.loadAllLists()
+                await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
             }
         }
         .overlay {

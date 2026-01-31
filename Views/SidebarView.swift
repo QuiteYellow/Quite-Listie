@@ -28,6 +28,7 @@ struct SidebarView: View {
     @State private var listToDelete: UnifiedList? = nil
     @State private var showingDeleteConfirmation = false
     @State private var showFavouritesWarning: Bool = !UserDefaults.standard.bool(forKey: "hideFavouritesWarning")
+    @State private var iCloudSyncEnabled: Bool = true
     
     // Favorites stored in UserDefaults
     @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
@@ -118,11 +119,11 @@ struct SidebarView: View {
                 }
             }
             
-            // MARK: - Internal / Private Lists
-            let internalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && !($0.isExternal) && !$0.isReadOnly }
-            if !internalLists.isEmpty {
-                Section(header: Text("Private")) {
-                    ForEach(internalLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
+            // MARK: - Private Lists (in iCloud container)
+            let privateLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isPrivate && !$0.isReadOnly }
+            if !privateLists.isEmpty {
+                Section(header: Label("Private", systemImage: iCloudSyncEnabled ? "lock.icloud.fill" : "icloud.slash.fill")) {
+                    ForEach(privateLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                         listRow(for: list)
                     }
                 }
@@ -194,6 +195,19 @@ struct SidebarView: View {
                 Text("Are you sure you want to delete the list \"\(list.summary.name)\"?")
             }
         }
+        .task {
+            // Load initial iCloud sync state
+            iCloudSyncEnabled = iCloudContainerManager.shared.isICloudSyncEnabled()
+            // Also check if iCloud is actually available
+            let available = await iCloudContainerManager.shared.checkICloudAvailability()
+            iCloudSyncEnabled = available
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
+            Task {
+                let available = await iCloudContainerManager.shared.checkICloudAvailability()
+                iCloudSyncEnabled = available
+            }
+        }
     }
     
     @ViewBuilder
@@ -223,20 +237,17 @@ struct SidebarView: View {
             
             // Save status indicator (like writie.md)
             
-            // Only show external icon if this list is a favourite
+            // Show link icon for favorited external lists
             if isFavourited && list.isExternal {
                 Image(systemName: "link")
                     .foregroundColor(.secondary)
                     .imageScale(.small)
             }
+
+            // Show sync status icons
             if list.isExternal {
                 saveStatusView(for: saveStatus)
-            } else {
-                Image(systemName: "icloud.slash.fill")
-                    .foregroundColor(.secondary)
-                    .imageScale(.small)
             }
-            
             // Unchecked count
             Text("\(welcomeViewModel.uncheckedCounts[list.summary.id] ?? 0)")
                 .foregroundColor(.secondary)
