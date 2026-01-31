@@ -17,17 +17,60 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
-    
+
     @Binding var hideWelcomeList: Bool
     @Binding var hideQuickAdd: Bool
     @Binding var hideEmptyLabels: Bool
 
     @State private var showQuickAddInfo = false
     @State private var showEmptyLabelsInfo = false
-    
+    @State private var iCloudSyncEnabled = true
+    @State private var storageLocation = "Loading..."
+    @State private var showICloudInfo = false
+
     var body: some View {
         NavigationView {
             Form {
+                // MARK: - Storage Section
+                Section {
+                    HStack {
+                        Toggle("Sync with iCloud", isOn: $iCloudSyncEnabled)
+                            .toggleStyle(.switch)
+                            .onChange(of: iCloudSyncEnabled) { _, newValue in
+                                Task {
+                                    await iCloudContainerManager.shared.setICloudSyncEnabled(newValue)
+                                    await updateStorageLocation()
+                                    // Notify to reload lists after migration
+                                    NotificationCenter.default.post(name: .storageLocationChanged, object: nil)
+                                }
+                            }
+
+                        Button {
+                            showICloudInfo = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    HStack {
+                        Text("Storage Location")
+                        Spacer()
+                        Text(storageLocation)
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Label("Storage", systemImage: "icloud")
+                } footer: {
+                    Text("When disabled, private lists are stored locally and won't sync across devices.")
+                }
+                .alert("iCloud Sync", isPresented: $showICloudInfo) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Your private lists are stored in your iCloud account and sync automatically across all your Apple devices. Disabling this will store lists only on this device.")
+                }
+
                 Section {
                     Toggle("Show Welcome List", isOn: Binding(
                         get: { !hideWelcomeList },
@@ -102,7 +145,18 @@ struct SettingsView: View {
                     }
                 }
             }
+            .onAppear {
+                // Load iCloud sync state
+                iCloudSyncEnabled = iCloudContainerManager.shared.isICloudSyncEnabled()
+                Task {
+                    await updateStorageLocation()
+                }
+            }
         }
+    }
+
+    private func updateStorageLocation() async {
+        storageLocation = await iCloudContainerManager.shared.getStorageLocationDescription()
     }
 }
 

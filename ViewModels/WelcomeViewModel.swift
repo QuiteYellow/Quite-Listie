@@ -1,8 +1,9 @@
 //
-//  WelcomeViewModel.swift (LOCAL-ONLY VERSION)
+//  WelcomeViewModel.swift
 //  Listie.md
 //
-//  Simplified for local-only storage
+//  View model for tracking list counts and state
+//  Now uses UnifiedListProvider for all list operations
 //
 
 import Foundation
@@ -14,77 +15,20 @@ class WelcomeViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var uncheckedCounts: [String: Int] = [:]
-    
+
     @Published var selectedListForSettings: ShoppingListSummary? = nil
     @Published var showingListSettings = false
-    
+
+    /// Legacy method - kept for backward compatibility but now does nothing
+    /// All list loading is now done through UnifiedListProvider
     func loadLists() async {
-        isLoading = true
-        errorMessage = nil
-        
-        do {
-            let fetchedLists = try await  LocalShoppingListStore.shared.fetchShoppingLists()
-            
-            let sortedLists = fetchedLists.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-            
-            self.lists = sortedLists
-            self.uncheckedCounts = await loadUncheckedCounts(for: sortedLists)
-        } catch {
-            self.errorMessage = "Failed to load lists: \(error.localizedDescription)"
-            print("❌ \(error.localizedDescription)")
-        }
-        
-        isLoading = false
+        // No-op - lists are loaded through UnifiedListProvider.loadAllLists()
     }
-    
-    func loadUncheckedCounts(for lists: [ShoppingListSummary]) async -> [String: Int] {
-        var result: [String: Int] = [:]
-        
-        for list in lists {
-            do {
-                let items = try await  LocalShoppingListStore.shared.fetchItems(for: list.id)
-                let count = items.filter { !$0.checked && !$0.isDeleted }.count
-                result[list.id] = count
-            } catch {
-                result[list.id] = 0
-            }
-        }
-        
-        return result
-    }
-    
-    func updateListName(listID: String, newName: String, icon: String?, hiddenLabels: [String]?) async {
-        guard let index = lists.firstIndex(where: { $0.id == listID }) else { return }
-        let list = lists[index]
-        
-        do {
-            let items = try await LocalShoppingListStore.shared.fetchItems(for: list.id)
-            
-            try await LocalShoppingListStore.shared.updateList(
-                list,
-                name: newName,
-                icon: icon ?? list.icon,
-                hiddenLabels: hiddenLabels ?? list.hiddenLabels,
-                items: items
-            )
-            
-            lists[index].name = newName
-            if let icon = icon {
-                lists[index].icon = icon
-            }
-            if let hiddenLabels = hiddenLabels {
-                lists[index].hiddenLabels = hiddenLabels
-            }
-        } catch {
-            print("❌ Failed to update list name: \(error.localizedDescription)")
-        }
-    }
-    
+
+    /// Loads unchecked item counts for all unified lists
     func loadUnifiedCounts(for lists: [UnifiedList], provider: UnifiedListProvider) async {
         var result: [String: Int] = [:]
-        
+
         for list in lists {
             do {
                 let items = try await provider.fetchItems(for: list)
@@ -94,7 +38,7 @@ class WelcomeViewModel: ObservableObject {
                 result[list.id] = 0
             }
         }
-        
+
         await MainActor.run {
             uncheckedCounts = result
         }

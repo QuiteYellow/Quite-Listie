@@ -556,7 +556,7 @@ struct MarkdownListImportView: View {
     MarkdownListImportView(
         list: UnifiedList(
             id: "test",
-            source: .local,
+            source: .privateICloud("test"),
             summary: ShoppingListSummary(
                 id: "test",
                 name: "Test List",

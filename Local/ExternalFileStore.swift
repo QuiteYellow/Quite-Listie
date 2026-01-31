@@ -1,11 +1,53 @@
 //
-//  ExternalFileStore_v2.swift
+//  FileStore.swift (formerly ExternalFileStore)
 //  Listie.md
 //
-//  Updated to support V2 format with automatic migration and sync resolution
+//  Unified file store for both private (iCloud container) and external (user-selected) files.
+//  Updated to support V2 format with automatic migration and sync resolution.
 //
 
 import Foundation
+
+// MARK: - File Source
+
+/// Represents the source/location of a list file
+enum FileSource: Hashable {
+    /// Private list stored in the app's iCloud container (or local fallback)
+    case privateList(String)  // List ID
+
+    /// External file selected by the user from Files app
+    case externalFile(URL)
+
+    /// Whether this source requires security-scoped resource access
+    var requiresSecurityScope: Bool {
+        if case .externalFile = self { return true }
+        return false
+    }
+
+    /// Whether this is a private list (in app's container)
+    var isPrivate: Bool {
+        if case .privateList = self { return true }
+        return false
+    }
+
+    /// Whether this is an external file (user-selected)
+    var isExternal: Bool {
+        if case .externalFile = self { return true }
+        return false
+    }
+
+    /// Get the list ID if this is a private list
+    var privateListId: String? {
+        if case .privateList(let id) = self { return id }
+        return nil
+    }
+
+    /// Get the URL if this is an external file
+    var externalURL: URL? {
+        if case .externalFile(let url) = self { return url }
+        return nil
+    }
+}
 
 /// Represents a bookmarked file that is currently unavailable
 struct UnavailableBookmark: Identifiable {
@@ -49,8 +91,11 @@ struct UnavailableBookmark: Identifiable {
     }
 }
 
-actor ExternalFileStore {
-    static let shared = ExternalFileStore()
+/// Typealias for backward compatibility
+typealias ExternalFileStore = FileStore
+
+actor FileStore {
+    static let shared = FileStore()
 
     private let defaultsKey = "com.listie.external-files"
 
@@ -764,6 +809,25 @@ actor ExternalFileStore {
         unavailableBookmarks.removeAll()
     }
 
+    /// Clears the in-memory cache for private lists (used after storage location migration)
+    func clearPrivateListsCache() {
+        // Find and remove cache entries for private list URLs
+        let privatePathPrefix = "LocalLists"
+        let iCloudPathPrefix = "Documents/Lists"
+
+        let keysToRemove = openedFiles.keys.filter { path in
+            path.contains(privatePathPrefix) || path.contains(iCloudPathPrefix)
+        }
+
+        for key in keysToRemove {
+            openedFiles.removeValue(forKey: key)
+            cacheTimestamps.removeValue(forKey: key)
+            fileModificationDates.removeValue(forKey: key)
+        }
+
+        print("🧹 [Cache] Cleared \(keysToRemove.count) private list cache entries")
+    }
+
     /// Returns all bookmarks that are currently unavailable
     func getUnavailableBookmarks() -> [UnavailableBookmark] {
         return Array(unavailableBookmarks.values)
@@ -892,5 +956,252 @@ actor ExternalFileStore {
         // LATEST SAVE WINS - just use cached labels (what we're about to save)
         // Merging labels is unnecessary complexity for a low-risk operation
         return cached
+    }
+
+    // MARK: - FileSource-Based API (Unified Interface)
+
+    /// Opens a file from either a private list or external file source
+    func openFile(from source: FileSource, forceReload: Bool = false) async throws -> ListDocument {
+        switch source {
+        case .privateList(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            return try await openPrivateFile(at: url, forceReload: forceReload)
+
+        case .externalFile(let url):
+            return try await openFile(at: url, forceReload: forceReload)
+        }
+    }
+
+    /// Saves a document to either a private list or external file source
+    func saveFile(_ document: ListDocument, to source: FileSource, bypassOptimisticCheck: Bool = false) async throws {
+        switch source {
+        case .privateList(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            try await savePrivateFile(document, to: url, bypassOptimisticCheck: bypassOptimisticCheck)
+
+        case .externalFile(let url):
+            try await saveFile(document, to: url, bypassOptimisticCheck: bypassOptimisticCheck)
+        }
+    }
+
+    /// Checks if a file has changed for the given source
+    func hasFileChanged(for source: FileSource) async -> Bool {
+        switch source {
+        case .privateList(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            return hasFileChanged(at: url)
+
+        case .externalFile(let url):
+            return hasFileChanged(at: url)
+        }
+    }
+
+    /// Syncs a file from the given source
+    func syncFile(from source: FileSource) async throws -> ListDocument {
+        switch source {
+        case .privateList(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            return try await syncPrivateFile(at: url)
+
+        case .externalFile(let url):
+            return try await syncFile(at: url)
+        }
+    }
+
+    /// Deletes a private list file
+    func deletePrivateList(_ listId: String) async throws {
+        let url = await iCloudContainerManager.shared.fileURL(for: listId)
+
+        // Remove from cache
+        openedFiles.removeValue(forKey: url.path)
+        fileModificationDates.removeValue(forKey: url.path)
+        cacheTimestamps.removeValue(forKey: url.path)
+
+        // Delete the file
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+            print("🗑️ [Private] Deleted list: \(listId)")
+        }
+    }
+
+    // MARK: - Private List File Operations
+
+    /// Opens a private file (no security-scoped access needed)
+    private func openPrivateFile(at url: URL, forceReload: Bool = false) async throws -> ListDocument {
+        // Return cached document if available and not forcing reload
+        if !forceReload, let cached = getOpenedFile(at: url) {
+            print("✅ [Cache] Using cached document for \(url.lastPathComponent)")
+            return cached
+        }
+
+        print("📂 [Private] Loading: \(url.lastPathComponent)")
+
+        // Ensure file is downloaded from iCloud if needed
+        try await ensureFileDownloaded(at: url)
+
+        // Check if file exists
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "FileStore", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "Private list file not found: \(url.lastPathComponent)"
+            ])
+        }
+
+        // Resolve any iCloud conflicts before opening
+        try await resolveConflicts(at: url)
+
+        // Read file
+        let data = try Data(contentsOf: url)
+
+        // Decode
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let document = try decoder.decode(ListDocument.self, from: data)
+
+        // Cache the opened file
+        openedFiles[url.path] = (url, document)
+        cacheTimestamps[url.path] = Date()
+
+        // Store modification date
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let modDate = attributes[.modificationDate] as? Date {
+            fileModificationDates[url.path] = modDate
+        }
+
+        print("✅ [Private] Opened: \(document.list.name)")
+        return document
+    }
+
+    /// Saves a private file (no security-scoped access needed)
+    private func savePrivateFile(_ document: ListDocument, to url: URL, bypassOptimisticCheck: Bool = false) async throws {
+        print("💾 [Private] Saving: \(url.lastPathComponent)")
+
+        // Ensure directory exists
+        let directory = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        // Check if file changed since we last loaded it
+        if !bypassOptimisticCheck, let lastKnownDate = fileModificationDates[url.path] {
+            if let currentAttrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let currentDate = currentAttrs[.modificationDate] as? Date,
+               currentDate > lastKnownDate {
+                print("⚠️ [Private] File changed externally - triggering merge")
+                let mergedDocument = try await syncPrivateFile(at: url)
+                try await savePrivateFile(mergedDocument, to: url, bypassOptimisticCheck: true)
+                return
+            }
+        }
+
+        // Resolve any conflicts before saving
+        try await resolveConflicts(at: url)
+
+        // Encode
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(document)
+
+        // Use NSFileCoordinator for iCloud-aware writes
+        let coordinator = NSFileCoordinator()
+        var coordinatorError: NSError?
+        var writeError: Error?
+
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinatorError) { writeURL in
+            do {
+                try data.write(to: writeURL, options: .atomic)
+            } catch {
+                writeError = error
+            }
+        }
+
+        if let error = coordinatorError ?? writeError {
+            throw error
+        }
+
+        // Update cache
+        openedFiles[url.path] = (url, document)
+        cacheTimestamps[url.path] = Date()
+
+        // Update modification date
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let modDate = attributes[.modificationDate] as? Date {
+            fileModificationDates[url.path] = modDate
+        }
+
+        print("✅ [Private] Saved: \(document.list.name)")
+    }
+
+    /// Syncs a private file by merging cached changes with disk changes
+    private func syncPrivateFile(at url: URL) async throws -> ListDocument {
+        print("🔄 [Private] Syncing: \(url.lastPathComponent)")
+
+        // Resolve conflicts first
+        try await resolveConflicts(at: url)
+
+        // Save cached version before reloading
+        let cachedDocument = openedFiles[url.path]?.document
+
+        // Load from disk
+        let diskDocument = try await openPrivateFile(at: url, forceReload: true)
+
+        // If no cache, return disk version
+        guard let cached = cachedDocument else {
+            return diskDocument
+        }
+
+        // Merge
+        let mergedItems = mergeItems(cached: cached.items, disk: diskDocument.items)
+        let mergedLabels = mergeLabels(cached: cached.labels, disk: diskDocument.labels)
+
+        var mergedDocument = diskDocument
+        mergedDocument.items = mergedItems
+        mergedDocument.labels = mergedLabels
+
+        if cached.list.modifiedAt > diskDocument.list.modifiedAt {
+            mergedDocument.list = cached.list
+        }
+
+        // Save merged version
+        try await savePrivateFile(mergedDocument, to: url, bypassOptimisticCheck: true)
+
+        return mergedDocument
+    }
+
+    // MARK: - Private List Discovery
+
+    /// Returns URLs of all private lists in the iCloud container
+    func getPrivateListURLs() async throws -> [URL] {
+        return try await iCloudContainerManager.shared.discoverListFiles()
+    }
+
+    /// Creates a new private list
+    func createPrivateList(_ document: ListDocument) async throws {
+        let listId = document.list.id
+        let source = FileSource.privateList(listId)
+        try await saveFile(document, to: source)
+        print("✅ [Private] Created new list: \(document.list.name)")
+    }
+
+    /// Checks if a private list exists
+    func privateListExists(_ listId: String) async -> Bool {
+        let url = await iCloudContainerManager.shared.fileURL(for: listId)
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    // MARK: - Utility
+
+    /// Checks if a URL is for a private list (in app's container)
+    func isPrivateListURL(_ url: URL) async -> Bool {
+        let privateDirectory = await iCloudContainerManager.shared.getPrivateListsDirectory()
+        return url.path.hasPrefix(privateDirectory.path)
+    }
+
+    /// Gets the file source for a given URL
+    func fileSource(for url: URL) async -> FileSource {
+        if await isPrivateListURL(url) {
+            let listId = url.deletingPathExtension().lastPathComponent
+            return .privateList(listId)
+        } else {
+            return .externalFile(url)
+        }
     }
 }

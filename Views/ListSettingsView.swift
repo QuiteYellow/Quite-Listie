@@ -124,15 +124,15 @@ struct ListSettingsView: View {
                     
                     Label {
                         switch unifiedList.source {
-                        case .local:
+                        case .privateICloud:
                             Text("Private List")
                         case .external(let url):
                             Text("\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)")
                         }
                     } icon: {
                         switch unifiedList.source {
-                        case .local:
-                            Image(systemName: "internaldrive")
+                        case .privateICloud:
+                            Image(systemName: "icloud.fill")
                         case .external:
                             Image(systemName: "link")
                         }

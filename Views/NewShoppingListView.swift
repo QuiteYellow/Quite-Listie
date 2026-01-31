@@ -71,12 +71,20 @@ struct NewShoppingListView: View {
     private func createList() async {
         isSaving = true
         defer { isSaving = false }
-        
+
         // Use ModelHelpers to create a clean V2 list
         let newList = ModelHelpers.createNewList(name: name, icon: icon)
-        
+
+        // Create the document
+        let document = ListDocument(
+            list: newList,
+            items: [],
+            labels: []
+        )
+
         do {
-            try await  LocalShoppingListStore.shared.createList(newList)
+            // Create the list as a private list in iCloud container
+            try await FileStore.shared.createPrivateList(document)
             onCreate()
             dismiss()
         } catch {
