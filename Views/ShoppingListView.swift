@@ -27,8 +27,12 @@ struct SectionHeaderView: View {
                 
                 Spacer()
                 HStack {
-                    Text(labelName == "Completed" ? "\(checkedCount)" : "\(uncheckedCount)")
+                    let displayCount = labelName == "Completed" ? checkedCount : uncheckedCount
+
+                    Text("\(displayCount)")
                         .foregroundColor(.primary)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.25), value: displayCount)
                     
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
@@ -485,6 +489,24 @@ struct ShoppingListView: View {
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar(id: "LIST_ACTIONS") {
+            // Add button - always present, just hidden/disabled
+            ToolbarItem(id: "icon", placement: .largeTitle) {
+                VStack {
+                    HStack {
+                        Image(systemName: list.icon ?? "list.bullet")
+                            .font(.system(.title2, design: .default, weight: .regular))
+                            .symbolRenderingMode(.hierarchical)
+                        Text(list.name)
+                            .font(.system(.title2, design: .default, weight: .bold))
+                        
+                        Spacer()
+                    }
+                    .padding(.top, 12)
+                    .padding(.horizontal)
+                    Divider()
+                }
+
+            }
             
             // Save status indicator - always present, just hidden
             ToolbarItem(id: "save-status", placement: .navigationBarTrailing) {

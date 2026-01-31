@@ -171,7 +171,8 @@ struct SidebarView: View {
             // Icon
             Image(systemName: list.summary.icon ?? "list.bullet")
                 .frame(minWidth: 30)
-                .foregroundColor(.secondary)
+                .symbolRenderingMode(.hierarchical)
+                //.foregroundColor(.secondary)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.summary.name)
@@ -205,6 +206,8 @@ struct SidebarView: View {
             // Unchecked count
             Text("\(welcomeViewModel.uncheckedCounts[list.summary.id] ?? 0)")
                 .foregroundColor(.secondary)
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.25), value: welcomeViewModel.uncheckedCounts[list.summary.id])
         }
         .tag(list.id)
         .contextMenu {
