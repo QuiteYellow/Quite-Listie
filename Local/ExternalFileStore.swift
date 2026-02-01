@@ -1017,10 +1017,28 @@ actor FileStore {
         fileModificationDates.removeValue(forKey: url.path)
         cacheTimestamps.removeValue(forKey: url.path)
 
-        // Delete the file
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-            print("🗑️ [Private] Deleted list: \(listId)")
+        // Delete the file using NSFileCoordinator for proper iCloud sync
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("⚠️ [Private] File already deleted: \(listId)")
+            return
+        }
+
+        let coordinator = NSFileCoordinator()
+        var coordinatorError: NSError?
+        var deleteError: Error?
+
+        coordinator.coordinate(writingItemAt: url, options: .forDeleting, error: &coordinatorError) { deleteURL in
+            do {
+                try FileManager.default.removeItem(at: deleteURL)
+                print("🗑️ [Private] Deleted list: \(listId)")
+            } catch {
+                deleteError = error
+            }
+        }
+
+        if let error = coordinatorError ?? deleteError {
+            print("❌ [Private] Failed to delete list: \(error)")
+            throw error
         }
     }
 
