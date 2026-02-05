@@ -120,7 +120,7 @@ struct SidebarView: View {
             }
             
             // MARK: - Private Lists (in iCloud container)
-            let privateLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isPrivate && !$0.isReadOnly }
+            let privateLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isPrivate && (!$0.isReadOnly || $0.isCachedSnapshot) }
             if !privateLists.isEmpty {
                 Section(header: Label("Private", systemImage: iCloudSyncEnabled ? "lock.icloud.fill" : "icloud.slash.fill")) {
                     ForEach(privateLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
@@ -130,7 +130,7 @@ struct SidebarView: View {
             }
             
             // MARK: - External / Linked Lists (Grouped by Folder)
-            let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal && !$0.isReadOnly && !$0.isUnavailable }
+            let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal && (!$0.isReadOnly || $0.isCachedSnapshot) && !$0.isUnavailable }
             if !externalLists.isEmpty {
                 // Group by folder
                 let grouped = Dictionary(grouping: externalLists) { list in
@@ -149,7 +149,7 @@ struct SidebarView: View {
             }
             
             // MARK: - Temporary Read-Only Lists
-            let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && !$0.isUnavailable && $0.id != "example-welcome-list" }
+            let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && !$0.isCachedSnapshot && !$0.isUnavailable && $0.id != "example-welcome-list" }
             if !readOnlyLists.isEmpty {
                 Section(header: Text("Temporary (Read Only)")) {
                     ForEach(readOnlyLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
@@ -241,6 +241,13 @@ struct SidebarView: View {
             if isFavourited && list.isExternal {
                 Image(systemName: "link")
                     .foregroundColor(.secondary)
+                    .imageScale(.small)
+            }
+
+            // Show cached snapshot indicator
+            if list.isCachedSnapshot {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundColor(.orange)
                     .imageScale(.small)
             }
 

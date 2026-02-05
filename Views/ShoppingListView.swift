@@ -156,6 +156,11 @@ struct ShoppingListView: View {
     private var saveStatus: UnifiedListProvider.SaveStatus {
         unifiedProvider.saveStatus[unifiedList.id] ?? .saved
     }
+
+    /// Live lookup of whether this list is still showing a cached snapshot
+    private var isCachedSnapshot: Bool {
+        unifiedProvider.allLists.first(where: { $0.id == unifiedList.id })?.isCachedSnapshot ?? false
+    }
     
     private func updateUncheckedCount(for listID: String, with count: Int) async {
         await MainActor.run {
@@ -412,8 +417,30 @@ struct ShoppingListView: View {
     
     var body: some View {
         List {
+            // Cached snapshot banner
+            if isCachedSnapshot {
+                Section {
+                    HStack {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundColor(.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Showing cached version")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Loading latest data...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
-            
+
             if viewModel.showCompletedAtBottom {
                 // Get labels to show
                 let labelsToShow: [String] = {
