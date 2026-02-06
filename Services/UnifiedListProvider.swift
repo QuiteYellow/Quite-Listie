@@ -43,9 +43,6 @@ struct UnifiedList: Identifiable, Hashable {
 
     var isReadOnly: Bool = false
 
-    /// Whether this list is currently showing cached (Tier 2) data while Tier 3 loads
-    var isCachedSnapshot: Bool = false
-
     /// If non-nil, this file is unavailable and cannot be opened
     var unavailableBookmark: UnavailableBookmark?
 
@@ -106,136 +103,43 @@ class UnifiedListProvider: ObservableObject {
 
         var unified: [UnifiedList] = []
         var seenExternalURLs: Set<String> = []
-        var tier2ListIDs: Set<String> = []  // Track which lists have Tier 2 data
 
-        // Discover all list sources
-        let privateListURLs: [URL]
+        // Private lists (from iCloud container or local fallback)
         do {
-            privateListURLs = try await FileStore.shared.getPrivateListURLs()
-        } catch {
-            print("Failed to discover private lists: \(error)")
-            privateListURLs = []
-        }
+            let privateListURLs = try await FileStore.shared.getPrivateListURLs()
 
-        let externalURLs = await FileStore.shared.getBookmarkedURLs()
-
-        // ---- PHASE 1: Load Tier 2 snapshots for instant display (cold start only) ----
-
-        let isColdStart = allLists.isEmpty
-
-        if isColdStart {
-            // Private lists from disk cache
             for url in privateListURLs {
-                let listId = url.deletingPathExtension().lastPathComponent
-                let source = FileSource.privateList(listId)
+                do {
+                    let listId = url.deletingPathExtension().lastPathComponent
+                    let source = FileSource.privateList(listId)
+                    let document = try await FileStore.shared.openFile(from: source)
 
-                if let cachedDoc = await FileStore.shared.loadFromDiskCache(for: source) {
                     unified.append(UnifiedList(
                         id: listId,
                         source: .privateICloud(listId),
-                        summary: cachedDoc.list,
+                        summary: document.list,
                         originalFileId: nil,
-                        isReadOnly: true,
-                        isCachedSnapshot: true
+                        isReadOnly: false
                     ))
-                    tier2ListIDs.insert(listId)
-                }
-            }
-
-            // External lists from disk cache
-            for url in externalURLs {
-                guard !seenExternalURLs.contains(url.path) else { continue }
-                seenExternalURLs.insert(url.path)
-
-                let source = FileSource.externalFile(url)
-                let runtimeId = "external:\(url.path)"
-
-                if let cachedDoc = await FileStore.shared.loadFromDiskCache(for: source) {
-                    var modifiedSummary = cachedDoc.list
-                    modifiedSummary.id = runtimeId
-
-                    unified.append(UnifiedList(
-                        id: runtimeId,
-                        source: .external(url),
-                        summary: modifiedSummary,
-                        originalFileId: cachedDoc.list.id,
-                        isReadOnly: true,
-                        isCachedSnapshot: true
-                    ))
-                    tier2ListIDs.insert(runtimeId)
-
-                    // Preload labels from cached data
-                    externalLabels[url] = cachedDoc.labels
-                }
-            }
-
-            // Add welcome list (always available, not cached)
-            unified.append(UnifiedList(
-                id: ExampleData.welcomeListId,
-                source: .privateICloud(ExampleData.welcomeListId),
-                summary: ExampleData.welcomeList,
-                originalFileId: nil,
-                isReadOnly: true
-            ))
-
-            // Publish Phase 1 results immediately so UI renders cached data
-            if !tier2ListIDs.isEmpty {
-                allLists = unified.sorted { list1, list2 in
-                    list1.summary.name.localizedCaseInsensitiveCompare(list2.summary.name) == .orderedAscending
-                }
-                for list in unified where saveStatus[list.id] == nil {
-                    saveStatus[list.id] = .saved
-                }
-            }
-        }
-
-        // ---- PHASE 2: Load Tier 3 (authoritative) and replace Tier 2 entries ----
-
-        // Private lists from Tier 3
-        for url in privateListURLs {
-            let listId = url.deletingPathExtension().lastPathComponent
-            let source = FileSource.privateList(listId)
-
-            do {
-                let document = try await FileStore.shared.openFile(from: source)
-
-                let fullList = UnifiedList(
-                    id: listId,
-                    source: .privateICloud(listId),
-                    summary: document.list,
-                    originalFileId: nil,
-                    isReadOnly: false,
-                    isCachedSnapshot: false
-                )
-
-                // Replace Tier 2 entry or append if no Tier 2 existed
-                if let index = allLists.firstIndex(where: { $0.id == listId }) {
-                    allLists[index] = fullList
-                } else {
-                    allLists.append(fullList)
-                }
-            } catch {
-                let nsError = error as NSError
-                if nsError.code == 404 {
-                    // File genuinely deleted — remove Tier 2 snapshot and entry
-                    Task { await DiskCacheManager.shared.removeSnapshot(for: source) }
-                    allLists.removeAll { $0.id == listId }
-                } else if tier2ListIDs.contains(listId) {
-                    // Tier 2 exists but Tier 3 failed — stop showing as cached snapshot
-                    if let index = allLists.firstIndex(where: { $0.id == listId }) {
-                        allLists[index].isCachedSnapshot = false
-                        allLists[index].isReadOnly = true
-                    }
-                    saveStatus[listId] = .failed("File could not be loaded: \(error.localizedDescription)")
-                    print("❌ Failed to load private list \(url): \(error)")
-                } else {
+                } catch {
                     print("❌ Failed to load private list \(url): \(error)")
                 }
             }
+        } catch {
+            print("Failed to discover private lists: \(error)")
         }
 
-        // External lists from Tier 3
-        seenExternalURLs.removeAll()
+        // Add welcome list (read-only example)
+        unified.append(UnifiedList(
+            id: ExampleData.welcomeListId,
+            source: .privateICloud(ExampleData.welcomeListId),
+            summary: ExampleData.welcomeList,
+            originalFileId: nil,
+            isReadOnly: true
+        ))
+        
+        // External lists (user-selected files)
+        let externalURLs = await FileStore.shared.getBookmarkedURLs()
         let totalFiles = externalURLs.count
         var currentFileIndex = 0
 
@@ -251,11 +155,10 @@ class UnifiedListProvider: ObservableObject {
                 loadingProgress = (currentFileIndex, totalFiles)
             }
 
-            let runtimeId = "external:\(url.path)"
-
             do {
                 let source = FileSource.externalFile(url)
                 let document = try await FileStore.shared.openFile(from: source)
+                let runtimeId = "external:\(url.path)"
 
                 var modifiedSummary = document.list
                 modifiedSummary.id = runtimeId
@@ -263,79 +166,54 @@ class UnifiedListProvider: ObservableObject {
                 // Check if file is writable
                 let isReadOnly = !FileStore.isFileWritable(at: url)
 
-                let fullList = UnifiedList(
+                unified.append(UnifiedList(
                     id: runtimeId,
                     source: .external(url),
                     summary: modifiedSummary,
                     originalFileId: document.list.id,
-                    isReadOnly: isReadOnly,
-                    isCachedSnapshot: false
-                )
-
-                // Replace Tier 2 entry or append
-                if let index = allLists.firstIndex(where: { $0.id == runtimeId }) {
-                    allLists[index] = fullList
-                } else {
-                    allLists.append(fullList)
-                }
+                    isReadOnly: isReadOnly
+                ))
 
                 // PRELOAD reactive label cache
                 externalLabels[url] = document.labels
 
             } catch {
-                let nsError = error as NSError
-                if nsError.code == 404 {
-                    // File genuinely deleted — clean up Tier 2
-                    Task { await DiskCacheManager.shared.removeSnapshot(for: .externalFile(url)) }
-                    allLists.removeAll { $0.id == runtimeId }
-                } else {
-                    print("❌ Failed to load external file \(url): \(error)")
+                print("❌ Failed to load external file \(url): \(error)")
+                // NOTE: Don't call closeFile here - that would remove the bookmark permanently
+                // We want to keep the bookmark so the user can retry later
 
-                    if tier2ListIDs.contains(runtimeId) {
-                        // Tier 2 exists but Tier 3 failed — stop showing as cached snapshot
-                        // Show the cached data as read-only with an error indicator
-                        if let index = allLists.firstIndex(where: { $0.id == runtimeId }) {
-                            allLists[index].isCachedSnapshot = false
-                            allLists[index].isReadOnly = true
-                        }
-                        saveStatus[runtimeId] = .failed("File could not be loaded: \(error.localizedDescription)")
-                    } else {
-                        // NOTE: Don't call closeFile here - that would remove the bookmark permanently
-                        // We want to keep the bookmark so the user can retry later
+                // Add as unavailable so it shows in the sidebar with an error
+                let fileName = url.deletingPathExtension().lastPathComponent
+                let folderName = url.deletingLastPathComponent().lastPathComponent
+                let runtimeId = "unavailable:\(url.path)"
 
-                        // Add as unavailable so it shows in the sidebar with an error
-                        let fileName = url.deletingPathExtension().lastPathComponent
-                        let folderName = url.deletingLastPathComponent().lastPathComponent
-                        let unavailableId = "unavailable:\(url.path)"
+                let placeholderSummary = ShoppingListSummary(
+                    id: runtimeId,
+                    name: fileName,
+                    modifiedAt: Date(),
+                    icon: "exclamationmark.triangle",
+                    hiddenLabels: nil
+                )
 
-                        let placeholderSummary = ShoppingListSummary(
-                            id: unavailableId,
-                            name: fileName,
-                            modifiedAt: Date(),
-                            icon: "exclamationmark.triangle",
-                            hiddenLabels: nil
-                        )
+                // Create an unavailable bookmark to track the error
+                let unavailableBookmark = UnavailableBookmark(
+                    id: url.path,
+                    originalPath: url.path,
+                    reason: .bookmarkInvalid(error),
+                    fileName: fileName,
+                    folderName: folderName
+                )
 
-                        // Create an unavailable bookmark to track the error
-                        let unavailableBookmark = UnavailableBookmark(
-                            id: url.path,
-                            originalPath: url.path,
-                            reason: .bookmarkInvalid(error),
-                            fileName: fileName,
-                            folderName: folderName
-                        )
-
-                        allLists.append(UnifiedList(
-                            id: unavailableId,
-                            source: .external(url),
-                            summary: placeholderSummary,
-                            originalFileId: nil,
-                            isReadOnly: true,
-                            unavailableBookmark: unavailableBookmark
-                        ))
-                    }
-                }
+                unified.append(UnifiedList(
+                    id: runtimeId,
+                    source: .external(url),
+                    summary: placeholderSummary,
+                    originalFileId: nil,
+                    isReadOnly: true,
+                    unavailableBookmark: unavailableBookmark
+                ))
             }
+
         }
 
         // Clear loading state and mark initial load complete
@@ -348,9 +226,6 @@ class UnifiedListProvider: ObservableObject {
         for bookmark in unavailableBookmarks {
             let runtimeId = "unavailable:\(bookmark.id)"
 
-            // Skip if already added
-            guard !allLists.contains(where: { $0.id == runtimeId }) else { continue }
-
             // Create a placeholder summary for the unavailable file
             let placeholderSummary = ShoppingListSummary(
                 id: runtimeId,
@@ -360,7 +235,7 @@ class UnifiedListProvider: ObservableObject {
                 hiddenLabels: nil
             )
 
-            allLists.append(UnifiedList(
+            unified.append(UnifiedList(
                 id: runtimeId,
                 source: .privateICloud(runtimeId),  // Use privateICloud as placeholder since we can't resolve the URL
                 summary: placeholderSummary,
@@ -369,13 +244,13 @@ class UnifiedListProvider: ObservableObject {
                 unavailableBookmark: bookmark
             ))
         }
-
-        allLists = allLists.sorted { list1, list2 in
+        
+        allLists = unified.sorted { list1, list2 in
             list1.summary.name.localizedCaseInsensitiveCompare(list2.summary.name) == .orderedAscending
         }
-
+        
         // Initialize save status
-        for list in allLists where saveStatus[list.id] == nil {
+        for list in unified where saveStatus[list.id] == nil {
             saveStatus[list.id] = .saved
         }
     }
@@ -476,30 +351,13 @@ class UnifiedListProvider: ObservableObject {
 
         let fileSource = list.source.asFileSource
 
-        // Check if list is in a failed/error state — if so, always attempt a fresh load
-        let isInErrorState: Bool = {
-            if case .failed = saveStatus[list.id] { return true }
-            // Also check the live list in allLists
-            if let liveList = allLists.first(where: { $0.id == list.id }),
-               liveList.isCachedSnapshot { return true }
-            return false
-        }()
-
-        let fileChanged = await FileStore.shared.hasFileChanged(for: fileSource)
-
-        if fileChanged || isInErrorState {
-            print("🔄 \(isInErrorState ? "Retrying failed list" : "File changed"), syncing: \(list.summary.name)")
+        if await FileStore.shared.hasFileChanged(for: fileSource) {
+            print("🔄 File changed, syncing: \(list.summary.name)")
 
             activeSyncs.insert(list.id)
             defer { activeSyncs.remove(list.id) }
 
-            // Force reload from disk when recovering from error state
-            let mergedDoc: ListDocument
-            if isInErrorState {
-                mergedDoc = try await FileStore.shared.openFile(from: fileSource, forceReload: true)
-            } else {
-                mergedDoc = try await FileStore.shared.syncFile(from: fileSource)
-            }
+            let mergedDoc = try await FileStore.shared.syncFile(from: fileSource)
 
             // Update cache and UI based on source type
             switch list.source {
@@ -516,17 +374,7 @@ class UnifiedListProvider: ObservableObject {
                 var updatedList = allLists[index]
                 updatedList.summary = mergedDoc.list
                 updatedList.summary.id = list.id  // Keep runtime ID
-                updatedList.isCachedSnapshot = false
-
-                // Restore writability — file may have recovered from a previous error
-                if case .external(let url) = list.source {
-                    updatedList.isReadOnly = !FileStore.isFileWritable(at: url)
-                } else {
-                    updatedList.isReadOnly = false
-                }
-
                 allLists[index] = updatedList
-                saveStatus[list.id] = .saved
             }
 
             objectWillChange.send()
