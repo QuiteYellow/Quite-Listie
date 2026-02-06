@@ -145,12 +145,10 @@ struct SettingsView: View {
                     }
                 }
             }
-            .onAppear {
+            .task {
                 // Load iCloud sync state
-                iCloudSyncEnabled = iCloudContainerManager.shared.isICloudSyncEnabled()
-                Task {
-                    await updateStorageLocation()
-                }
+                iCloudSyncEnabled = await iCloudContainerManager.shared.isICloudSyncEnabled()
+                await updateStorageLocation()
             }
         }
     }

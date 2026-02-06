@@ -65,30 +65,6 @@ struct SidebarView: View {
     var body: some View {
         List(selection: $selectedListID) {
 
-            // MARK: - Loading Indicator (only on initial load)
-            if unifiedProvider.isInitialLoad, let loadingFile = unifiedProvider.currentlyLoadingFile {
-                Section {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .frame(width: 30)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Loading \(loadingFile)...")
-                                .foregroundColor(.secondary)
-
-                            if unifiedProvider.loadingProgress.total > 0 {
-                                Text("\(unifiedProvider.loadingProgress.current) of \(unifiedProvider.loadingProgress.total) files")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        Spacer()
-                    }
-                }
-            }
-
             // MARK: - Welcome Section (at the top)
             if !hideWelcomeList {
                 let welcomeList = unifiedProvider.allLists.first(where: { $0.id == "example-welcome-list" })
@@ -172,7 +148,30 @@ struct SidebarView: View {
         .navigationBarTitleDisplayMode(.large)
         //.animation(.none, value: welcomeViewModel.uncheckedCounts)
         //.animation(.none, value: unifiedProvider.allLists)
-        
+        .safeAreaInset(edge: .bottom) {
+            if unifiedProvider.isInitialLoad, let loadingFile = unifiedProvider.currentlyLoadingFile {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+
+                    if unifiedProvider.loadingProgress.total > 0 {
+                        Text("Loading \(loadingFile)... \(unifiedProvider.loadingProgress.current)/\(unifiedProvider.loadingProgress.total)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Loading \(loadingFile)...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(.bar)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: unifiedProvider.isInitialLoad)
+
         .alert("Delete List?", isPresented: $showingDeleteConfirmation, presenting: listToDelete) { list in
             Button("Delete", role: .destructive) {
                 Task {
@@ -197,7 +196,7 @@ struct SidebarView: View {
         }
         .task {
             // Load initial iCloud sync state
-            iCloudSyncEnabled = iCloudContainerManager.shared.isICloudSyncEnabled()
+            iCloudSyncEnabled = await iCloudContainerManager.shared.isICloudSyncEnabled()
             // Also check if iCloud is actually available
             let available = await iCloudContainerManager.shared.checkICloudAvailability()
             iCloudSyncEnabled = available
@@ -326,9 +325,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func unavailableListRow(for list: UnifiedList) -> some View {
-        guard let bookmark = list.unavailableBookmark else { return AnyView(EmptyView()) }
-
-        return AnyView(
+        if let bookmark = list.unavailableBookmark {
             HStack {
                 // Warning icon
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -367,6 +364,6 @@ struct SidebarView: View {
                     }
                 }
             }
-        )
+        }
     }
 }

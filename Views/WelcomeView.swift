@@ -153,6 +153,15 @@ struct WelcomeView: View {
         .sheet(item: $deeplinkCoordinator.markdownImport) { request in
             makeMarkdownImportSheet(request)
         }
+        .sheet(item: $deeplinkCoordinator.pendingImport) { pending in
+            ImportListPickerSheet(
+                pending: pending,
+                lists: unifiedProvider.allLists,
+                onSelect: { listId in
+                    deeplinkCoordinator.completePendingImport(with: listId)
+                }
+            )
+        }
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.listie, .json],
@@ -288,7 +297,7 @@ struct WelcomeView: View {
             unifiedProvider: unifiedProvider
         ) { updatedName, icon, hiddenLabels in  // Updated signature
             Task {
-                let items = try? await unifiedProvider.fetchItems(for: unifiedList)
+                let _ = try? await unifiedProvider.fetchItems(for: unifiedList)
                 try? await unifiedProvider.updateList(
                     unifiedList,
                     name: updatedName,
@@ -466,37 +475,14 @@ struct WelcomeView: View {
     
     private func handleMarkdownImportRequest(_ request: DeeplinkCoordinator.MarkdownImportRequest?) {
         guard let request = request else { return }
-        
-        // Find list by runtime ID or original file ID
+
+        // Find list by runtime ID or original file ID and select it
         let targetList = unifiedProvider.allLists.first { list in
-            if list.id == request.listId {
-                return true
-            }
-            if let originalId = list.originalFileId, originalId == request.listId {
-                return true
-            }
-            return false
+            list.id == request.listId || list.originalFileId == request.listId
         }
-        
+
         if let targetList = targetList {
             selectedListID = targetList.id
-        } else {
-            // Build error message with available IDs
-            var availableIDs: [String] = []
-            for list in unifiedProvider.allLists where !list.isReadOnly {
-                if let originalId = list.originalFileId {
-                    availableIDs.append("• \(list.summary.name): \(originalId)")
-                } else {
-                    availableIDs.append("• \(list.summary.name): \(list.id)")
-                }
-            }
-            
-            deeplinkCoordinator.showErrorAlert("""
-                No list found with ID: \(request.listId)
-                
-                Available lists:
-                \(availableIDs.joined(separator: "\n"))
-                """)
         }
     }
 }

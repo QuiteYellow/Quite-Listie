@@ -49,7 +49,6 @@ class ShoppingListViewModel: ObservableObject {
             // Filter out soft-deleted items
             items = allItems.filter { !($0.isDeleted) }
         } catch {
-        } catch {
             print("Error loading items: \(error)")
         }
         isLoading = false
