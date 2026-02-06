@@ -15,6 +15,7 @@ struct ShoppingListApp: App {
     @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?
     @FocusedBinding(\.exportMarkdown) private var exportMarkdown: Bool?
     @FocusedBinding(\.exportJSON) private var exportJSON: Bool?
+    @FocusedBinding(\.shareLink) private var shareLink: Bool?
     @FocusedValue(\.isReadOnly) private var isReadOnly: Bool?
     
     var body: some Scene {
@@ -61,7 +62,15 @@ struct ShoppingListApp: App {
                     }
                     .keyboardShortcut("E", modifiers: .command)
                     .disabled(exportMarkdown == nil || isReadOnly == true)
-                    
+
+                    Button("Share Link...") {
+                        shareLink = true
+                    }
+                    .keyboardShortcut("L", modifiers: [.command, .shift])
+                    .disabled(shareLink == nil || isReadOnly == true)
+
+                    Divider()
+
                     Button("Listie File...") {
                         exportJSON = true
                     }

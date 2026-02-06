@@ -167,6 +167,112 @@ This welcome list can't be edited — it's here to help you learn!
 **Ready to start?** Tap the **+** button to create your first list.
 """,
             modifiedAt: Date()
+        ),
+        ShoppingItem(
+            id: UUID(),
+            note: "📤 Exporting & Sharing Lists",
+            quantity: 1,
+            checked: false,
+            labelId: nil,
+            markdownNotes: """
+## 📤 Exporting & Sharing
+
+Listie gives you several ways to get your lists out of the app — whether you're sharing with someone, backing up, or building automations.
+
+### Export Options
+
+From any list, tap the **⋯** menu and choose **Export As...**:
+
+| Format | What it does |
+|---|---|
+| **Markdown** | A readable text file (`.md`) you can copy, download, or paste anywhere. Great for Messages, email, or notes apps. |
+| **Share Link** | A `listie://` URL that anyone with Listie can tap to import your items directly. |
+| **Listie File** | A full JSON backup (`.listie`) with all data, labels, and metadata. |
+
+### Share Links
+
+Share Links are the fastest way to send a list to another Listie user.
+
+**How it works:**
+1. Go to **Export As... → Share Link**
+2. Choose your options:
+   - **Compress** — Reduces URL length (recommended)
+   - **Comments** — Include item notes
+   - **Active Only** — Only unchecked items
+3. Copy or share the generated link
+4. The recipient taps the link → Listie opens → items are imported
+
+**Good to know:**
+- Links under 2,000 characters work everywhere
+- Links over 4,000 characters may not work in some messaging apps
+- Compression typically cuts the link length in half
+- If the recipient doesn't have the matching list, they can pick which list to import into
+
+### Keyboard Shortcuts
+
+- `⌘E` — Export as Markdown
+- `⇧⌘L` — Share Link
+- `⇧⌘E` — Export as Listie File
+
+---
+
+### 🔧 For Power Users & Shortcuts
+
+Share Links use a URL scheme you can build manually or with Apple Shortcuts.
+
+**URL format:**
+```
+listie://import?list=LIST_ID&markdown=ENCODED&enc=zlib&preview=true
+```
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `list` | No | The target list ID. If omitted, the user picks a list. |
+| `markdown` | Yes | The list content, encoded (see below). |
+| `enc` | No | Encoding type: `zlib` (compressed) or `b64` (plain Base64). Defaults to `b64` if omitted. |
+| `preview` | No | If `true`, shows the import preview automatically. |
+
+**Encoding the `markdown` parameter:**
+
+*Plain (no compression):*
+1. Write your list as a markdown checklist
+2. Convert to UTF-8 data
+3. Base64 encode it
+4. Set `enc=b64` (or omit `enc`)
+
+*Compressed (smaller URLs):*
+1. Write your list as a markdown checklist
+2. Convert to UTF-8 data
+3. Compress with zlib (deflate)
+4. Base64URL encode the result (use `-` instead of `+`, `_` instead of `/`, strip `=` padding)
+5. Set `enc=zlib`
+
+**Markdown format the app expects:**
+```
+# List Name
+
+## Label Name
+
+- [ ] Item 1
+- [ ] Item 2 x3
+- [x] Completed Item
+  - This is a note/comment on the item above
+```
+
+- Headings (`##`) become labels
+- `- [ ]` is an unchecked item, `- [x]` is checked
+- `x3` at the end sets quantity to 3
+- Indented sub-items become markdown notes
+
+**Apple Shortcuts tips:**
+- Use the **Get Contents of URL** action to open `listie://` links
+- Use **Base64 Encode** to encode your markdown
+- Build the URL with **Combine Text**
+- You can generate lists from Reminders, Notes, or any text source
+""",
+            modifiedAt: Date()
         )
     ]
 }

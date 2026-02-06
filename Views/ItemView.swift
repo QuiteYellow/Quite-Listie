@@ -393,7 +393,7 @@ struct MarkdownEditorView: View {
                         let totalHeight = geometry.size.height
                         let safeAreaTop = geometry.safeAreaInsets.top
                         let navigationBarHeight: CGFloat = 44
-                        let usableHeight = totalHeight - safeAreaTop - navigationBarHeight
+                        let _ = totalHeight - safeAreaTop - navigationBarHeight
                         
                         HStack(spacing: 0) {
                             VStack(alignment: .leading, spacing: 8) {
@@ -540,7 +540,7 @@ struct CustomTextEditor: UIViewRepresentable {
         }
         
         // Add flexible space to push items together nicely
-        let flexSpace = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+        let _ = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
         
         // Intersperse buttons with small fixed spaces
         var finalItems: [UIBarButtonItem] = []

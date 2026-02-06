@@ -29,6 +29,10 @@ struct ExportJSONKey: FocusedValueKey {
     typealias Value = Binding<Bool>
 }
 
+struct ShareLinkKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 struct IsReadOnlyKey: FocusedValueKey {
     typealias Value = Bool
 }
@@ -57,6 +61,11 @@ extension FocusedValues {
     var exportJSON: Binding<Bool>? {
         get { self[ExportJSONKey.self] }
         set { self[ExportJSONKey.self] = newValue }
+    }
+
+    var shareLink: Binding<Bool>? {
+        get { self[ShareLinkKey.self] }
+        set { self[ShareLinkKey.self] = newValue }
     }
     
     var isReadOnly: Bool? {

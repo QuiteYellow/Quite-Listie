@@ -124,11 +124,13 @@ struct ShoppingListView: View {
     
     @State private var showingMarkdownImport = false
     @State private var markdownToExport: MarkdownExport? = nil
+    @State private var shareLinkExport: MarkdownExport? = nil
     @State private var exportMarkdownText = ""
     
     // Export triggers for menu commands
     @State private var triggerMarkdownExport = false
     @State private var triggerJSONExport = false
+    @State private var triggerShareLink = false
     
     @State private var showContent = false
     @State private var isPerformingBulkAction = false
@@ -615,7 +617,20 @@ struct ShoppingListView: View {
                             Label("Markdown", systemImage: "doc.text")
                         }
                         .disabled(unifiedList.isReadOnly)
-                        
+
+                        Button {
+                            shareLinkExport = MarkdownExport(
+                                listName: list.name,
+                                listId: unifiedList.originalFileId ?? unifiedList.id,
+                                items: viewModel.items,
+                                labels: viewModel.labels,
+                                activeOnly: true
+                            )
+                        } label: {
+                            Label("Share Link", systemImage: "link")
+                        }
+                        .disabled(unifiedList.isReadOnly)
+
                         Divider()
                         
                         Button {
@@ -701,6 +716,14 @@ struct ShoppingListView: View {
                 activeOnly: export.activeOnly
             )
         }
+        .sheet(item: $shareLinkExport) { export in
+            ShareLinkSheet(
+                listName: export.listName,
+                listId: export.listId,
+                items: export.items,
+                labels: export.labels
+            )
+        }
         .alert("Delete Item?", isPresented: Binding(
             get: { itemToDelete != nil },
             set: { if !$0 { itemToDelete = nil } }
@@ -735,6 +758,7 @@ struct ShoppingListView: View {
         }
         .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
         .focusedSceneValue(\.exportJSON, $triggerJSONExport)
+        .focusedSceneValue(\.shareLink, $triggerShareLink)
         .focusedSceneValue(\.isReadOnly, unifiedList.isReadOnly)
         .onChange(of: triggerMarkdownExport) { oldValue, newValue in
             if newValue {
@@ -754,6 +778,18 @@ struct ShoppingListView: View {
                 // Trigger JSON export
                 onExportJSON?()
                 triggerJSONExport = false
+            }
+        }
+        .onChange(of: triggerShareLink) { oldValue, newValue in
+            if newValue {
+                shareLinkExport = MarkdownExport(
+                    listName: list.name,
+                    listId: unifiedList.originalFileId ?? unifiedList.id,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    activeOnly: true
+                )
+                triggerShareLink = false
             }
         }
         .onChange(of: searchText) { _, newValue in
