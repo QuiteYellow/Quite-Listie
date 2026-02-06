@@ -32,7 +32,7 @@ struct MarkdownExportView: View {
     @State private var showActiveOnly = true  // Toggle for active items only
     
     // Generate markdown from items and labels
-    private var markdownText: String {
+    private var exportResult: ExportResult {
         MarkdownListGenerator.generate(
             listName: listName,
             items: items,
@@ -41,6 +41,9 @@ struct MarkdownExportView: View {
             includeNotes: includeNotes
         )
     }
+
+    private var markdownText: String { exportResult.markdown }
+    private var exportWarnings: [String] { exportResult.warnings }
     
     var body: some View {
         NavigationView {
@@ -114,15 +117,48 @@ struct MarkdownExportView: View {
                 }
                 
                 Divider()
-                
+
+                // Export warnings banner
+                if !exportWarnings.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(.orange)
+                            Text("\(exportWarnings.count) item(s) had notes that couldn't be exported")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.orange)
+                            Spacer()
+                        }
+                        ForEach(exportWarnings, id: \.self) { warning in
+                            Text(warning)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color(.secondarySystemGroupedBackground))
+
+                    Divider()
+                }
+
                 // Info banner
-                HStack {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.secondary)
-                    Text("Copy and export operations will use raw markdown")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.secondary)
+                        Text("Copy and export operations will use raw markdown")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    if includeNotes {
+                        Text("Notes are converted to sublist items for proper markdown rendering")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 24)
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)

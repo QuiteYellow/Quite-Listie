@@ -161,17 +161,28 @@ enum MarkdownListParser {
             return (indent, text, true)
         }
         
-        // Match bullet list: - text or * text
+        // Match bullet list: - text, * text, or + text
         if trimmed.hasPrefix("- ") {
             let text = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
             return (indent, text, false)
         }
-        
+
         if trimmed.hasPrefix("* ") {
             let text = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
             return (indent, text, false)
         }
-        
+
+        if trimmed.hasPrefix("+ ") {
+            let text = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            return (indent, text, false)
+        }
+
+        // Match numbered list: 1. text, 2. text, etc.
+        if let range = trimmed.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
+            let text = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            return (indent, text, false)
+        }
+
         return nil
     }
     
