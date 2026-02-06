@@ -129,12 +129,27 @@ struct SettingsView: View {
                     Text("Displays all labels even when they have no items, making it easy to add items to any category.")
                 }
                 
-                // Future settings sections can go here
-                // Section {
-                //     ...
-                // } header: {
-                //     Text("Display")
-                // }
+                // MARK: - Third-Party Libraries
+                Section {
+                    DisclosureGroup("Open Source Libraries") {
+                        libraryRow(
+                            name: "MarkdownView",
+                            description: "Markdown rendering for SwiftUI",
+                            url: "https://github.com/LiYanan2004/MarkdownView",
+                            license: "MIT"
+                        )
+                        libraryRow(
+                            name: "SymbolPicker",
+                            description: "SF Symbols picker for SwiftUI",
+                            url: "https://github.com/xnth97/SymbolPicker",
+                            license: "MIT"
+                        )
+                    }
+                } header: {
+                    Label("Acknowledgements", systemImage: "heart")
+                } footer: {
+                    Text("Listie is built with these open source libraries. Thank you to their authors.")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -155,6 +170,32 @@ struct SettingsView: View {
 
     private func updateStorageLocation() async {
         storageLocation = await iCloudContainerManager.shared.getStorageLocationDescription()
+    }
+
+    @ViewBuilder
+    private func libraryRow(name: String, description: String, url: String, license: String) -> some View {
+        if let link = URL(string: url) {
+            Link(destination: link) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(name)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text(license)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(.tertiarySystemFill))
+                            .clipShape(Capsule())
+                    }
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 2)
+            }
+        }
     }
 }
 
