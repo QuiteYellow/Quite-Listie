@@ -188,13 +188,14 @@ struct ShareLinkSheet: View {
             return "Error: List ID not available."
         }
 
-        let markdown = MarkdownListGenerator.generate(
+        let result = MarkdownListGenerator.generate(
             listName: listName,
             items: filteredItems,
             labels: labels,
             activeOnly: includeActiveOnly,
             includeNotes: includeComments
         )
+        let markdown = result.markdown
 
         let encodedMarkdown: String
         let encParam: String
