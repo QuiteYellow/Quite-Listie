@@ -356,10 +356,7 @@ actor FileStore {
         try await saveBookmark(for: url)
         
         print("✅ Opened external file: \(document.list.name) (V\(document.version))")
-
-        // Update Tier 2 disk cache snapshot with fresh Tier 3 data
-        Task { await DiskCacheManager.shared.saveSnapshot(document, for: .externalFile(url)) }
-
+        
         // After loading, store the file's modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
            let modDate = attributes[.modificationDate] as? Date {
@@ -479,9 +476,6 @@ actor FileStore {
         try await saveBookmark(for: url)
         
         print("✅ Saved external file: \(document.list.name) (V2)")
-
-        // Update Tier 2 disk cache snapshot
-        Task { await DiskCacheManager.shared.saveSnapshot(document, for: .externalFile(url)) }
     }
     
     static func isFileWritable(at url: URL) -> Bool {
@@ -531,11 +525,8 @@ actor FileStore {
     func closeFile(at url: URL) {
         openedFiles.removeValue(forKey: url.path)
         fileModificationDates.removeValue(forKey: url.path)
-        cacheTimestamps.removeValue(forKey: url.path)
-
-        // Clean up Tier 2 disk cache snapshot
-        Task { await DiskCacheManager.shared.removeSnapshot(for: .externalFile(url)) }
-
+        cacheTimestamps.removeValue(forKey: url.path) 
+        
         // Remove the bookmark so file won't reappear on next launch
         var bookmarks = loadBookmarks()
         var keysToRemove: [String] = []
@@ -814,12 +805,8 @@ actor FileStore {
     func clearBookmarks() {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
         openedFiles.removeAll()
-        cacheTimestamps.removeAll()
         fileModificationDates.removeAll()
         unavailableBookmarks.removeAll()
-
-        // Also clear all Tier 2 disk cache snapshots
-        Task { await DiskCacheManager.shared.clearAllSnapshots() }
     }
 
     /// Clears the in-memory cache for private lists (used after storage location migration)
@@ -839,9 +826,6 @@ actor FileStore {
         }
 
         print("🧹 [Cache] Cleared \(keysToRemove.count) private list cache entries")
-
-        // Also clear Tier 2 disk cache for private lists
-        Task { await DiskCacheManager.shared.clearPrivateListSnapshots() }
     }
 
     /// Returns all bookmarks that are currently unavailable
@@ -867,12 +851,6 @@ actor FileStore {
         return "listie"  // Use .listie for new files
     }
     
-    /// Attempts to load a document from the Tier 2 disk cache (snapshot).
-    /// Returns nil if no snapshot exists. The returned document is a read-only snapshot.
-    func loadFromDiskCache(for source: FileSource) async -> ListDocument? {
-        return await DiskCacheManager.shared.loadSnapshot(for: source)
-    }
-
     func updateCache(_ document: ListDocument, at url: URL) async {
         openedFiles[url.path] = (url, document)
         
@@ -1039,9 +1017,6 @@ actor FileStore {
         fileModificationDates.removeValue(forKey: url.path)
         cacheTimestamps.removeValue(forKey: url.path)
 
-        // Clean up Tier 2 disk cache snapshot
-        Task { await DiskCacheManager.shared.removeSnapshot(for: .privateList(listId)) }
-
         // Delete the file using NSFileCoordinator for proper iCloud sync
         guard FileManager.default.fileExists(atPath: url.path) else {
             print("⚠️ [Private] File already deleted: \(listId)")
@@ -1111,11 +1086,6 @@ actor FileStore {
         }
 
         print("✅ [Private] Opened: \(document.list.name)")
-
-        // Update Tier 2 disk cache snapshot with fresh Tier 3 data
-        let listId = url.deletingPathExtension().lastPathComponent
-        Task { await DiskCacheManager.shared.saveSnapshot(document, for: .privateList(listId)) }
-
         return document
     }
 
@@ -1176,10 +1146,6 @@ actor FileStore {
         }
 
         print("✅ [Private] Saved: \(document.list.name)")
-
-        // Update Tier 2 disk cache snapshot
-        let listId = url.deletingPathExtension().lastPathComponent
-        Task { await DiskCacheManager.shared.saveSnapshot(document, for: .privateList(listId)) }
     }
 
     /// Syncs a private file by merging cached changes with disk changes
