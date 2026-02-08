@@ -124,6 +124,45 @@ enum ReminderManager {
         }
     }
 
+    // MARK: - Repeating Reminders
+
+    /// Calculates the next reminder date based on the repeat interval and mode.
+    /// - `fixed` mode: advances from the original reminder date by one interval
+    /// - `afterComplete` mode: advances from now by one interval
+    static func nextReminderDate(
+        from currentDate: Date?,
+        interval: ReminderRepeatInterval,
+        mode: ReminderRepeatMode
+    ) -> Date? {
+        guard interval != .none else { return nil }
+
+        let baseDate: Date
+        switch mode {
+        case .fixed:
+            // Advance from the original reminder date (or now if nil)
+            baseDate = currentDate ?? Date()
+        case .afterComplete:
+            // Always advance from now
+            baseDate = Date()
+        }
+
+        let calendar = Calendar.current
+        switch interval {
+        case .none:
+            return nil
+        case .daily:
+            return calendar.date(byAdding: .day, value: 1, to: baseDate)
+        case .weekly:
+            return calendar.date(byAdding: .weekOfYear, value: 1, to: baseDate)
+        case .biweekly:
+            return calendar.date(byAdding: .weekOfYear, value: 2, to: baseDate)
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: baseDate)
+        case .yearly:
+            return calendar.date(byAdding: .year, value: 1, to: baseDate)
+        }
+    }
+
     // MARK: - Helpers
 
     /// Consistent notification identifier for an item.

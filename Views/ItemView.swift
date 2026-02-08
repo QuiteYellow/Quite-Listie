@@ -18,6 +18,8 @@ struct ItemFormView: View {
     @Binding var showMarkdownEditor: Bool
     @Binding var reminderEnabled: Bool
     @Binding var reminderDate: Date
+    @Binding var repeatInterval: ReminderRepeatInterval
+    @Binding var repeatMode: ReminderRepeatMode
 
     let availableLabels: [ShoppingLabel]
     let isLoading: Bool
@@ -160,6 +162,20 @@ struct ItemFormView: View {
                     in: Date()...,
                     displayedComponents: [.date, .hourAndMinute]
                 )
+
+                Picker("Repeat", selection: $repeatInterval) {
+                    ForEach(ReminderRepeatInterval.allCases, id: \.self) { interval in
+                        Text(interval.displayName).tag(interval)
+                    }
+                }
+
+                if repeatInterval != .none {
+                    Picker("Mode", selection: $repeatMode) {
+                        ForEach(ReminderRepeatMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                }
             }
         }
     }
@@ -199,6 +215,8 @@ struct AddItemView: View {
     @State private var showMarkdownEditor = false
     @State private var reminderEnabled = false
     @State private var reminderDate = Date().addingTimeInterval(3600) // Default: 1 hour from now
+    @State private var repeatInterval: ReminderRepeatInterval = .none
+    @State private var repeatMode: ReminderRepeatMode = .fixed
 
     var body: some View {
         NavigationView {
@@ -211,6 +229,8 @@ struct AddItemView: View {
                 showMarkdownEditor: $showMarkdownEditor,
                 reminderEnabled: $reminderEnabled,
                 reminderDate: $reminderDate,
+                repeatInterval: $repeatInterval,
+                repeatMode: $repeatMode,
                 availableLabels: availableLabels,
                 isLoading: isLoading
             )
@@ -226,7 +246,9 @@ struct AddItemView: View {
                                 quantity: Double(quantity),
                                 checked: checked,
                                 markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
-                                reminderDate: reminderEnabled ? reminderDate : nil
+                                reminderDate: reminderEnabled ? reminderDate : nil,
+                                reminderRepeatInterval: reminderEnabled && repeatInterval != .none ? repeatInterval : nil,
+                                reminderRepeatMode: reminderEnabled && repeatInterval != .none ? repeatMode : nil
                             )
                             if success {
                                 dismiss()
@@ -294,6 +316,8 @@ struct EditItemView: View {
     @State private var showMarkdownEditor = false
     @State private var reminderEnabled = false
     @State private var reminderDate = Date().addingTimeInterval(3600)
+    @State private var repeatInterval: ReminderRepeatInterval = .none
+    @State private var repeatMode: ReminderRepeatMode = .fixed
 
     var body: some View {
         NavigationView {
@@ -306,6 +330,8 @@ struct EditItemView: View {
                 showMarkdownEditor: $showMarkdownEditor,
                 reminderEnabled: $reminderEnabled,
                 reminderDate: $reminderDate,
+                repeatInterval: $repeatInterval,
+                repeatMode: $repeatMode,
                 availableLabels: availableLabels,
                 isLoading: isLoading
             )
@@ -331,7 +357,9 @@ struct EditItemView: View {
                                     quantity: Double(quantity),
                                     checked: checked,
                                     markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
-                                    reminderDate: reminderEnabled ? reminderDate : nil
+                                    reminderDate: reminderEnabled ? reminderDate : nil,
+                                    reminderRepeatInterval: reminderEnabled && repeatInterval != .none ? repeatInterval : nil,
+                                    reminderRepeatMode: reminderEnabled && repeatInterval != .none ? repeatMode : nil
                                 )
                                 if success {
                                     dismiss()
@@ -404,6 +432,8 @@ struct EditItemView: View {
                 reminderEnabled = true
                 reminderDate = date
             }
+            repeatInterval = item.reminderRepeatInterval ?? .none
+            repeatMode = item.reminderRepeatMode ?? .fixed
         }
     }
 }

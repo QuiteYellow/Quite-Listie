@@ -111,7 +111,7 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatInterval: ReminderRepeatInterval? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         let newItem = ModelHelpers.createNewItem(
             note: note,
@@ -119,7 +119,9 @@ class ShoppingListViewModel: ObservableObject {
             checked: checked,
             labelId: label?.id,  // Reference by ID, not embedded object
             markdownNotes: markdownNotes,
-            reminderDate: reminderDate
+            reminderDate: reminderDate,
+            reminderRepeatInterval: reminderRepeatInterval,
+            reminderRepeatMode: reminderRepeatMode
         )
 
         do {
@@ -173,10 +175,23 @@ class ShoppingListViewModel: ObservableObject {
         updated.checked.toggle()
         updated.modifiedAt = Date()  // Update timestamp
 
-        // Cancel reminder when checking off an item
+        // Handle reminder when checking off an item
         if updated.checked && updated.reminderDate != nil {
-            updated.reminderDate = nil
-            ReminderManager.cancelReminder(for: item)
+            let repeatInterval = updated.reminderRepeatInterval ?? .none
+            let repeatMode = updated.reminderRepeatMode ?? .fixed
+
+            if repeatInterval != .none,
+               let nextDate = ReminderManager.nextReminderDate(from: updated.reminderDate, interval: repeatInterval, mode: repeatMode) {
+                // Repeating reminder: uncheck, set next date, reschedule
+                updated.checked = false
+                updated.reminderDate = nextDate
+                ReminderManager.cancelReminder(for: item)
+                ReminderManager.scheduleReminder(for: updated, listName: list.summary.name, listId: list.id)
+            } else {
+                // One-off reminder: clear it
+                updated.reminderDate = nil
+                ReminderManager.cancelReminder(for: item)
+            }
         }
 
         do {
@@ -201,10 +216,23 @@ class ShoppingListViewModel: ObservableObject {
                 item.checked = completed
                 item.modifiedAt = Date()
 
-                // Cancel reminders when checking off items
+                // Handle reminders when checking off items
                 if completed && item.reminderDate != nil {
-                    ReminderManager.cancelReminder(for: item)
-                    item.reminderDate = nil
+                    let repeatInterval = item.reminderRepeatInterval ?? .none
+                    let repeatMode = item.reminderRepeatMode ?? .fixed
+
+                    if repeatInterval != .none,
+                       let nextDate = ReminderManager.nextReminderDate(from: item.reminderDate, interval: repeatInterval, mode: repeatMode) {
+                        // Repeating: uncheck, advance to next date
+                        item.checked = false
+                        item.reminderDate = nextDate
+                        ReminderManager.cancelReminder(for: item)
+                        ReminderManager.scheduleReminder(for: item, listName: list.summary.name, listId: list.id)
+                    } else {
+                        // One-off: clear reminder
+                        ReminderManager.cancelReminder(for: item)
+                        item.reminderDate = nil
+                    }
                 }
 
                 do {
@@ -239,7 +267,7 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil) async -> Bool {
+    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatInterval: ReminderRepeatInterval? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
@@ -247,6 +275,8 @@ class ShoppingListViewModel: ObservableObject {
         updatedItem.checked = checked
         updatedItem.markdownNotes = markdownNotes  // Direct field
         updatedItem.reminderDate = reminderDate
+        updatedItem.reminderRepeatInterval = reminderRepeatInterval
+        updatedItem.reminderRepeatMode = reminderRepeatMode
         updatedItem.modifiedAt = Date()  // Update timestamp
 
         do {
