@@ -111,18 +111,27 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         let newItem = ModelHelpers.createNewItem(
             note: note,
             quantity: quantity ?? 1,
             checked: checked,
             labelId: label?.id,  // Reference by ID, not embedded object
-            markdownNotes: markdownNotes
+            markdownNotes: markdownNotes,
+            reminderDate: reminderDate
         )
 
         do {
             try await provider.addItem(newItem, to: list)
+
+            // Schedule reminder if set
+            if reminderDate != nil {
+                if await ReminderManager.requestPermission() {
+                    ReminderManager.scheduleReminder(for: newItem, listName: list.summary.name, listId: list.id)
+                }
+            }
+
             await loadItems()
             return true
         } catch {
@@ -163,7 +172,13 @@ class ShoppingListViewModel: ObservableObject {
         var updated = item
         updated.checked.toggle()
         updated.modifiedAt = Date()  // Update timestamp
-        
+
+        // Cancel reminder when checking off an item
+        if updated.checked && updated.reminderDate != nil {
+            updated.reminderDate = nil
+            ReminderManager.cancelReminder(for: item)
+        }
+
         do {
             try await provider.updateItem(updated, in: list)
 
@@ -185,7 +200,13 @@ class ShoppingListViewModel: ObservableObject {
             if item.checked != completed {
                 item.checked = completed
                 item.modifiedAt = Date()
-                
+
+                // Cancel reminders when checking off items
+                if completed && item.reminderDate != nil {
+                    ReminderManager.cancelReminder(for: item)
+                    item.reminderDate = nil
+                }
+
                 do {
                     try await provider.updateItem(item, in: list)
                 } catch {
@@ -218,13 +239,14 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?) async -> Bool {
+    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
         updatedItem.quantity = quantity ?? 1
         updatedItem.checked = checked
         updatedItem.markdownNotes = markdownNotes  // Direct field
+        updatedItem.reminderDate = reminderDate
         updatedItem.modifiedAt = Date()  // Update timestamp
 
         do {
@@ -232,6 +254,16 @@ class ShoppingListViewModel: ObservableObject {
 
             if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
                 items[index] = updatedItem
+            }
+
+            // Handle reminder scheduling/cancellation
+            if let date = reminderDate, date > Date() {
+                if await ReminderManager.requestPermission() {
+                    ReminderManager.scheduleReminder(for: updatedItem, listName: list.summary.name, listId: list.id)
+                }
+            } else {
+                // Reminder removed or in the past — cancel
+                ReminderManager.cancelReminder(for: updatedItem)
             }
 
             return true

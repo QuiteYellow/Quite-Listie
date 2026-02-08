@@ -105,17 +105,18 @@ struct ShoppingItem: Identifiable, Codable {
     var isDeleted: Bool  // Soft delete flag
     
     // Optional fields
-    var markdownNotes: String? 
+    var markdownNotes: String?
     var deletedAt: Date?  // tracks when item was deleted
-    
-    
+    var reminderDate: Date?  // when to send a reminder notification
+
+
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate
         }
-        
+
     init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
              labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(),
-             isDeleted: Bool = false, deletedAt: Date? = nil) {
+             isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil) {
             self.id = id
             self.note = note
             self.quantity = quantity
@@ -125,6 +126,7 @@ struct ShoppingItem: Identifiable, Codable {
             self.modifiedAt = modifiedAt
             self.isDeleted = isDeleted
             self.deletedAt = deletedAt
+            self.reminderDate = reminderDate
         }
     }
 
