@@ -42,7 +42,9 @@ enum ModelHelpers {
         labelId: String? = nil,
         markdownNotes: String? = nil,
         isDeleted: Bool = false,
-        reminderDate: Date? = nil
+        reminderDate: Date? = nil,
+        reminderRepeatInterval: ReminderRepeatInterval? = nil,
+        reminderRepeatMode: ReminderRepeatMode? = nil
     ) -> ShoppingItem {
         return ShoppingItem(
             id: UUID(),
@@ -53,7 +55,9 @@ enum ModelHelpers {
             markdownNotes: markdownNotes,
             modifiedAt: Date(),
             isDeleted: isDeleted,
-            reminderDate: reminderDate
+            reminderDate: reminderDate,
+            reminderRepeatInterval: reminderRepeatInterval,
+            reminderRepeatMode: reminderRepeatMode
         )
     }
     

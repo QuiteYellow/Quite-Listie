@@ -94,6 +94,47 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Reminder Repeat Support
+
+enum ReminderRepeatInterval: String, Codable, CaseIterable {
+    case none
+    case daily
+    case weekly
+    case biweekly
+    case monthly
+    case yearly
+
+    var displayName: String {
+        switch self {
+        case .none: return "Never"
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .biweekly: return "Every 2 Weeks"
+        case .monthly: return "Monthly"
+        case .yearly: return "Yearly"
+        }
+    }
+}
+
+enum ReminderRepeatMode: String, Codable, CaseIterable {
+    case fixed         // Same day/time regardless of completion
+    case afterComplete // X interval after item is checked off
+
+    var displayName: String {
+        switch self {
+        case .fixed: return "Fixed Schedule"
+        case .afterComplete: return "After Completion"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .fixed: return "Repeats on the same day & time"
+        case .afterComplete: return "Repeats after item is completed"
+        }
+    }
+}
+
 // MARK: - Shopping Item
 struct ShoppingItem: Identifiable, Codable {
     var id: UUID  // Keep UUID for conflict resolution
@@ -103,20 +144,23 @@ struct ShoppingItem: Identifiable, Codable {
     var labelId: String?  // Reference to label by ID only
     var modifiedAt: Date
     var isDeleted: Bool  // Soft delete flag
-    
+
     // Optional fields
     var markdownNotes: String?
     var deletedAt: Date?  // tracks when item was deleted
     var reminderDate: Date?  // when to send a reminder notification
+    var reminderRepeatInterval: ReminderRepeatInterval?  // repeat frequency
+    var reminderRepeatMode: ReminderRepeatMode?  // fixed or after-completion
 
 
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatInterval, reminderRepeatMode
         }
 
     init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
              labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(),
-             isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil) {
+             isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil,
+             reminderRepeatInterval: ReminderRepeatInterval? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) {
             self.id = id
             self.note = note
             self.quantity = quantity
@@ -127,6 +171,8 @@ struct ShoppingItem: Identifiable, Codable {
             self.isDeleted = isDeleted
             self.deletedAt = deletedAt
             self.reminderDate = reminderDate
+            self.reminderRepeatInterval = reminderRepeatInterval
+            self.reminderRepeatMode = reminderRepeatMode
         }
     }
 

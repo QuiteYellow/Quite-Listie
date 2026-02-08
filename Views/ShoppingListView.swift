@@ -84,7 +84,10 @@ struct ItemRowView: View {
 
             // Reminder chip (right-aligned, before checkbox)
             if let reminderDate = item.reminderDate, !item.checked {
-                ReminderChipView(reminderDate: reminderDate)
+                ReminderChipView(
+                    reminderDate: reminderDate,
+                    isRepeating: item.reminderRepeatInterval != nil && item.reminderRepeatInterval != .none
+                )
             }
 
             // Checkbox tap area
@@ -109,6 +112,7 @@ struct ItemRowView: View {
 
 struct ReminderChipView: View {
     let reminderDate: Date
+    var isRepeating: Bool = false
 
     private var reminderStatus: ReminderStatus {
         let now = Date()
@@ -132,6 +136,10 @@ struct ReminderChipView: View {
                 .font(.caption2)
             Text(reminderStatus.label)
                 .font(.caption2)
+            if isRepeating {
+                Image(systemName: "arrow.trianglehead.2.clockwise")
+                    .font(.system(size: 8, weight: .bold))
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
