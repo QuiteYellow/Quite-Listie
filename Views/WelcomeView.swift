@@ -33,7 +33,7 @@ struct WelcomeView: View {
     @AppStorage("hideWelcomeList") private var hideWelcomeList = false
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
-
+    
     
     private var searchPrompt: String {selectedListID != nil ? "Search items" : "Select a list to search"}
     
@@ -217,7 +217,12 @@ struct WelcomeView: View {
         .focusedSceneValue(\.newConnectedExporter, $showNewConnectedExporter)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Task {
-                await unifiedProvider.syncAllExternalLists()
+                await syncAndReconcileReminders()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reminderTapped)) { notification in
+            if let listId = notification.userInfo?["listId"] as? String {
+                selectedListID = listId
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
@@ -332,6 +337,23 @@ struct WelcomeView: View {
         await unifiedProvider.loadAllLists()
         await welcomeViewModel.loadLists()
         await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+    }
+
+    private func syncAndReconcileReminders() async {
+        await unifiedProvider.syncAllExternalLists()
+
+        for list in unifiedProvider.allLists where !list.isReadOnly {
+            do {
+                let items = try await unifiedProvider.fetchItems(for: list)
+                await ReminderManager.reconcile(
+                    items: items,
+                    listName: list.summary.name,
+                    listId: list.id
+                )
+            } catch {
+                print("Failed to reconcile reminders for \(list.summary.name): \(error)")
+            }
+        }
     }
     
     @MainActor

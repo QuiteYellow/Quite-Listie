@@ -16,7 +16,9 @@ struct ItemFormView: View {
     @Binding var checked: Bool
     @Binding var mdNotes: String
     @Binding var showMarkdownEditor: Bool
-    
+    @Binding var reminderEnabled: Bool
+    @Binding var reminderDate: Date
+
     let availableLabels: [ShoppingLabel]
     let isLoading: Bool
     
@@ -142,6 +144,23 @@ struct ItemFormView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
             }
+
+            HStack {
+                Label("Reminder", systemImage: "bell")
+                Spacer()
+                Toggle("", isOn: $reminderEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+
+            if reminderEnabled {
+                DatePicker(
+                    "Date & Time",
+                    selection: $reminderDate,
+                    in: Date()...,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+            }
         }
     }
     
@@ -178,6 +197,8 @@ struct AddItemView: View {
     @State private var showError = false
     @State private var mdNotes = ""
     @State private var showMarkdownEditor = false
+    @State private var reminderEnabled = false
+    @State private var reminderDate = Date().addingTimeInterval(3600) // Default: 1 hour from now
 
     var body: some View {
         NavigationView {
@@ -188,6 +209,8 @@ struct AddItemView: View {
                 checked: $checked,
                 mdNotes: $mdNotes,
                 showMarkdownEditor: $showMarkdownEditor,
+                reminderEnabled: $reminderEnabled,
+                reminderDate: $reminderDate,
                 availableLabels: availableLabels,
                 isLoading: isLoading
             )
@@ -202,7 +225,8 @@ struct AddItemView: View {
                                 label: selectedLabel,
                                 quantity: Double(quantity),
                                 checked: checked,
-                                markdownNotes: mdNotes.isEmpty ? nil : mdNotes
+                                markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
+                                reminderDate: reminderEnabled ? reminderDate : nil
                             )
                             if success {
                                 dismiss()
@@ -268,6 +292,8 @@ struct EditItemView: View {
     @State private var showDeleteConfirmation = false
     @State private var showError = false
     @State private var showMarkdownEditor = false
+    @State private var reminderEnabled = false
+    @State private var reminderDate = Date().addingTimeInterval(3600)
 
     var body: some View {
         NavigationView {
@@ -278,6 +304,8 @@ struct EditItemView: View {
                 checked: $checked,
                 mdNotes: $mdNotes,
                 showMarkdownEditor: $showMarkdownEditor,
+                reminderEnabled: $reminderEnabled,
+                reminderDate: $reminderDate,
                 availableLabels: availableLabels,
                 isLoading: isLoading
             )
@@ -293,7 +321,7 @@ struct EditItemView: View {
                         }
                         .labelStyle(.iconOnly)
                         .tint(.red)
-                        
+
                         Button(role : .close) {
                             Task {
                                 let success = await viewModel.updateItem(
@@ -302,7 +330,8 @@ struct EditItemView: View {
                                     labelId: selectedLabel?.id,
                                     quantity: Double(quantity),
                                     checked: checked,
-                                    markdownNotes: mdNotes.isEmpty ? nil : mdNotes
+                                    markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
+                                    reminderDate: reminderEnabled ? reminderDate : nil
                                 )
                                 if success {
                                     dismiss()
@@ -371,6 +400,10 @@ struct EditItemView: View {
             quantity = Int(item.quantity)
             mdNotes = item.markdownNotes ?? ""
             checked = item.checked
+            if let date = item.reminderDate {
+                reminderEnabled = true
+                reminderDate = date
+            }
         }
     }
 }

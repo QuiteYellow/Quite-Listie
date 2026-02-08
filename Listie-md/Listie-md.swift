@@ -6,10 +6,56 @@
 //
 
 import SwiftUI
+import UserNotifications
 
+
+// MARK: - App Delegate for Notification Handling
+
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    /// Called when a notification is tapped — post a notification so the UI can navigate
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let listId = userInfo["listId"] as? String,
+           let itemId = userInfo["itemId"] as? String {
+            NotificationCenter.default.post(
+                name: .reminderTapped,
+                object: nil,
+                userInfo: ["listId": listId, "itemId": itemId]
+            )
+        }
+        completionHandler()
+    }
+
+    /// Show notifications even when the app is in the foreground
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
+
+extension Notification.Name {
+    static let reminderTapped = Notification.Name("reminderTapped")
+}
 
 @main
 struct ShoppingListApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedBinding(\.newListSheet) private var newListSheet: Bool?
     @FocusedBinding(\.fileImporter) private var fileImporter: Bool?
     @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?

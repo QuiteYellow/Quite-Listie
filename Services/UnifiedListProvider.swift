@@ -377,6 +377,13 @@ class UnifiedListProvider: ObservableObject {
                 allLists[index] = updatedList
             }
 
+            // Reconcile reminders after sync — cancel stale, schedule missing
+            await ReminderManager.reconcile(
+                items: mergedDoc.items,
+                listName: list.summary.name,
+                listId: list.id
+            )
+
             objectWillChange.send()
         }
     }
@@ -411,11 +418,17 @@ class UnifiedListProvider: ObservableObject {
     }
     
     func deleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
+        // Cancel any pending reminder for this item
+        if item.reminderDate != nil {
+            ReminderManager.cancelReminder(for: item)
+        }
+
         var document = try await FileStore.shared.openFile(from: list.source.asFileSource)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index].isDeleted = true
             document.items[index].deletedAt = Date()
             document.items[index].modifiedAt = Date()
+            document.items[index].reminderDate = nil
 
             switch list.source {
             case .privateICloud(let listId):

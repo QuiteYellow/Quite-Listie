@@ -56,7 +56,7 @@ struct ItemRowView: View {
     let onIncrement: (() -> Void)?
     let onDecrement: (() -> Void)?
     let isReadOnly: Bool
-    
+
     var body: some View {
         HStack(spacing: 12) {
             if item.quantity > 1 {
@@ -70,7 +70,7 @@ struct ItemRowView: View {
                     )
                     .frame(minWidth: 12, alignment: .leading)
             }
-            
+
             // tap gesture for note text
             Text(item.note)
                 .font(.subheadline)
@@ -79,9 +79,14 @@ struct ItemRowView: View {
                 .onTapGesture {
                     onTextTap()
                 }
-            
+
             Spacer()
-            
+
+            // Reminder chip (right-aligned, before checkbox)
+            if let reminderDate = item.reminderDate, !item.checked {
+                ReminderChipView(reminderDate: reminderDate)
+            }
+
             // Checkbox tap area
             if !isReadOnly {
                 Button(action: {
@@ -97,6 +102,79 @@ struct ItemRowView: View {
         .padding(.vertical, 0)
         .padding(.horizontal, 0)
         .background(.clear)
+    }
+}
+
+// MARK: - Reminder Chip
+
+struct ReminderChipView: View {
+    let reminderDate: Date
+
+    private var reminderStatus: ReminderStatus {
+        let now = Date()
+        let calendar = Calendar.current
+
+        if reminderDate < now {
+            return .overdue
+        } else if calendar.isDateInToday(reminderDate) {
+            return .today(reminderDate)
+        } else if calendar.isDateInTomorrow(reminderDate) {
+            return .tomorrow(reminderDate)
+        } else {
+            let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: reminderDate)).day ?? 0
+            return .upcoming(days)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: reminderStatus.icon)
+                .font(.caption2)
+            Text(reminderStatus.label)
+                .font(.caption2)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(reminderStatus.color.opacity(0.15))
+        .foregroundColor(reminderStatus.color)
+        .clipShape(Capsule())
+    }
+}
+
+private enum ReminderStatus {
+    case overdue
+    case today(Date)
+    case tomorrow(Date)
+    case upcoming(Int)
+
+    var label: String {
+        switch self {
+        case .overdue:
+            return "Overdue"
+        case .today(let date):
+            return "Today \(date.formatted(date: .omitted, time: .shortened))"
+        case .tomorrow(let date):
+            return "Tomorrow \(date.formatted(date: .omitted, time: .shortened))"
+        case .upcoming(let days):
+            return "In \(days) day\(days == 1 ? "" : "s")"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .overdue: return "bell.slash"
+        case .today: return "bell.badge"
+        case .tomorrow, .upcoming: return "bell"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .overdue: return .red
+        case .today: return .orange
+        case .tomorrow: return .blue
+        case .upcoming: return .gray
+        }
     }
 }
 
@@ -135,6 +213,7 @@ struct ShoppingListView: View {
     @State private var showContent = false
     @State private var isPerformingBulkAction = false
     @State private var showingRecycleBin = false
+    @State private var beatenToItMessage: String? = nil
     
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
@@ -755,6 +834,33 @@ struct ShoppingListView: View {
                     await viewModel.loadItems()
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reminderTapped)) { notification in
+            guard let listId = notification.userInfo?["listId"] as? String,
+                  listId == unifiedList.id,
+                  let itemIdString = notification.userInfo?["itemId"] as? String,
+                  let itemId = UUID(uuidString: itemIdString) else { return }
+
+            // Small delay to let the list navigate first
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if let item = viewModel.items.first(where: { $0.id == itemId }) {
+                    if item.checked {
+                        let time = item.modifiedAt.formatted(date: .omitted, time: .shortened)
+                        let day = Calendar.current.isDateInToday(item.modifiedAt) ? "today" : item.modifiedAt.formatted(date: .abbreviated, time: .omitted)
+                        beatenToItMessage = "Completed \(day) at \(time)"
+                    } else {
+                        editingItem = item
+                    }
+                }
+            }
+        }
+        .alert("You've been beaten to it!", isPresented: Binding(
+            get: { beatenToItMessage != nil },
+            set: { if !$0 { beatenToItMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { beatenToItMessage = nil }
+        } message: {
+            Text(beatenToItMessage ?? "")
         }
         .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
         .focusedSceneValue(\.exportJSON, $triggerJSONExport)
