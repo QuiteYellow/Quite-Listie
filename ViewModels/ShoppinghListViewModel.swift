@@ -8,6 +8,11 @@
 import Foundation
 import SwiftUI
 
+enum ListViewMode: String, Codable {
+    case list
+    case kanban
+}
+
 @MainActor
 class ShoppingListViewModel: ObservableObject {
     @Published var items: [ShoppingItem] = []
@@ -15,8 +20,11 @@ class ShoppingListViewModel: ObservableObject {
     @Published var labels: [ShoppingLabel] = []
     
     @Published var expandedSections: [String: Bool] = [:]
+    @Published var kanbanCompletedVisible: [String: Bool] = [:]
     @Published var showCompletedAtBottom: Bool = false
-    
+    @Published var listBackground: ListBackground? = nil
+    @Published var viewMode: ListViewMode = .list
+
     @Published var searchText: String = ""
     
     let list: UnifiedList
@@ -35,10 +43,29 @@ class ShoppingListViewModel: ObservableObject {
             self.expandedSections = sections
         }
         
+        // Load kanban completed visibility for this list
+        if let data = UserDefaults.standard.data(forKey: "kanbanCompletedVisible"),
+           let allData = try? JSONDecoder().decode([String: [String: Bool]].self, from: data),
+           let sections = allData[list.id] {
+            self.kanbanCompletedVisible = sections
+        }
+
         // Load show completed preference for this list
         if let data = UserDefaults.standard.data(forKey: "showCompletedAtBottom"),
            let dict = try? JSONDecoder().decode([String: Bool].self, from: data) {
             self.showCompletedAtBottom = dict[list.id] ?? false
+        }
+
+        // Load background preference for this list
+        if let data = UserDefaults.standard.data(forKey: "listBackgrounds"),
+           let dict = try? JSONDecoder().decode([String: ListBackground].self, from: data) {
+            self.listBackground = dict[list.id]
+        }
+
+        // Load view mode preference for this list
+        if let data = UserDefaults.standard.data(forKey: "listViewMode"),
+           let dict = try? JSONDecoder().decode([String: ListViewMode].self, from: data) {
+            self.viewMode = dict[list.id] ?? .list
         }
     }
     
@@ -111,7 +138,7 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatInterval: ReminderRepeatInterval? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         let newItem = ModelHelpers.createNewItem(
             note: note,
@@ -120,7 +147,7 @@ class ShoppingListViewModel: ObservableObject {
             labelId: label?.id,  // Reference by ID, not embedded object
             markdownNotes: markdownNotes,
             reminderDate: reminderDate,
-            reminderRepeatInterval: reminderRepeatInterval,
+            reminderRepeatRule: reminderRepeatRule,
             reminderRepeatMode: reminderRepeatMode
         )
 
@@ -177,11 +204,11 @@ class ShoppingListViewModel: ObservableObject {
 
         // Handle reminder when checking off an item
         if updated.checked && updated.reminderDate != nil {
-            let repeatInterval = updated.reminderRepeatInterval ?? .none
+            let repeatRule = updated.reminderRepeatRule
             let repeatMode = updated.reminderRepeatMode ?? .fixed
 
-            if repeatInterval != .none,
-               let nextDate = ReminderManager.nextReminderDate(from: updated.reminderDate, interval: repeatInterval, mode: repeatMode) {
+            if let rule = repeatRule,
+               let nextDate = ReminderManager.nextReminderDate(from: updated.reminderDate, rule: rule, mode: repeatMode) {
                 // Repeating reminder: uncheck, set next date, reschedule
                 updated.checked = false
                 updated.reminderDate = nextDate
@@ -218,11 +245,11 @@ class ShoppingListViewModel: ObservableObject {
 
                 // Handle reminders when checking off items
                 if completed && item.reminderDate != nil {
-                    let repeatInterval = item.reminderRepeatInterval ?? .none
+                    let repeatRule = item.reminderRepeatRule
                     let repeatMode = item.reminderRepeatMode ?? .fixed
 
-                    if repeatInterval != .none,
-                       let nextDate = ReminderManager.nextReminderDate(from: item.reminderDate, interval: repeatInterval, mode: repeatMode) {
+                    if let rule = repeatRule,
+                       let nextDate = ReminderManager.nextReminderDate(from: item.reminderDate, rule: rule, mode: repeatMode) {
                         // Repeating: uncheck, advance to next date
                         item.checked = false
                         item.reminderDate = nextDate
@@ -267,7 +294,7 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatInterval: ReminderRepeatInterval? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
+    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
@@ -275,7 +302,7 @@ class ShoppingListViewModel: ObservableObject {
         updatedItem.checked = checked
         updatedItem.markdownNotes = markdownNotes  // Direct field
         updatedItem.reminderDate = reminderDate
-        updatedItem.reminderRepeatInterval = reminderRepeatInterval
+        updatedItem.reminderRepeatRule = reminderRepeatRule
         updatedItem.reminderRepeatMode = reminderRepeatMode
         updatedItem.modifiedAt = Date()  // Update timestamp
 
@@ -329,7 +356,8 @@ class ShoppingListViewModel: ObservableObject {
     /// Increments item quantity by 1
     func incrementQuantity(for item: ShoppingItem) async {
         let newQty = item.quantity + 1
-        _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes)
+        _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes,
+                             reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode)
     }
 
     /// Decrements item quantity by 1. Returns false if item should be deleted (qty would be 0)
@@ -338,7 +366,8 @@ class ShoppingListViewModel: ObservableObject {
             return false
         }
         let newQty = max(item.quantity - 1, 1)
-        _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes)
+        _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes,
+                             reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode)
         return true
     }
     
@@ -354,11 +383,29 @@ class ShoppingListViewModel: ObservableObject {
         saveExpandedSections()
     }
     
+    func toggleKanbanCompleted(_ labelName: String) {
+        kanbanCompletedVisible[labelName] = !(kanbanCompletedVisible[labelName] ?? false)
+        saveKanbanCompletedVisible()
+    }
+
+    func isKanbanCompletedVisible(_ labelName: String) -> Bool {
+        kanbanCompletedVisible[labelName] ?? false
+    }
+
+    private func saveKanbanCompletedVisible() {
+        var allData = (try? JSONDecoder().decode([String: [String: Bool]].self,
+                                                 from: UserDefaults.standard.data(forKey: "kanbanCompletedVisible") ?? Data())) ?? [:]
+        allData[list.id] = kanbanCompletedVisible
+        if let data = try? JSONEncoder().encode(allData) {
+            UserDefaults.standard.set(data, forKey: "kanbanCompletedVisible")
+        }
+    }
+
     func setShowCompletedAtBottom(_ value: Bool) {
         showCompletedAtBottom = value
         saveShowCompletedPreference()
     }
-    
+
     private func saveExpandedSections() {
         var allData = (try? JSONDecoder().decode([String: [String: Bool]].self,
                                                  from: UserDefaults.standard.data(forKey: "expandedSections") ?? Data())) ?? [:]
@@ -374,6 +421,47 @@ class ShoppingListViewModel: ObservableObject {
         dict[list.id] = showCompletedAtBottom
         if let data = try? JSONEncoder().encode(dict) {
             UserDefaults.standard.set(data, forKey: "showCompletedAtBottom")
+        }
+    }
+
+    func setListBackground(_ background: ListBackground?) {
+        listBackground = background
+        saveListBackground()
+    }
+
+    func reloadBackground() {
+        if let data = UserDefaults.standard.data(forKey: "listBackgrounds"),
+           let dict = try? JSONDecoder().decode([String: ListBackground].self, from: data) {
+            listBackground = dict[list.id]
+        } else {
+            listBackground = nil
+        }
+    }
+
+    func setViewMode(_ mode: ListViewMode) {
+        viewMode = mode
+        saveViewModePreference()
+    }
+
+    private func saveViewModePreference() {
+        var dict = (try? JSONDecoder().decode([String: ListViewMode].self,
+                                              from: UserDefaults.standard.data(forKey: "listViewMode") ?? Data())) ?? [:]
+        dict[list.id] = viewMode
+        if let data = try? JSONEncoder().encode(dict) {
+            UserDefaults.standard.set(data, forKey: "listViewMode")
+        }
+    }
+
+    private func saveListBackground() {
+        var dict = (try? JSONDecoder().decode([String: ListBackground].self,
+                                              from: UserDefaults.standard.data(forKey: "listBackgrounds") ?? Data())) ?? [:]
+        if let listBackground {
+            dict[list.id] = listBackground
+        } else {
+            dict.removeValue(forKey: list.id)
+        }
+        if let data = try? JSONEncoder().encode(dict) {
+            UserDefaults.standard.set(data, forKey: "listBackgrounds")
         }
     }
 }
