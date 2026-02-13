@@ -76,6 +76,7 @@ struct KanbanBoardView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let isWide = geometry.size.width > 600
             ScrollView(.horizontal, showsIndicators: true) {
                 HStack(alignment: .top, spacing: 12) {
                     let columns = labelsToShow
@@ -99,9 +100,9 @@ struct KanbanBoardView: View {
                 }
                 .padding(.horizontal, 12)
             }
-            .frame(height: geometry.size.height + geometry.safeAreaInsets.bottom)
+            .frame(height: geometry.size.height + (isWide ? geometry.safeAreaInsets.bottom : 0))
+            .ignoresSafeArea(edges: isWide ? .bottom : [])
         }
-        .ignoresSafeArea(edges: .bottom)
         .environment(\.chipsInline, false)
     }
 
