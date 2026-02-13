@@ -98,38 +98,7 @@ struct WelcomeView: View {
                 }
             }
         } detail: {
-            ZStack {
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-                
-                if let listID = selectedListID,
-                   let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
-                    ShoppingListView(
-                        list: unifiedList.summary,
-                        unifiedList: unifiedList,
-                        unifiedProvider: unifiedProvider,
-                        welcomeViewModel: welcomeViewModel,
-                        searchText: $detailSearchText,
-                        onExportJSON: {
-                            Task {
-                                await exportList(unifiedList.summary)
-                            }
-                        }
-                    )
-                    .id(unifiedList.id)
-                } else {
-                    ContentUnavailableView("Select a list", systemImage: "list.bullet")
-                }
-            }
-            .searchable(
-                text: $detailSearchText,
-                prompt: searchPrompt
-            )
-            .searchToolbarBehavior(.minimize)
-            .toolbar {
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            }
+            detailPane
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(
@@ -211,27 +180,25 @@ struct WelcomeView: View {
             await unifiedProvider.loadAllLists()
             await welcomeViewModel.loadLists()
             await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+
+            // Reconcile reminders on cold launch (catches changes made on other devices while app was killed)
+            await syncAndReconcileReminders()
         }
         .focusedSceneValue(\.newListSheet, $isPresentingNewList)
         .focusedSceneValue(\.fileImporter, $showFileImporter)
         .focusedSceneValue(\.newConnectedExporter, $showNewConnectedExporter)
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            Task {
-                await syncAndReconcileReminders()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reminderTapped)) { notification in
-            if let listId = notification.userInfo?["listId"] as? String {
-                selectedListID = listId
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
-            Task {
-                // Reload lists after storage location migration
+        .focusedSceneValue(\.settingsSheet, $showSettings)
+        .modifier(WelcomeNotificationObservers(
+            selectedListID: $selectedListID,
+            syncAndReconcile: syncAndReconcileReminders,
+            refreshCounts: {
+                await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+            },
+            refreshAll: {
                 await unifiedProvider.loadAllLists()
                 await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
             }
-        }
+        ))
         .overlay {
             if unifiedProvider.isDownloadingFile {
                 ZStack {
@@ -292,6 +259,60 @@ struct WelcomeView: View {
         }
     }
     
+    // MARK: - Detail Pane (Extracted to Fix Type-Checker)
+
+    @ViewBuilder
+    private var detailPane: some View {
+        ZStack {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+
+            if selectedListID == "__reminders_today" {
+                ReminderListView(
+                    filter: .today,
+                    welcomeViewModel: welcomeViewModel,
+                    unifiedProvider: unifiedProvider,
+                    selectedListID: $selectedListID,
+                    searchText: $detailSearchText
+                )
+            } else if selectedListID == "__reminders_scheduled" {
+                ReminderListView(
+                    filter: .scheduled,
+                    welcomeViewModel: welcomeViewModel,
+                    unifiedProvider: unifiedProvider,
+                    selectedListID: $selectedListID,
+                    searchText: $detailSearchText
+                )
+            } else if let listID = selectedListID,
+               let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
+                ShoppingListView(
+                    list: unifiedList.summary,
+                    unifiedList: unifiedList,
+                    unifiedProvider: unifiedProvider,
+                    welcomeViewModel: welcomeViewModel,
+                    searchText: $detailSearchText,
+                    onExportJSON: {
+                        Task {
+                            await exportList(unifiedList.summary)
+                        }
+                    }
+                )
+                .id(unifiedList.id)
+            } else {
+                ContentUnavailableView("Select a list", systemImage: "list.bullet")
+            }
+        }
+        .searchable(
+            text: $detailSearchText,
+            prompt: searchPrompt
+        )
+        .searchToolbarBehavior(.minimize)
+        .toolbar {
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+        }
+    }
+
     // MARK: - Sheet Builders (Extracted to Fix Type-Checker)
     
     @ViewBuilder
@@ -340,20 +361,38 @@ struct WelcomeView: View {
     }
 
     private func syncAndReconcileReminders() async {
+        print("🔄 [Sync] Starting foreground reminder sync")
         await unifiedProvider.syncAllExternalLists()
+
+        // Fetch pending notifications once (not per-list)
+        let pendingRequests = await UNUserNotificationCenter.current().pendingNotificationRequests()
+        let pendingIds = Set(pendingRequests.map(\.identifier))
+
+        // Collect all items and cancel stale notifications per-list
+        var allReminderItems: [(item: ShoppingItem, listName: String, listId: String)] = []
 
         for list in unifiedProvider.allLists where !list.isReadOnly {
             do {
                 let items = try await unifiedProvider.fetchItems(for: list)
-                await ReminderManager.reconcile(
-                    items: items,
-                    listName: list.summary.name,
-                    listId: list.id
-                )
+
+                // Cancel notifications for checked/deleted items in this list
+                ReminderManager.reconcileCancellations(items: items, listId: list.id, pendingIds: pendingIds)
+
+                // Collect active items with reminders for the budget pass
+                for item in items where !item.checked && !item.isDeleted && item.reminderDate != nil {
+                    allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
+                }
             } catch {
-                print("Failed to reconcile reminders for \(list.summary.name): \(error)")
+                print("❌ [Sync] Failed to fetch items for \(list.summary.name): \(error)")
             }
         }
+
+        // Budget-aware pass: schedule the top 60 soonest reminders
+        await ReminderManager.reconcileWithBudget(allItems: allReminderItems, trigger: "foreground")
+
+        // Schedule next background refresh
+        BackgroundRefreshManager.scheduleNextRefresh()
+        print("🔄 [Sync] Foreground reminder sync complete")
     }
     
     @MainActor
@@ -506,5 +545,35 @@ struct WelcomeView: View {
         if let targetList = targetList {
             selectedListID = targetList.id
         }
+    }
+}
+
+// MARK: - Notification Observers (Extracted to Fix Type-Checker)
+
+private struct WelcomeNotificationObservers: ViewModifier {
+    @Binding var selectedListID: String?
+    let syncAndReconcile: () async -> Void
+    let refreshCounts: () async -> Void
+    let refreshAll: () async -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                Task { await syncAndReconcile() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                BackgroundRefreshManager.scheduleNextRefresh()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reminderTapped)) { notification in
+                if let listId = notification.userInfo?["listId"] as? String {
+                    selectedListID = listId
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reminderCompleted)) { _ in
+                Task { await refreshCounts() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
+                Task { await refreshAll() }
+            }
     }
 }

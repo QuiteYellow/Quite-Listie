@@ -30,10 +30,12 @@ struct ListSettingsView: View {
     @State private var labelToDelete: ShoppingLabel? = nil
     
     @State private var showCompletedAtBottom: Bool = false
-    
+    @State private var listBackground: ListBackground? = nil
+
     // Favorites stored in UserDefaults
     @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
     @AppStorage("showCompletedAtBottom") private var showCompletedAtBottomData: Data = Data()
+    @AppStorage("listBackgrounds") private var listBackgroundsData: Data = Data()
     
     private var favouriteListIDs: Set<String> {
         get {
@@ -145,7 +147,82 @@ struct ListSettingsView: View {
                     }
                     .toggleStyle(.switch)
                 }
-                
+
+                Section(header: Text("Background")) {
+                    DisclosureGroup {
+                        // None option
+                        Button {
+                            listBackground = nil
+                        } label: {
+                            HStack {
+                                Image(systemName: "circle.slash")
+                                    .foregroundColor(.secondary)
+                                Text("None")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if listBackground == nil {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 4)
+
+                        // Gradient grid
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 12) {
+                            ForEach(BackgroundGradient.all) { gradient in
+                                let isSelected: Bool = {
+                                    if case .gradient(let id) = listBackground { return id == gradient.id }
+                                    return false
+                                }()
+                                Button {
+                                    listBackground = .gradient(gradient.id)
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [gradient.fromColor, gradient.toColor],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                            .frame(height: 52)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 10)
+                                                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2.5)
+                                            )
+                                        Text(gradient.name)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(gradient.name)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } label: {
+                        HStack {
+                            Label("Choose Background", systemImage: "paintbrush")
+                            Spacer()
+                            if let gradient = listBackground?.resolved() {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [gradient.fromColor, gradient.toColor],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 40, height: 24)
+                            }
+                        }
+                    }
+                }
+
                 // Label Management Section
                 Section(header:
                     HStack {
@@ -245,7 +322,18 @@ struct ListSettingsView: View {
                         if let data = try? JSONEncoder().encode(dict) {
                             showCompletedAtBottomData = data
                         }
-                        
+
+                        // Save background preference
+                        var bgDict = (try? JSONDecoder().decode([String: ListBackground].self, from: listBackgroundsData)) ?? [:]
+                        if let listBackground {
+                            bgDict[list.id] = listBackground
+                        } else {
+                            bgDict.removeValue(forKey: list.id)
+                        }
+                        if let bgData = try? JSONEncoder().encode(bgDict) {
+                            listBackgroundsData = bgData
+                        }
+
                         // Call with direct values (convert Set to Array)
                         let hiddenArray = hiddenLabelIDs.isEmpty ? nil : Array(hiddenLabelIDs)
                         onSave(name, icon, hiddenArray)
@@ -329,6 +417,10 @@ struct ListSettingsView: View {
                 
                 let dict = (try? JSONDecoder().decode([String: Bool].self, from: showCompletedAtBottomData)) ?? [:]
                 showCompletedAtBottom = dict[currentList.id] ?? false
+
+                // Load background preference
+                let bgDict = (try? JSONDecoder().decode([String: ListBackground].self, from: listBackgroundsData)) ?? [:]
+                listBackground = bgDict[currentList.id]
             }
         }
     }

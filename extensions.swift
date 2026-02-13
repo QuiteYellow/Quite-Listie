@@ -9,6 +9,21 @@ import Foundation
 
 import SwiftUI
 
+// MARK: - Environment Keys
+
+private struct ChipsInlineKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var chipsInline: Bool {
+        get { self[ChipsInlineKey.self] }
+        set { self[ChipsInlineKey.self] = newValue }
+    }
+}
+
+// MARK: - Focused Value Keys
+
 struct NewListSheetKey: FocusedValueKey {
     typealias Value = Binding<Bool>
 }
@@ -35,6 +50,10 @@ struct ShareLinkKey: FocusedValueKey {
 
 struct IsReadOnlyKey: FocusedValueKey {
     typealias Value = Bool
+}
+
+struct SettingsSheetKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
 }
 
 extension FocusedValues {
@@ -72,6 +91,11 @@ extension FocusedValues {
             get { self[IsReadOnlyKey.self] }
             set { self[IsReadOnlyKey.self] = newValue }
         }
+
+    var settingsSheet: Binding<Bool>? {
+        get { self[SettingsSheetKey.self] }
+        set { self[SettingsSheetKey.self] = newValue }
+    }
 }
 
 extension String {
@@ -274,5 +298,158 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - List Background
+
+struct BackgroundGradient: Identifiable, Codable, Equatable, Hashable {
+    let id: String
+    let name: String
+    let lightFromHex: String
+    let lightToHex: String
+    let darkFromHex: String
+    let darkToHex: String
+
+    var fromColor: Color {
+        Color(UIColor { tc in
+            tc.userInterfaceStyle == .dark
+                ? UIColor(Color(hex: darkFromHex))
+                : UIColor(Color(hex: lightFromHex))
+        })
+    }
+
+    var toColor: Color {
+        Color(UIColor { tc in
+            tc.userInterfaceStyle == .dark
+                ? UIColor(Color(hex: darkToHex))
+                : UIColor(Color(hex: lightToHex))
+        })
+    }
+
+    // All gradients, grouped by mood. Light mode: soft pastels/mid-tones. Dark mode: deeper, richer.
+    static let all: [BackgroundGradient] = [
+
+        // ── Warm ──────────────────────────────────────────────
+        BackgroundGradient(id: "sunrise",       name: "Sunrise",
+            lightFromHex: "#FFECD2", lightToHex: "#FCB69F",
+            darkFromHex:  "#4A2C1A", darkToHex:  "#8B3A2A"),
+        BackgroundGradient(id: "peach-fuzz",    name: "Peach Fuzz",
+            lightFromHex: "#FDD6BD", lightToHex: "#F9A8B8",
+            darkFromHex:  "#5C3429", darkToHex:  "#6E3044"),
+        BackgroundGradient(id: "golden-hour",   name: "Golden Hour",
+            lightFromHex: "#F6D365", lightToHex: "#FDA085",
+            darkFromHex:  "#5A4520", darkToHex:  "#6E3A2A"),
+        BackgroundGradient(id: "rosewater",     name: "Rosewater",
+            lightFromHex: "#FECFEF", lightToHex: "#FF989C",
+            darkFromHex:  "#4E2840", darkToHex:  "#6B2E30"),
+        BackgroundGradient(id: "ember",         name: "Ember",
+            lightFromHex: "#FF9A9E", lightToHex: "#FECFEF",
+            darkFromHex:  "#6B2E30", darkToHex:  "#4E2840"),
+        BackgroundGradient(id: "coral-reef",    name: "Coral Reef",
+            lightFromHex: "#F093FB", lightToHex: "#F5576C",
+            darkFromHex:  "#502855", darkToHex:  "#6E2233"),
+
+        // ── Cool ──────────────────────────────────────────────
+        BackgroundGradient(id: "arctic",        name: "Arctic",
+            lightFromHex: "#E0F7FA", lightToHex: "#B2EBF2",
+            darkFromHex:  "#0E3A40", darkToHex:  "#1A4E55"),
+        BackgroundGradient(id: "deep-ocean",    name: "Deep Ocean",
+            lightFromHex: "#A8EDEA", lightToHex: "#FED6E3",
+            darkFromHex:  "#1A4040", darkToHex:  "#4E2838"),
+        BackgroundGradient(id: "moonrise",      name: "Moonrise",
+            lightFromHex: "#C1DEFF", lightToHex: "#E8D5F5",
+            darkFromHex:  "#1A2E4A", darkToHex:  "#32254A"),
+        BackgroundGradient(id: "pacific",       name: "Pacific",
+            lightFromHex: "#667EEA", lightToHex: "#764BA2",
+            darkFromHex:  "#1E2755", darkToHex:  "#2D1A40"),
+        BackgroundGradient(id: "frost",         name: "Frost",
+            lightFromHex: "#D4FC79", lightToHex: "#96E6A1",
+            darkFromHex:  "#2A4020", darkToHex:  "#1E3A28"),
+        BackgroundGradient(id: "northern-lights", name: "Northern Lights",
+            lightFromHex: "#43E97B", lightToHex: "#38F9D7",
+            darkFromHex:  "#0E3A1E", darkToHex:  "#0C3A38"),
+
+        // ── Purple & Lavender ─────────────────────────────────
+        BackgroundGradient(id: "wisteria",      name: "Wisteria",
+            lightFromHex: "#C471F5", lightToHex: "#FA71CD",
+            darkFromHex:  "#381850", darkToHex:  "#501838"),
+        BackgroundGradient(id: "amethyst",      name: "Amethyst",
+            lightFromHex: "#DDD6F3", lightToHex: "#FAACA8",
+            darkFromHex:  "#2A2540", darkToHex:  "#4A2828"),
+        BackgroundGradient(id: "grape-soda",    name: "Grape Soda",
+            lightFromHex: "#9795F0", lightToHex: "#FBC8D4",
+            darkFromHex:  "#262445", darkToHex:  "#4A2838"),
+        BackgroundGradient(id: "twilight",      name: "Twilight",
+            lightFromHex: "#A18CD1", lightToHex: "#FBC2EB",
+            darkFromHex:  "#2A1845", darkToHex:  "#4E2845"),
+        BackgroundGradient(id: "velvet",        name: "Velvet",
+            lightFromHex: "#C33764", lightToHex: "#1D2671",
+            darkFromHex:  "#6B1A34", darkToHex:  "#0E1338"),
+
+        // ── Nature ────────────────────────────────────────────
+        BackgroundGradient(id: "sage-mist",     name: "Sage Mist",
+            lightFromHex: "#C9D6C4", lightToHex: "#E8DFD0",
+            darkFromHex:  "#2A3828", darkToHex:  "#38322A"),
+        BackgroundGradient(id: "forest-floor",  name: "Forest Floor",
+            lightFromHex: "#56AB2F", lightToHex: "#A8E063",
+            darkFromHex:  "#1A3A0E", darkToHex:  "#2A4A18"),
+        BackgroundGradient(id: "spring-meadow", name: "Spring Meadow",
+            lightFromHex: "#FBED96", lightToHex: "#ABECD6",
+            darkFromHex:  "#4A4220", darkToHex:  "#1E4038"),
+        BackgroundGradient(id: "moss",          name: "Moss",
+            lightFromHex: "#134E5E", lightToHex: "#71B280",
+            darkFromHex:  "#0A2830", darkToHex:  "#254030"),
+
+        // ── Sunset & Sky ──────────────────────────────────────
+        BackgroundGradient(id: "california",    name: "California",
+            lightFromHex: "#FF7E5F", lightToHex: "#FEB47B",
+            darkFromHex:  "#6B3028", darkToHex:  "#6E4828"),
+        BackgroundGradient(id: "mango",         name: "Mango",
+            lightFromHex: "#FFD89B", lightToHex: "#19547B",
+            darkFromHex:  "#5A4820", darkToHex:  "#0E2838"),
+        BackgroundGradient(id: "flamingo",      name: "Flamingo",
+            lightFromHex: "#EE9CA7", lightToHex: "#FFDDE1",
+            darkFromHex:  "#4A2830", darkToHex:  "#4E3840"),
+
+        // ── Elegant & Neutral ─────────────────────────────────
+        BackgroundGradient(id: "silver-lining", name: "Silver Lining",
+            lightFromHex: "#D7D2CC", lightToHex: "#304352",
+            darkFromHex:  "#3A3835", darkToHex:  "#141A20"),
+        BackgroundGradient(id: "charcoal",      name: "Charcoal",
+            lightFromHex: "#C9D6FF", lightToHex: "#E2E2E2",
+            darkFromHex:  "#1A2040", darkToHex:  "#1E1E22"),
+        BackgroundGradient(id: "dusty-rose",    name: "Dusty Rose",
+            lightFromHex: "#D4A5A5", lightToHex: "#F0E6E6",
+            darkFromHex:  "#3E2020", darkToHex:  "#2E2828"),
+        BackgroundGradient(id: "sandstone",     name: "Sandstone",
+            lightFromHex: "#EACDA3", lightToHex: "#D6AE7B",
+            darkFromHex:  "#3A3020", darkToHex:  "#3E2E1A"),
+
+        // ── Vivid ─────────────────────────────────────────────
+        BackgroundGradient(id: "electric",      name: "Electric",
+            lightFromHex: "#4568DC", lightToHex: "#B06AB3",
+            darkFromHex:  "#1A2250", darkToHex:  "#3A1A40"),
+        BackgroundGradient(id: "neon-glow",     name: "Neon Glow",
+            lightFromHex: "#FA8BFF", lightToHex: "#2BD2FF",
+            darkFromHex:  "#501858", darkToHex:  "#0E3848"),
+        BackgroundGradient(id: "aurora",        name: "Aurora",
+            lightFromHex: "#36D1DC", lightToHex: "#5B86E5",
+            darkFromHex:  "#0E3840", darkToHex:  "#1A2850"),
+    ]
+
+    static func find(_ id: String) -> BackgroundGradient? {
+        all.first { $0.id == id }
+    }
+}
+
+enum ListBackground: Codable, Equatable {
+    case gradient(String) // BackgroundGradient id
+
+    func resolved() -> BackgroundGradient? {
+        if case .gradient(let id) = self {
+            return BackgroundGradient.find(id)
+        }
+        return nil
     }
 }

@@ -65,6 +65,42 @@ struct SidebarView: View {
     var body: some View {
         List(selection: $selectedListID) {
 
+            // MARK: - Reminder Smart Boxes
+            let todayCount = welcomeViewModel.todayReminderCount
+            let scheduledCount = welcomeViewModel.scheduledReminderCount
+
+            if todayCount > 0 || scheduledCount > 0 {
+                Section {
+                    HStack(spacing: 12) {
+                        // Today box
+                        ReminderSmartBox(
+                            title: "Today",
+                            count: todayCount,
+                            icon: "calendar.circle.fill",
+                            color: .orange,
+                            isSelected: selectedListID == "__reminders_today"
+                        ) {
+                            selectedListID = "__reminders_today"
+                        }
+
+                        // Scheduled box
+                        ReminderSmartBox(
+                            title: "Scheduled",
+                            count: scheduledCount,
+                            icon: "calendar.badge.clock",
+                            color: .blue,
+                            isSelected: selectedListID == "__reminders_scheduled"
+                        ) {
+                            selectedListID = "__reminders_scheduled"
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+            }
+                
+
             // MARK: - Welcome Section (at the top)
             if !hideWelcomeList {
                 let welcomeList = unifiedProvider.allLists.first(where: { $0.id == "example-welcome-list" })
@@ -144,7 +180,7 @@ struct SidebarView: View {
                 }
             }
         }
-        .navigationTitle("All Lists")
+        .navigationTitle("Listie.md")
         .navigationBarTitleDisplayMode(.large)
         //.animation(.none, value: welcomeViewModel.uncheckedCounts)
         //.animation(.none, value: unifiedProvider.allLists)
@@ -365,5 +401,48 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Reminder Smart Box
+
+struct ReminderSmartBox: View {
+    let title: String
+    let count: Int
+    let icon: String
+    let color: Color
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundColor(color)
+                    Spacer()
+                    Text("\(count)")
+                        .font(.title2.bold())
+                        .foregroundColor(.primary)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.25), value: count)
+                }
+
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(isSelected ? color.opacity(0.15) : Color(.secondarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isSelected ? color.opacity(0.4) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }

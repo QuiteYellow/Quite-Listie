@@ -41,7 +41,7 @@ struct SectionHeaderView: View {
                 }
                 .padding(.horizontal, 0)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(.clear)
         }
         .buttonStyle(.plain)
     }
@@ -56,41 +56,43 @@ struct ItemRowView: View {
     let onIncrement: (() -> Void)?
     let onDecrement: (() -> Void)?
     let isReadOnly: Bool
+    var showReminderChip: Bool = true
 
     var body: some View {
         HStack(spacing: 12) {
-            if item.quantity > 1 {
-                Text(item.quantity.formatted(.number.precision(.fractionLength(0))))
-                    .font(.subheadline)
-                    .strikethrough(item.checked && item.quantity >= 2,
-                                   color: (item.checked ? .gray : .primary))
-                    .foregroundColor(
-                        item.quantity < 2 ? Color.clear :
-                            (item.checked ? .gray : .primary)
-                    )
-                    .frame(minWidth: 12, alignment: .leading)
-            }
+            ChipAlignedRow {
+                HStack(spacing: 12) {
+                    if item.quantity > 1 {
+                        Text(item.quantity.formatted(.number.precision(.fractionLength(0))))
+                            .font(.subheadline)
+                            .strikethrough(item.checked && item.quantity >= 2,
+                                           color: (item.checked ? .gray : .primary))
+                            .foregroundColor(
+                                item.quantity < 2 ? Color.clear :
+                                    (item.checked ? .gray : .primary)
+                            )
+                            .frame(minWidth: 12, alignment: .leading)
+                    }
 
-            // tap gesture for note text
-            Text(item.note)
-                .font(.subheadline)
-                .strikethrough(item.checked, color: .gray)
-                .foregroundColor(item.checked ? .gray : .primary)
-                .onTapGesture {
-                    onTextTap()
+                    Text(item.note)
+                        .font(.subheadline)
+                        .strikethrough(item.checked, color: .gray)
+                        .foregroundColor(item.checked ? .gray : .primary)
+                        .onTapGesture {
+                            onTextTap()
+                        }
                 }
+            } chips: {
+                if showReminderChip, let reminderDate = item.reminderDate, !item.checked {
+                    ReminderChipView(
+                        reminderDate: reminderDate,
+                        isRepeating: item.reminderRepeatRule != nil
+                    )
+                }
+            }
 
             Spacer()
 
-            // Reminder chip (right-aligned, before checkbox)
-            if let reminderDate = item.reminderDate, !item.checked {
-                ReminderChipView(
-                    reminderDate: reminderDate,
-                    isRepeating: item.reminderRepeatInterval != nil && item.reminderRepeatInterval != .none
-                )
-            }
-
-            // Checkbox tap area
             if !isReadOnly {
                 Button(action: {
                     onTap()
@@ -105,6 +107,51 @@ struct ItemRowView: View {
         .padding(.vertical, 0)
         .padding(.horizontal, 0)
         .background(.clear)
+    }
+
+    // MARK: - Shared Context Menu
+
+    @ViewBuilder
+    static func itemContextMenu(
+        item: ShoppingItem,
+        isReadOnly: Bool,
+        onEdit: @escaping () -> Void,
+        onIncrement: @escaping () -> Void,
+        onDecrement: @escaping () -> Void,
+        onDelete: @escaping () -> Void
+    ) -> some View {
+        Button { onEdit() } label: {
+            Label("Edit Item...", systemImage: "pencil")
+        }
+
+        if !isReadOnly {
+            Divider()
+
+            Button { onIncrement() } label: {
+                Label("Increase Quantity", systemImage: "plus")
+            }
+
+            if item.quantity < 2 { Divider() }
+
+            Button {
+                onDecrement()
+            } label: {
+                Label(
+                    item.quantity < 2 ? "Delete Item..." : "Decrease Quantity",
+                    systemImage: item.quantity < 2 ? "trash" : "minus"
+                )
+            }
+
+            if item.quantity >= 2 {
+                Divider()
+
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Delete Item...", systemImage: "trash")
+                }
+            }
+        }
     }
 }
 
@@ -136,6 +183,7 @@ struct ReminderChipView: View {
                 .font(.caption2)
             Text(reminderStatus.label)
                 .font(.caption2)
+                .lineLimit(1)
             if isRepeating {
                 Image(systemName: "arrow.trianglehead.2.clockwise")
                     .font(.system(size: 8, weight: .bold))
@@ -221,6 +269,7 @@ struct ShoppingListView: View {
     @State private var showContent = false
     @State private var isPerformingBulkAction = false
     @State private var showingRecycleBin = false
+    @State private var showingListSettings = false
     @State private var beatenToItMessage: String? = nil
     
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
@@ -229,7 +278,13 @@ struct ShoppingListView: View {
     @State private var activeInlineAdd: String? = nil  // Track which section is active
     @State private var inlineAddText: String = ""
     @FocusState private var inlineAddFocused: Bool
-    
+    @State private var listWidth: CGFloat = 0
+    @State private var kanbanRefreshState: KanbanRefreshState = .idle
+
+    private enum KanbanRefreshState {
+        case idle, refreshing, done
+    }
+
     @Binding var searchText: String
     
     init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, onExportJSON exportJSON: (() -> Void)? = nil) {
@@ -245,6 +300,36 @@ struct ShoppingListView: View {
     private var saveStatus: UnifiedListProvider.SaveStatus {
         unifiedProvider.saveStatus[unifiedList.id] ?? .saved
     }
+
+    /// Labels the list body should display (extracted to avoid complex inline closures that slow the type checker).
+    private var labelsForListBody: [String] {
+        let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
+
+        if hideEmptyLabels {
+            var keys = viewModel.filteredSortedLabelKeys
+            if viewModel.showCompletedAtBottom {
+                keys = keys.filter { labelName in
+                    if labelName == "Completed" { return false }
+                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
+                    return items.contains(where: { !$0.checked })
+                }
+            } else {
+                keys = keys.filter { $0 != "Completed" }
+            }
+            return keys
+        } else {
+            var allLabels: [String] = viewModel.labels
+                .filter { !hiddenLabelIDs.contains($0.id) }
+                .map { $0.name }
+                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+
+            if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
+               !noLabelItems.isEmpty {
+                allLabels.append("No Label")
+            }
+            return allLabels
+        }
+    }
     
     private func updateUncheckedCount(for listID: String, with count: Int) async {
         await MainActor.run {
@@ -254,165 +339,100 @@ struct ShoppingListView: View {
     
     
     @ViewBuilder
+    private func itemWithActions(_ item: ShoppingItem) -> some View {
+        ItemRowView(
+            item: item,
+            isLast: false,
+            onTap: {
+                Task {
+                    await viewModel.toggleChecked(for: item, didUpdate: { count in
+                        await updateUncheckedCount(for: list.id, with: count)
+                    })
+                }
+            },
+            onTextTap: {
+                editingItem = item
+                showingEditView = true
+            },
+            onIncrement: {
+                Task { await viewModel.incrementQuantity(for: item) }
+            },
+            onDecrement: {
+                Task {
+                    let shouldKeep = await viewModel.decrementQuantity(for: item)
+                    if !shouldKeep { itemToDelete = item }
+                }
+            },
+            isReadOnly: unifiedList.isReadOnly
+        )
+        .swipeActions(edge: .trailing) {
+            if !unifiedList.isReadOnly {
+                Button(role: .none) {
+                    Task {
+                        let shouldKeep = await viewModel.decrementQuantity(for: item)
+                        if !shouldKeep { itemToDelete = item }
+                    }
+                } label: {
+                    Label(item.quantity < 2 ? "Delete" : "Decrease",
+                          systemImage: item.quantity < 2 ? "trash" : "minus")
+                }
+                .tint(item.quantity < 2 ? .red : .orange)
+            }
+        }
+        .swipeActions(edge: .leading) {
+            if !unifiedList.isReadOnly {
+                Button {
+                    Task { await viewModel.incrementQuantity(for: item) }
+                } label: {
+                    Label("Increase", systemImage: "plus")
+                }
+                .tint(.green)
+            }
+        }
+        .contextMenu {
+            ItemRowView.itemContextMenu(
+                item: item,
+                isReadOnly: unifiedList.isReadOnly,
+                onEdit: {
+                    editingItem = item
+                    showingEditView = true
+                },
+                onIncrement: {
+                    Task { await viewModel.incrementQuantity(for: item) }
+                },
+                onDecrement: {
+                    Task {
+                        let shouldKeep = await viewModel.decrementQuantity(for: item)
+                        if !shouldKeep { itemToDelete = item }
+                    }
+                },
+                onDelete: {
+                    itemToDelete = item
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
     private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
         let isExpanded = viewModel.expandedSections[labelName] ?? true
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
-        
         Section {
             if isExpanded {
-                // Show appropriate items based on section
                 let itemsToShow = labelName == "Completed" ? checkedItems : uncheckedItems
-                
+
                 ForEach(itemsToShow) { item in
-                    ItemRowView(
-                        item: item,
-                        isLast: false,
-                        onTap: {
-                            Task {
-                                await viewModel.toggleChecked(for: item, didUpdate: { count in
-                                    await updateUncheckedCount(for: list.id, with: count)
-                                })
-                            }
-                        },
-                        onTextTap: {
-                            editingItem = item
-                            showingEditView = true
-                        },
-                        onIncrement: {
-                            Task {
-                                await viewModel.incrementQuantity(for: item)
-                            }
-                        },
-                        onDecrement: {
-                            Task {
-                                let shouldKeep = await viewModel.decrementQuantity(for: item)
-                                if !shouldKeep {
-                                    itemToDelete = item
-                                }
-                            }
-                        },
-                        isReadOnly: unifiedList.isReadOnly
-                    )
-                    .swipeActions(edge: .trailing) {
-                        if !unifiedList.isReadOnly {
-                            Button(role: .none) {
-                                Task {
-                                    let shouldKeep = await viewModel.decrementQuantity(for: item)
-                                    if !shouldKeep {
-                                        itemToDelete = item
-                                    }
-                                }
-                            } label: {
-                                Label(item.quantity < 2 ? "Delete" : "Decrease",
-                                      systemImage: item.quantity < 2 ? "trash" : "minus")
-                            }
-                            .tint(item.quantity < 2 ? .red : .orange)
-                        }
-                    }
-                    .swipeActions(edge: .leading) {
-                        if !unifiedList.isReadOnly {
-                            Button {
-                                Task {
-                                    await viewModel.incrementQuantity(for: item)
-                                }
-                            } label: {
-                                Label("Increase", systemImage: "plus")
-                            }
-                            .tint(.green)
-                        }
-                    }
-                    .contextMenu {
-                        Button("Edit Item...") {
-                            editingItem = item
-                            showingEditView = true
-                        }
-                        Button(role: .none) {
-                            itemToDelete = item
-                        } label: {
-                            Label("Delete Item...", systemImage: "trash")
-                        }
-                        .tint(.red)
-                    }
+                    itemWithActions(item)
                 }
-                
-                // Inline add row (only for non-Completed sections and if not read-only)
+
                 if !hideQuickAdd && labelName != "Completed" && !unifiedList.isReadOnly {
-                    inlineAddRow(for: labelName, color: color)  // ✅ CORRECT
+                    inlineAddRow(for: labelName, color: color)
                 }
-                
-                // Completed items (if showing inline)
+
                 if !viewModel.showCompletedAtBottom {
                     ForEach(checkedItems) { item in
-                        ItemRowView(
-                            item: item,
-                            isLast: false,
-                            onTap: {
-                                Task {
-                                    await viewModel.toggleChecked(for: item, didUpdate: { count in
-                                        await updateUncheckedCount(for: list.id, with: count)
-                                    })
-                                }
-                            },
-                            onTextTap: {
-                                editingItem = item
-                                showingEditView = true
-                            },
-                            onIncrement: {
-                                Task {
-                                    await viewModel.incrementQuantity(for: item)
-                                }
-                            },
-                            onDecrement: {
-                                Task {
-                                    let shouldKeep = await viewModel.decrementQuantity(for: item)
-                                    if !shouldKeep {
-                                        itemToDelete = item
-                                    }
-                                }
-                            },
-                            isReadOnly: unifiedList.isReadOnly
-                        )
-                        .swipeActions(edge: .trailing) {
-                            if !unifiedList.isReadOnly {
-                                Button(role: .none) {
-                                    Task {
-                                        let shouldKeep = await viewModel.decrementQuantity(for: item)
-                                        if !shouldKeep {
-                                            itemToDelete = item
-                                        }
-                                    }
-                                } label: {
-                                    Label(item.quantity < 2 ? "Delete" : "Decrease",
-                                          systemImage: item.quantity < 2 ? "trash" : "minus")
-                                }
-                                .tint(item.quantity < 2 ? .red : .orange)
-                            }
-                        }
-                        .swipeActions(edge: .leading) {
-                            if !unifiedList.isReadOnly {
-                                Button {
-                                    Task {
-                                        await viewModel.incrementQuantity(for: item)
-                                    }
-                                } label: {
-                                    Label("Increase", systemImage: "plus")
-                                }
-                                .tint(.green)
-                            }
-                        }
-                        .contextMenu {
-                            Button("Edit Item...") {
-                                editingItem = item
-                                showingEditView = true
-                            }
-                            Button(role: .none) {
-                                itemToDelete = item
-                            } label: {
-                                Label("Delete Item...", systemImage: "trash")
-                            }
-                            .tint(.red)
-                        }
+                        itemWithActions(item)
                     }
                 }
             }
@@ -500,83 +520,65 @@ struct ShoppingListView: View {
     }
     
     var body: some View {
-        List {
-            let hiddenLabelIDs = Set(list.hiddenLabels ?? [])
-            
-            if viewModel.showCompletedAtBottom {
-                // Get labels to show
-                let labelsToShow: [String] = {
-                    if hideEmptyLabels {
-                        // Only labels with unchecked items
-                        return viewModel.filteredSortedLabelKeys.filter { labelName in
-                            if labelName == "Completed" {
-                                return false
-                            }
-                            let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
-                            return items.contains(where: { !$0.checked })
-                        }
-                    } else {
-                        // Show all non-hidden labels
-                        var allLabels = viewModel.labels
-                            .filter { !hiddenLabelIDs.contains($0.id) }
-                            .map { $0.name }
-                            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-                        
-                        // Add "No Label" if there are items without labels
-                        if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
-                           !noLabelItems.isEmpty {
-                            allLabels.append("No Label")
-                        }
-                        
-                        return allLabels
+        Group {
+            if viewModel.viewMode == .kanban {
+                KanbanBoardView(
+                    list: list,
+                    unifiedList: unifiedList,
+                    viewModel: viewModel,
+                    editingItem: $editingItem,
+                    showingEditView: $showingEditView,
+                    itemToDelete: $itemToDelete,
+                    updateUncheckedCount: { listID, count in
+                        await updateUncheckedCount(for: listID, with: count)
                     }
-                }()
-                
-                ForEach(labelsToShow, id: \.self) { labelName in
-                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
-                    let color = viewModel.colorForLabel(name: labelName)
-                    renderSection(labelName: labelName, items: items, color: color)
-                }
-                
-                // Completed section
-                if !viewModel.filteredCompletedItems.isEmpty {
-                    renderSection(labelName: "Completed", items: viewModel.filteredCompletedItems, color: .primary)
-                }
-                
+                )
             } else {
-                // Get labels to show (excluding "Completed")
-                let labelsToShow: [String] = {
-                    if hideEmptyLabels {
-                        // Only labels with items
-                        return viewModel.filteredSortedLabelKeys.filter { $0 != "Completed" }
-                    } else {
-                        // Show all non-hidden labels
-                        var allLabels = viewModel.labels
-                            .filter { !hiddenLabelIDs.contains($0.id) }
-                            .map { $0.name }
-                            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-                        
-                        // Add "No Label" if there are items without labels
-                        if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
-                           !noLabelItems.isEmpty {
-                            allLabels.append("No Label")
-                        }
-                        
-                        return allLabels
+                List {
+                    ForEach(labelsForListBody, id: \.self) { labelName in
+                        let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
+                        let color = viewModel.colorForLabel(name: labelName)
+                        renderSection(labelName: labelName, items: items, color: color)
                     }
-                }()
-                
-                ForEach(labelsToShow, id: \.self) { labelName in
-                    let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
-                    let color = viewModel.colorForLabel(name: labelName)
-                    renderSection(labelName: labelName, items: items, color: color)
+
+                    if viewModel.showCompletedAtBottom && !viewModel.filteredCompletedItems.isEmpty {
+                        renderSection(labelName: "Completed", items: viewModel.filteredCompletedItems, color: .primary)
+                    }
                 }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .refreshable {
+                    try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+                    await viewModel.loadLabels()
+                    await viewModel.loadItems()
+                    viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
+                }
+                .environment(\.chipsInline, shouldShowChipsInline(
+                    itemTitles: viewModel.items.map(\.note),
+                    availableWidth: listWidth
+                ))
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .background(
+            ZStack {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+
+                if let gradient = viewModel.listBackground?.resolved() {
+                    LinearGradient(
+                        colors: [gradient.fromColor, gradient.toColor],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ).ignoresSafeArea()
+                }
+
+                GeometryReader { geo in
+                    Color.clear.preference(key: ListWidthPreferenceKey.self, value: geo.size.width)
+                }
+            }
+        )
+        .onPreferenceChange(ListWidthPreferenceKey.self) { listWidth = $0 }
         .navigationTitle(list.name)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(viewModel.viewMode == .kanban ? .inline : .large)
         .toolbar(id: "LIST_ACTIONS") {
             // Add button - always present, just hidden/disabled
             ToolbarItem(id: "icon", placement: .largeTitle) {
@@ -590,9 +592,8 @@ struct ShoppingListView: View {
                         
                         Spacer()
                     }
-                    .padding(.top, 12)
+                    .padding(.vertical, 16)
                     .padding(.horizontal)
-                    Divider()
                 }
 
             }
@@ -617,8 +618,53 @@ struct ShoppingListView: View {
                 .padding(.horizontal, 4)
             }
             
-            // Add button - always present, just hidden/disabled
-            ToolbarItem(id: "add", placement: .navigationBarTrailing) {
+            // Refresh button - only in kanban mode (no pull-to-refresh)
+            ToolbarItem(id: "refresh", placement: .navigationBarTrailing) {
+                if viewModel.viewMode == .kanban {
+                    Button {
+                        guard kanbanRefreshState == .idle else { return }
+                        kanbanRefreshState = .refreshing
+                        Task {
+                            let start = Date()
+                            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+                            await viewModel.loadLabels()
+                            await viewModel.loadItems()
+                            // Ensure spinner shows for at least 0.6s
+                            let elapsed = Date().timeIntervalSince(start)
+                            if elapsed < 0.6 {
+                                try? await Task.sleep(nanoseconds: UInt64((0.6 - elapsed) * 1_000_000_000))
+                            }
+                            await MainActor.run {
+                                withAnimation {
+                                    kanbanRefreshState = .done
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                    withAnimation {
+                                        kanbanRefreshState = .idle
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Group {
+                            switch kanbanRefreshState {
+                            case .idle:
+                                Image(systemName: "arrow.clockwise")
+                            case .refreshing:
+                                ProgressView()
+                                    .controlSize(.small)
+                            case .done:
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                    }
+                    .disabled(kanbanRefreshState != .idle)
+                }
+            }
+
+            // Add button - in bottom bar next to search
+            ToolbarItem(id: "add", placement: .bottomBar) {
                 Button {
                     showingAddView = true
                 } label: {
@@ -626,121 +672,14 @@ struct ShoppingListView: View {
                 }
                 .disabled(unifiedList.isReadOnly)
             }
-            
-            ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
-            
+
             // Menu - always present, just hidden/disabled
             ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
                 Menu {
-                    Button {
-                        showingMarkdownImport = true
-                    } label: {
-                        Label("Import from Markdown", systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(unifiedList.isReadOnly)
-                    
-                    Divider()
-                    
-                    Menu("Mark All Items As…") {
-                        Button {
-                            Task {
-                                isPerformingBulkAction = true
-                                
-                                await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
-                                    await updateUncheckedCount(for: list.id, with: count)
-                                }
-                                
-                                await MainActor.run {
-                                    isPerformingBulkAction = false
-                                }
-                            }
-                        } label: {
-                            Label("Completed", systemImage: "checkmark.circle.fill")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-                        
-                        Button {
-                            Task {
-                                isPerformingBulkAction = true
-                                
-                                await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
-                                    await updateUncheckedCount(for: list.id, with: count)
-                                }
-                                
-                                await MainActor.run {
-                                    isPerformingBulkAction = false
-                                }
-                            }
-                        } label: {
-                            Label("Active", systemImage: "circle")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-                    }
-                    
-                    Button {
-                        withAnimation(.easeInOut) {
-                            viewModel.setShowCompletedAtBottom(!viewModel.showCompletedAtBottom)
-                        }
-                    } label: {
-                        Label(
-                            viewModel.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
-                            systemImage:  viewModel.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
-                        )
-                    }
-                    .disabled(unifiedList.isReadOnly)
-                    
-                    Divider()
-                    
-                    Menu("Export As…") {
-                        Button {
-                            markdownToExport = MarkdownExport(
-                                listName: list.name,
-                                listId: unifiedList.originalFileId ?? unifiedList.id,
-                                items: viewModel.items,
-                                labels: viewModel.labels,
-                                activeOnly: true
-                            )
-                        } label: {
-                            Label("Markdown", systemImage: "doc.text")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-
-                        Button {
-                            shareLinkExport = MarkdownExport(
-                                listName: list.name,
-                                listId: unifiedList.originalFileId ?? unifiedList.id,
-                                items: viewModel.items,
-                                labels: viewModel.labels,
-                                activeOnly: true
-                            )
-                        } label: {
-                            Label("Share Link", systemImage: "link")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-
-                        Divider()
-                        
-                        Button {
-                            onExportJSON?()
-                        } label: {
-                            Label("Listie File...", systemImage: "doc.badge.gearshape")
-                        }
-                        .disabled(unifiedList.isReadOnly)
-                    }
-                    
-                    Divider()
-                    
-                    Button {
-                        showingRecycleBin = true
-                    } label: {
-                        Label("Recycle Bin", systemImage: "trash")
-                    }
-                    .disabled(unifiedList.isReadOnly)
-                    
+                    overflowMenuContent
                 } label: {
                     Image(systemName: "ellipsis")
                 }
-                //.disabled(isPerformingBulkAction)
             }
             
         }
@@ -757,158 +696,28 @@ struct ShoppingListView: View {
             
             showContent = true
         }
-        .refreshable {
-            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
-            
-            await viewModel.loadLabels()
-            await viewModel.loadItems()
-            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
-        }
         
-        .fullScreenCover(isPresented: $showingAddView) {
-            AddItemView(list: list, viewModel: viewModel)
-        }
-        .fullScreenCover(item: $editingItem) { item in
-            EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList)
-        }
-        .sheet(isPresented: $showingRecycleBin) {
-            RecycleBinView(list: unifiedList, provider: unifiedProvider) {
-                Task {
-                    await viewModel.loadItems()
-                }
-            }
-            
-            
-        }
-        .sheet(isPresented: $showingMarkdownImport) {
-            Task {
-                // Reload items and labels after import
-                await viewModel.loadItems()
-                await viewModel.loadLabels()
-            }
-        } content: {
-            MarkdownListImportView(
-                list: unifiedList,
-                provider: unifiedProvider,
-                existingItems: viewModel.items,
-                existingLabels: viewModel.labels
-            )
-        }
-        .sheet(item: $markdownToExport) { export in
-            MarkdownExportView(
-                listName: export.listName,
-                listId: export.listId,
-                items: export.items,
-                labels: export.labels,
-                activeOnly: export.activeOnly
-            )
-        }
-        .sheet(item: $shareLinkExport) { export in
-            ShareLinkSheet(
-                listName: export.listName,
-                listId: export.listId,
-                items: export.items,
-                labels: export.labels
-            )
-        }
-        .alert("Delete Item?", isPresented: Binding(
-            get: { itemToDelete != nil },
-            set: { if !$0 { itemToDelete = nil } }
-        )) {
-            Button("Delete", role: .destructive) {
-                if let item = itemToDelete {
-                    Task {
-                        _ = await viewModel.deleteItem(item)
-                        await MainActor.run { itemToDelete = nil }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { itemToDelete = nil }
-        } message: {
-            Text("Item will be moved to the Recycle Bin and automatically deleted after 30 days.")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .listSettingsChanged)) { _ in
-            Task {
-                await viewModel.loadLabels()
-                await viewModel.loadItems()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .externalListChanged)) { notification in
-            // Reload if this list changed
-            if let changedListId = notification.object as? String,
-               changedListId == unifiedList.id {
-                Task {
-                    await viewModel.loadLabels()
-                    await viewModel.loadItems()
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reminderTapped)) { notification in
-            guard let listId = notification.userInfo?["listId"] as? String,
-                  listId == unifiedList.id,
-                  let itemIdString = notification.userInfo?["itemId"] as? String,
-                  let itemId = UUID(uuidString: itemIdString) else { return }
-
-            // Small delay to let the list navigate first
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                if let item = viewModel.items.first(where: { $0.id == itemId }) {
-                    if item.checked {
-                        let time = item.modifiedAt.formatted(date: .omitted, time: .shortened)
-                        let day = Calendar.current.isDateInToday(item.modifiedAt) ? "today" : item.modifiedAt.formatted(date: .abbreviated, time: .omitted)
-                        beatenToItMessage = "Completed \(day) at \(time)"
-                    } else {
-                        editingItem = item
-                    }
-                }
-            }
-        }
-        .alert("You've been beaten to it!", isPresented: Binding(
-            get: { beatenToItMessage != nil },
-            set: { if !$0 { beatenToItMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { beatenToItMessage = nil }
-        } message: {
-            Text(beatenToItMessage ?? "")
-        }
-        .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
-        .focusedSceneValue(\.exportJSON, $triggerJSONExport)
-        .focusedSceneValue(\.shareLink, $triggerShareLink)
-        .focusedSceneValue(\.isReadOnly, unifiedList.isReadOnly)
-        .onChange(of: triggerMarkdownExport) { oldValue, newValue in
-            if newValue {
-                // Trigger markdown export
-                markdownToExport = MarkdownExport(
-                    listName: list.name,
-                    listId: unifiedList.originalFileId ?? unifiedList.id,
-                    items: viewModel.items,
-                    labels: viewModel.labels,
-                    activeOnly: true
-                )
-                triggerMarkdownExport = false
-            }
-        }
-        .onChange(of: triggerJSONExport) { oldValue, newValue in
-            if newValue {
-                // Trigger JSON export
-                onExportJSON?()
-                triggerJSONExport = false
-            }
-        }
-        .onChange(of: triggerShareLink) { oldValue, newValue in
-            if newValue {
-                shareLinkExport = MarkdownExport(
-                    listName: list.name,
-                    listId: unifiedList.originalFileId ?? unifiedList.id,
-                    items: viewModel.items,
-                    labels: viewModel.labels,
-                    activeOnly: true
-                )
-                triggerShareLink = false
-            }
-        }
-        .onChange(of: searchText) { _, newValue in
-            viewModel.searchText = newValue  // ← Sync search text to ViewModel
-        }
+        .modifier(ShoppingListSheetsModifier(
+            list: list,
+            unifiedList: unifiedList,
+            unifiedProvider: unifiedProvider,
+            viewModel: viewModel,
+            welcomeViewModel: welcomeViewModel,
+            showingAddView: $showingAddView,
+            editingItem: $editingItem,
+            showingRecycleBin: $showingRecycleBin,
+            showingMarkdownImport: $showingMarkdownImport,
+            markdownToExport: $markdownToExport,
+            shareLinkExport: $shareLinkExport,
+            showingListSettings: $showingListSettings,
+            itemToDelete: $itemToDelete,
+            beatenToItMessage: $beatenToItMessage,
+            triggerMarkdownExport: $triggerMarkdownExport,
+            triggerJSONExport: $triggerJSONExport,
+            triggerShareLink: $triggerShareLink,
+            searchText: $searchText,
+            onExportJSON: onExportJSON
+        ))
     }
     
     @ViewBuilder
@@ -934,9 +743,126 @@ struct ShoppingListView: View {
         .padding(.horizontal, 4)
     }
     
+    @ViewBuilder
+    private var overflowMenuContent: some View {
+        Button {
+            showingMarkdownImport = true
+        } label: {
+            Label("Import from Markdown", systemImage: "square.and.arrow.down")
+        }
+        .disabled(unifiedList.isReadOnly)
+
+        Divider()
+
+        Menu("Mark All Items As…") {
+            Button {
+                Task {
+                    isPerformingBulkAction = true
+                    await viewModel.setAllItems(for: list.id, toCompleted: true) { count in
+                        await updateUncheckedCount(for: list.id, with: count)
+                    }
+                    await MainActor.run { isPerformingBulkAction = false }
+                }
+            } label: {
+                Label("Completed", systemImage: "checkmark.circle.fill")
+            }
+            .disabled(unifiedList.isReadOnly)
+
+            Button {
+                Task {
+                    isPerformingBulkAction = true
+                    await viewModel.setAllItems(for: list.id, toCompleted: false) { count in
+                        await updateUncheckedCount(for: list.id, with: count)
+                    }
+                    await MainActor.run { isPerformingBulkAction = false }
+                }
+            } label: {
+                Label("Active", systemImage: "circle")
+            }
+            .disabled(unifiedList.isReadOnly)
+        }
+
+        Button {
+            withAnimation(.easeInOut) {
+                viewModel.setShowCompletedAtBottom(!viewModel.showCompletedAtBottom)
+            }
+        } label: {
+            Label(
+                viewModel.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                systemImage: viewModel.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
+            )
+        }
+        .disabled(unifiedList.isReadOnly)
+
+        Button {
+            withAnimation(.easeInOut) {
+                viewModel.setViewMode(viewModel.viewMode == .list ? .kanban : .list)
+            }
+        } label: {
+            Label(
+                viewModel.viewMode == .list ? "Kanban View" : "List View",
+                systemImage: viewModel.viewMode == .list ? "rectangle.split.3x1" : "list.bullet"
+            )
+        }
+
+        Divider()
+
+        Menu("Export As…") {
+            Button {
+                markdownToExport = MarkdownExport(
+                    listName: list.name,
+                    listId: unifiedList.originalFileId ?? unifiedList.id,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    activeOnly: true
+                )
+            } label: {
+                Label("Markdown", systemImage: "doc.text")
+            }
+            .disabled(unifiedList.isReadOnly)
+
+            Button {
+                shareLinkExport = MarkdownExport(
+                    listName: list.name,
+                    listId: unifiedList.originalFileId ?? unifiedList.id,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    activeOnly: true
+                )
+            } label: {
+                Label("Share Link", systemImage: "link")
+            }
+            .disabled(unifiedList.isReadOnly)
+
+            Divider()
+
+            Button {
+                onExportJSON?()
+            } label: {
+                Label("Listie File...", systemImage: "doc.badge.gearshape")
+            }
+            .disabled(unifiedList.isReadOnly)
+        }
+
+        Divider()
+
+        Button {
+            showingListSettings = true
+        } label: {
+            Label("List Settings", systemImage: "gearshape")
+        }
+
+        Button {
+            showingRecycleBin = true
+        } label: {
+            Label("Recycle Bin", systemImage: "trash")
+        }
+        .disabled(unifiedList.isReadOnly)
+    }
+
     private func addInlineItem(to labelName: String) {
         let trimmedText = inlineAddText.trimmingCharacters(in: .whitespaces)
-        
+
         // If empty, treat as cancel
         if trimmedText.isEmpty {
             activeInlineAdd = nil
@@ -944,10 +870,10 @@ struct ShoppingListView: View {
             inlineAddFocused = false
             return
         }
-        
+
         // Find the label
         let label = viewModel.labels.first { $0.name == labelName }
-        
+
         Task {
             let success = await viewModel.addItem(
                 note: trimmedText,
@@ -955,7 +881,7 @@ struct ShoppingListView: View {
                 quantity: 1,
                 markdownNotes: nil
             )
-            
+
             if success {
                 await MainActor.run {
                     inlineAddText = ""
@@ -967,5 +893,265 @@ struct ShoppingListView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Sheets, Alerts & Notification Handlers (extracted to reduce body complexity)
+
+private struct ShoppingListSheetsModifier: ViewModifier {
+    let list: ShoppingListSummary
+    let unifiedList: UnifiedList
+    let unifiedProvider: UnifiedListProvider
+    @ObservedObject var viewModel: ShoppingListViewModel
+    @ObservedObject var welcomeViewModel: WelcomeViewModel
+
+    @Binding var showingAddView: Bool
+    @Binding var editingItem: ShoppingItem?
+    @Binding var showingRecycleBin: Bool
+    @Binding var showingMarkdownImport: Bool
+    @Binding var markdownToExport: MarkdownExport?
+    @Binding var shareLinkExport: MarkdownExport?
+    @Binding var showingListSettings: Bool
+    @Binding var itemToDelete: ShoppingItem?
+    @Binding var beatenToItMessage: String?
+    @Binding var triggerMarkdownExport: Bool
+    @Binding var triggerJSONExport: Bool
+    @Binding var triggerShareLink: Bool
+    @Binding var searchText: String
+    var onExportJSON: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(isPresented: $showingAddView, onDismiss: {
+                Task { await refreshReminderCounts() }
+            }) {
+                AddItemView(list: list, viewModel: viewModel)
+            }
+            .fullScreenCover(item: $editingItem, onDismiss: {
+                Task { await refreshReminderCounts() }
+            }) { item in
+                EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList)
+            }
+            .sheet(isPresented: $showingRecycleBin) {
+                RecycleBinView(list: unifiedList, provider: unifiedProvider) {
+                    Task { await viewModel.loadItems() }
+                }
+            }
+            .sheet(isPresented: $showingMarkdownImport) {
+                Task {
+                    await viewModel.loadItems()
+                    await viewModel.loadLabels()
+                }
+            } content: {
+                MarkdownListImportView(
+                    list: unifiedList,
+                    provider: unifiedProvider,
+                    existingItems: viewModel.items,
+                    existingLabels: viewModel.labels
+                )
+            }
+            .sheet(item: $markdownToExport) { export in
+                MarkdownExportView(
+                    listName: export.listName,
+                    listId: export.listId,
+                    items: export.items,
+                    labels: export.labels,
+                    activeOnly: export.activeOnly
+                )
+            }
+            .sheet(item: $shareLinkExport) { export in
+                ShareLinkSheet(
+                    listName: export.listName,
+                    listId: export.listId,
+                    items: export.items,
+                    labels: export.labels
+                )
+            }
+            .sheet(isPresented: $showingListSettings, onDismiss: {
+                NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
+            }) {
+                ListSettingsView(
+                    list: list,
+                    unifiedList: unifiedList,
+                    unifiedProvider: unifiedProvider
+                ) { updatedName, icon, hiddenLabels in
+                    Task {
+                        let _ = try? await unifiedProvider.fetchItems(for: unifiedList)
+                        try? await unifiedProvider.updateList(
+                            unifiedList,
+                            name: updatedName,
+                            icon: icon,
+                            hiddenLabels: hiddenLabels
+                        )
+                        await unifiedProvider.loadAllLists()
+                    }
+                }
+            }
+            .modifier(ShoppingListAlertsModifier(
+                viewModel: viewModel,
+                unifiedList: unifiedList,
+                itemToDelete: $itemToDelete,
+                beatenToItMessage: $beatenToItMessage,
+                editingItem: $editingItem
+            ))
+            .modifier(ShoppingListObserversModifier(
+                list: list,
+                unifiedList: unifiedList,
+                unifiedProvider: unifiedProvider,
+                viewModel: viewModel,
+                markdownToExport: $markdownToExport,
+                shareLinkExport: $shareLinkExport,
+                triggerMarkdownExport: $triggerMarkdownExport,
+                triggerJSONExport: $triggerJSONExport,
+                triggerShareLink: $triggerShareLink,
+                searchText: $searchText,
+                editingItem: $editingItem,
+                beatenToItMessage: $beatenToItMessage,
+                onExportJSON: onExportJSON
+            ))
+    }
+
+    private func refreshReminderCounts() async {
+        await welcomeViewModel.loadUnifiedCounts(
+            for: unifiedProvider.allLists,
+            provider: unifiedProvider
+        )
+    }
+}
+
+// MARK: - Alerts (extracted from sheets modifier)
+
+private struct ShoppingListAlertsModifier: ViewModifier {
+    @ObservedObject var viewModel: ShoppingListViewModel
+    let unifiedList: UnifiedList
+    @Binding var itemToDelete: ShoppingItem?
+    @Binding var beatenToItMessage: String?
+    @Binding var editingItem: ShoppingItem?
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Delete Item?", isPresented: Binding(
+                get: { itemToDelete != nil },
+                set: { if !$0 { itemToDelete = nil } }
+            )) {
+                Button("Delete", role: .destructive) {
+                    if let item = itemToDelete {
+                        Task {
+                            _ = await viewModel.deleteItem(item)
+                            await MainActor.run { itemToDelete = nil }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { itemToDelete = nil }
+            } message: {
+                Text("Item will be moved to the Recycle Bin and automatically deleted after 30 days.")
+            }
+            .alert("You've been beaten to it!", isPresented: Binding(
+                get: { beatenToItMessage != nil },
+                set: { if !$0 { beatenToItMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { beatenToItMessage = nil }
+            } message: {
+                Text(beatenToItMessage ?? "")
+            }
+    }
+}
+
+// MARK: - Notification & onChange Observers (extracted from body)
+
+private struct ShoppingListObserversModifier: ViewModifier {
+    let list: ShoppingListSummary
+    let unifiedList: UnifiedList
+    let unifiedProvider: UnifiedListProvider
+    @ObservedObject var viewModel: ShoppingListViewModel
+    @Binding var markdownToExport: MarkdownExport?
+    @Binding var shareLinkExport: MarkdownExport?
+    @Binding var triggerMarkdownExport: Bool
+    @Binding var triggerJSONExport: Bool
+    @Binding var triggerShareLink: Bool
+    @Binding var searchText: String
+    @Binding var editingItem: ShoppingItem?
+    @Binding var beatenToItMessage: String?
+    var onExportJSON: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .listSettingsChanged)) { _ in
+                Task {
+                    await viewModel.loadLabels()
+                    await viewModel.loadItems()
+                    viewModel.reloadBackground()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .externalListChanged)) { notification in
+                if let changedListId = notification.object as? String,
+                   changedListId == unifiedList.id {
+                    Task {
+                        await viewModel.loadLabels()
+                        await viewModel.loadItems()
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reminderCompleted)) { notification in
+                if let listId = notification.userInfo?["listId"] as? String,
+                   listId == unifiedList.id {
+                    Task { await viewModel.loadItems() }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reminderTapped)) { notification in
+                guard let listId = notification.userInfo?["listId"] as? String,
+                      listId == unifiedList.id,
+                      let itemIdString = notification.userInfo?["itemId"] as? String,
+                      let itemId = UUID(uuidString: itemIdString) else { return }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if let item = viewModel.items.first(where: { $0.id == itemId }) {
+                        if item.checked {
+                            let time = item.modifiedAt.formatted(date: .omitted, time: .shortened)
+                            let day = Calendar.current.isDateInToday(item.modifiedAt) ? "today" : item.modifiedAt.formatted(date: .abbreviated, time: .omitted)
+                            beatenToItMessage = "Completed \(day) at \(time)"
+                        } else {
+                            editingItem = item
+                        }
+                    }
+                }
+            }
+            .focusedSceneValue(\.exportMarkdown, $triggerMarkdownExport)
+            .focusedSceneValue(\.exportJSON, $triggerJSONExport)
+            .focusedSceneValue(\.shareLink, $triggerShareLink)
+            .focusedSceneValue(\.isReadOnly, unifiedList.isReadOnly)
+            .onChange(of: triggerMarkdownExport) { _, newValue in
+                if newValue {
+                    markdownToExport = MarkdownExport(
+                        listName: list.name,
+                        listId: unifiedList.originalFileId ?? unifiedList.id,
+                        items: viewModel.items,
+                        labels: viewModel.labels,
+                        activeOnly: true
+                    )
+                    triggerMarkdownExport = false
+                }
+            }
+            .onChange(of: triggerJSONExport) { _, newValue in
+                if newValue {
+                    onExportJSON?()
+                    triggerJSONExport = false
+                }
+            }
+            .onChange(of: triggerShareLink) { _, newValue in
+                if newValue {
+                    shareLinkExport = MarkdownExport(
+                        listName: list.name,
+                        listId: unifiedList.originalFileId ?? unifiedList.id,
+                        items: viewModel.items,
+                        labels: viewModel.labels,
+                        activeOnly: true
+                    )
+                    triggerShareLink = false
+                }
+            }
+            .onChange(of: searchText) { _, newValue in
+                viewModel.searchText = newValue
+            }
     }
 }

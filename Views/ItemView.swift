@@ -18,11 +18,16 @@ struct ItemFormView: View {
     @Binding var showMarkdownEditor: Bool
     @Binding var reminderEnabled: Bool
     @Binding var reminderDate: Date
-    @Binding var repeatInterval: ReminderRepeatInterval
+    @Binding var repeatRule: ReminderRepeatRule?
     @Binding var repeatMode: ReminderRepeatMode
 
     let availableLabels: [ShoppingLabel]
     let isLoading: Bool
+
+    /// Optional list context shown at the top of the form (icon, name, folder)
+    var listIcon: String? = nil
+    var listName: String? = nil
+    var folderName: String? = nil
     
     var body: some View {
         GeometryReader { geometry in
@@ -102,7 +107,7 @@ struct ItemFormView: View {
     }
     
     private var formLeftContent: some View {
-        Section(header: Text("Details")) {
+        Section() {
             HStack {
                 Label("Name", systemImage: "textformat")
                 Spacer()
@@ -110,7 +115,7 @@ struct ItemFormView: View {
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 200)
             }
-            
+
             HStack {
                 Label("Quantity:", systemImage: "number")
                 Spacer()
@@ -120,7 +125,7 @@ struct ItemFormView: View {
                         .animation(.easeInOut(duration: 0.25), value: quantity)
                 }
             }
-            
+
             HStack {
                 Label("Label", systemImage: "tag")
                 Spacer()
@@ -129,7 +134,7 @@ struct ItemFormView: View {
                 } else {
                     Picker("", selection: $selectedLabel) {
                         Text("No Label").tag(Optional<ShoppingLabel>(nil))
-                        
+
                         ForEach(availableLabels, id: \.id) { label in
                             Text(label.name.removingLabelNumberPrefix())
                                 .tag(Optional(label))
@@ -138,7 +143,7 @@ struct ItemFormView: View {
                     .labelsHidden()
                 }
             }
-            
+
             HStack {
                 Label("Completed", systemImage: "checkmark.circle")
                 Spacer()
@@ -163,17 +168,32 @@ struct ItemFormView: View {
                     displayedComponents: [.date, .hourAndMinute]
                 )
 
-                Picker("Repeat", selection: $repeatInterval) {
-                    ForEach(ReminderRepeatInterval.allCases, id: \.self) { interval in
-                        Text(interval.displayName).tag(interval)
-                    }
-                }
+                RepeatRulePicker(rule: $repeatRule)
 
-                if repeatInterval != .none {
+                if repeatRule != nil {
                     Picker("Mode", selection: $repeatMode) {
                         ForEach(ReminderRepeatMode.allCases, id: \.self) { mode in
                             Text(mode.displayName).tag(mode)
                         }
+                    }
+                }
+            }
+
+            if let name = listName {
+                HStack(spacing: 6) {
+                    
+                    Spacer()
+                    ItemFormChip(
+                        icon: listIcon ?? "list.bullet",
+                        text: name,
+                        color: .accentColor
+                    )
+                    if let folder = folderName {
+                        ItemFormChip(
+                            icon: "folder",
+                            text: folder,
+                            color: .secondary
+                        )
                     }
                 }
             }
@@ -198,9 +218,101 @@ struct ItemFormView: View {
     }
 }
 
+// MARK: - Repeat Rule Picker
+
+struct RepeatRulePicker: View {
+    @Binding var rule: ReminderRepeatRule?
+
+    // Internal state for custom mode
+    @State private var selectedPresetIndex: Int = 0  // 0 = Never
+    @State private var customUnit: ReminderRepeatUnit = .day
+    @State private var customInterval: Int = 2
+    @State private var isCustom: Bool = false
+    @State private var didInitialize: Bool = false
+
+    /// The picker options: Never, then presets, then Custom
+    private static let presetLabels = ["Never"] + ReminderRepeatRule.presets.map(\.displayName) + ["Custom…"]
+
+    var body: some View {
+        Picker("Repeat", selection: $selectedPresetIndex) {
+            ForEach(0..<Self.presetLabels.count, id: \.self) { index in
+                Text(Self.presetLabels[index]).tag(index)
+            }
+        }
+        .onAppear {
+            guard !didInitialize else { return }
+            didInitialize = true
+            let idx = presetIndex(for: rule)
+            selectedPresetIndex = idx
+            if idx == Self.presetLabels.count - 1, let r = rule {
+                isCustom = true
+                customUnit = r.unit
+                customInterval = r.interval
+            }
+        }
+        .onChange(of: selectedPresetIndex) { _, newValue in
+            applySelection(newValue)
+        }
+
+        if isCustom {
+            HStack {
+                Label("Every", systemImage: "arrow.trianglehead.2.clockwise")
+                Spacer()
+                Stepper(value: $customInterval, in: 1...365) {
+                    Text("\(customInterval)")
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.25), value: customInterval)
+                }
+                .frame(maxWidth: 140)
+            }
+            .onChange(of: customInterval) { _, _ in
+                updateCustomRule()
+            }
+
+            Picker("Unit", selection: $customUnit) {
+                ForEach(ReminderRepeatUnit.allCases, id: \.self) { unit in
+                    Text(customInterval == 1 ? unit.displayName : unit.pluralName).tag(unit)
+                }
+            }
+            .onChange(of: customUnit) { _, _ in
+                updateCustomRule()
+            }
+        }
+    }
+
+    private func applySelection(_ index: Int) {
+        if index == 0 {
+            rule = nil
+            isCustom = false
+        } else if index <= ReminderRepeatRule.presets.count {
+            rule = ReminderRepeatRule.presets[index - 1]
+            isCustom = false
+        } else {
+            isCustom = true
+            updateCustomRule()
+        }
+    }
+
+    private func updateCustomRule() {
+        if customUnit == .weekdays {
+            rule = ReminderRepeatRule(unit: .weekdays, interval: 1)
+        } else {
+            rule = ReminderRepeatRule(unit: customUnit, interval: customInterval)
+        }
+    }
+
+    private func presetIndex(for rule: ReminderRepeatRule?) -> Int {
+        guard let rule = rule else { return 0 }
+        if let idx = ReminderRepeatRule.presets.firstIndex(of: rule) {
+            return idx + 1
+        }
+        return Self.presetLabels.count - 1  // Custom
+    }
+}
+
 struct AddItemView: View {
     let list: ShoppingListSummary
-    
+
     @Environment(\.dismiss) var dismiss
     @ObservedObject var viewModel: ShoppingListViewModel
     
@@ -215,7 +327,7 @@ struct AddItemView: View {
     @State private var showMarkdownEditor = false
     @State private var reminderEnabled = false
     @State private var reminderDate = Date().addingTimeInterval(3600) // Default: 1 hour from now
-    @State private var repeatInterval: ReminderRepeatInterval = .none
+    @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
 
     var body: some View {
@@ -229,7 +341,7 @@ struct AddItemView: View {
                 showMarkdownEditor: $showMarkdownEditor,
                 reminderEnabled: $reminderEnabled,
                 reminderDate: $reminderDate,
-                repeatInterval: $repeatInterval,
+                repeatRule: $repeatRule,
                 repeatMode: $repeatMode,
                 availableLabels: availableLabels,
                 isLoading: isLoading
@@ -247,8 +359,8 @@ struct AddItemView: View {
                                 checked: checked,
                                 markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
                                 reminderDate: reminderEnabled ? reminderDate : nil,
-                                reminderRepeatInterval: reminderEnabled && repeatInterval != .none ? repeatInterval : nil,
-                                reminderRepeatMode: reminderEnabled && repeatInterval != .none ? repeatMode : nil
+                                reminderRepeatRule: reminderEnabled ? repeatRule : nil,
+                                reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil
                             )
                             if success {
                                 dismiss()
@@ -304,6 +416,13 @@ struct EditItemView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
 
+    private var editFolderName: String? {
+        if case .external(let url) = unifiedList.source {
+            return url.deletingLastPathComponent().lastPathComponent
+        }
+        return nil
+    }
+
     @State private var itemName: String = ""
     @State private var selectedLabel: ShoppingLabel? = nil
     @State private var quantity: Int = 1
@@ -316,7 +435,7 @@ struct EditItemView: View {
     @State private var showMarkdownEditor = false
     @State private var reminderEnabled = false
     @State private var reminderDate = Date().addingTimeInterval(3600)
-    @State private var repeatInterval: ReminderRepeatInterval = .none
+    @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
 
     var body: some View {
@@ -330,12 +449,15 @@ struct EditItemView: View {
                 showMarkdownEditor: $showMarkdownEditor,
                 reminderEnabled: $reminderEnabled,
                 reminderDate: $reminderDate,
-                repeatInterval: $repeatInterval,
+                repeatRule: $repeatRule,
                 repeatMode: $repeatMode,
                 availableLabels: availableLabels,
-                isLoading: isLoading
+                isLoading: isLoading,
+                listIcon: list.icon,
+                listName: list.name,
+                folderName: editFolderName
             )
-            .navigationTitle("Edit Item")
+            .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .automatic) {
@@ -358,8 +480,8 @@ struct EditItemView: View {
                                     checked: checked,
                                     markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
                                     reminderDate: reminderEnabled ? reminderDate : nil,
-                                    reminderRepeatInterval: reminderEnabled && repeatInterval != .none ? repeatInterval : nil,
-                                    reminderRepeatMode: reminderEnabled && repeatInterval != .none ? repeatMode : nil
+                                    reminderRepeatRule: reminderEnabled ? repeatRule : nil,
+                                    reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil
                                 )
                                 if success {
                                     dismiss()
@@ -432,7 +554,7 @@ struct EditItemView: View {
                 reminderEnabled = true
                 reminderDate = date
             }
-            repeatInterval = item.reminderRepeatInterval ?? .none
+            repeatRule = item.reminderRepeatRule
             repeatMode = item.reminderRepeatMode ?? .fixed
         }
     }
@@ -566,6 +688,29 @@ struct MarkdownEditorView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Item Form Chip
+
+private struct ItemFormChip: View {
+    let icon: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(text)
+                .font(.caption)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.1))
+        .foregroundColor(color)
+        .clipShape(Capsule())
     }
 }
 

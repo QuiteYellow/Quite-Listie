@@ -18,18 +18,35 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        ReminderManager.registerCategory()
+        BackgroundRefreshManager.register()
         return true
     }
 
-    /// Called when a notification is tapped — post a notification so the UI can navigate
+    /// Called when a notification is tapped or an action button is pressed
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        if let listId = userInfo["listId"] as? String,
-           let itemId = userInfo["itemId"] as? String {
+        let listId = userInfo["listId"] as? String
+        let itemId = userInfo["itemId"] as? String
+
+        if response.actionIdentifier == ReminderManager.completeActionIdentifier,
+           let listId, let itemId {
+            // "Complete" action — mark the item done in the background
+            Task {
+                await ReminderManager.completeItemFromNotification(itemId: itemId, listId: listId)
+                // Post so UI refreshes if visible
+                NotificationCenter.default.post(
+                    name: .reminderCompleted,
+                    object: nil,
+                    userInfo: ["listId": listId, "itemId": itemId]
+                )
+            }
+        } else if let listId, let itemId {
+            // Default tap — navigate to the list
             NotificationCenter.default.post(
                 name: .reminderTapped,
                 object: nil,
@@ -51,6 +68,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 extension Notification.Name {
     static let reminderTapped = Notification.Name("reminderTapped")
+    static let reminderCompleted = Notification.Name("reminderCompleted")
 }
 
 @main
@@ -63,7 +81,8 @@ struct ShoppingListApp: App {
     @FocusedBinding(\.exportJSON) private var exportJSON: Bool?
     @FocusedBinding(\.shareLink) private var shareLink: Bool?
     @FocusedValue(\.isReadOnly) private var isReadOnly: Bool?
-    
+    @FocusedBinding(\.settingsSheet) private var settingsSheet: Bool?
+
     var body: some Scene {
         WindowGroup {
             WelcomeView()
@@ -74,6 +93,14 @@ struct ShoppingListApp: App {
                 }
         }
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    settingsSheet = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+                .disabled(settingsSheet == nil)
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Private List...") {
                     newListSheet = true

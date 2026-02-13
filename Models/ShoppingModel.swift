@@ -96,22 +96,30 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
 
 // MARK: - Reminder Repeat Support
 
-enum ReminderRepeatInterval: String, Codable, CaseIterable {
-    case none
-    case daily
-    case weekly
-    case biweekly
-    case monthly
-    case yearly
+enum ReminderRepeatUnit: String, Codable, CaseIterable {
+    case day
+    case week
+    case month
+    case year
+    case weekdays  // Mon–Fri only
 
     var displayName: String {
         switch self {
-        case .none: return "Never"
-        case .daily: return "Daily"
-        case .weekly: return "Weekly"
-        case .biweekly: return "Every 2 Weeks"
-        case .monthly: return "Monthly"
-        case .yearly: return "Yearly"
+        case .day: return "Day"
+        case .week: return "Week"
+        case .month: return "Month"
+        case .year: return "Year"
+        case .weekdays: return "Weekdays"
+        }
+    }
+
+    var pluralName: String {
+        switch self {
+        case .day: return "Days"
+        case .week: return "Weeks"
+        case .month: return "Months"
+        case .year: return "Years"
+        case .weekdays: return "Weekdays"
         }
     }
 }
@@ -135,6 +143,36 @@ enum ReminderRepeatMode: String, Codable, CaseIterable {
     }
 }
 
+struct ReminderRepeatRule: Codable, Equatable {
+    var unit: ReminderRepeatUnit
+    var interval: Int  // e.g. 2 = every 2 weeks
+
+    /// Human-readable description, e.g. "Every 2 Weeks", "Daily", "Weekdays"
+    var displayName: String {
+        if unit == .weekdays { return "Weekdays" }
+        if interval == 1 {
+            switch unit {
+            case .day: return "Daily"
+            case .week: return "Weekly"
+            case .month: return "Monthly"
+            case .year: return "Yearly"
+            case .weekdays: return "Weekdays"
+            }
+        }
+        return "Every \(interval) \(unit.pluralName)"
+    }
+
+    // Common presets
+    static let daily = ReminderRepeatRule(unit: .day, interval: 1)
+    static let weekly = ReminderRepeatRule(unit: .week, interval: 1)
+    static let biweekly = ReminderRepeatRule(unit: .week, interval: 2)
+    static let monthly = ReminderRepeatRule(unit: .month, interval: 1)
+    static let yearly = ReminderRepeatRule(unit: .year, interval: 1)
+    static let weekdays = ReminderRepeatRule(unit: .weekdays, interval: 1)
+
+    static let presets: [ReminderRepeatRule] = [daily, weekly, biweekly, monthly, yearly, weekdays]
+}
+
 // MARK: - Shopping Item
 struct ShoppingItem: Identifiable, Codable {
     var id: UUID  // Keep UUID for conflict resolution
@@ -149,18 +187,18 @@ struct ShoppingItem: Identifiable, Codable {
     var markdownNotes: String?
     var deletedAt: Date?  // tracks when item was deleted
     var reminderDate: Date?  // when to send a reminder notification
-    var reminderRepeatInterval: ReminderRepeatInterval?  // repeat frequency
+    var reminderRepeatRule: ReminderRepeatRule?  // repeat rule (unit + interval)
     var reminderRepeatMode: ReminderRepeatMode?  // fixed or after-completion
 
 
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatInterval, reminderRepeatMode
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode
         }
 
     init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
              labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(),
              isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil,
-             reminderRepeatInterval: ReminderRepeatInterval? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) {
+             reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) {
             self.id = id
             self.note = note
             self.quantity = quantity
@@ -171,7 +209,7 @@ struct ShoppingItem: Identifiable, Codable {
             self.isDeleted = isDeleted
             self.deletedAt = deletedAt
             self.reminderDate = reminderDate
-            self.reminderRepeatInterval = reminderRepeatInterval
+            self.reminderRepeatRule = reminderRepeatRule
             self.reminderRepeatMode = reminderRepeatMode
         }
     }

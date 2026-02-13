@@ -33,18 +33,12 @@ struct SettingsView: View {
             Form {
                 // MARK: - Storage Section
                 Section {
+                    
                     HStack {
-                        Toggle("Sync with iCloud", isOn: $iCloudSyncEnabled)
-                            .toggleStyle(.switch)
-                            .onChange(of: iCloudSyncEnabled) { _, newValue in
-                                Task {
-                                    await iCloudContainerManager.shared.setICloudSyncEnabled(newValue)
-                                    await updateStorageLocation()
-                                    // Notify to reload lists after migration
-                                    NotificationCenter.default.post(name: .storageLocationChanged, object: nil)
-                                }
-                            }
-
+                        Text("Sync with iCloud")
+                        
+                        Spacer()
+                        
                         Button {
                             showICloudInfo = true
                         } label: {
@@ -52,7 +46,20 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
+                        
+                        Toggle("", isOn: $iCloudSyncEnabled)
+                            .toggleStyle(.switch)
+                            .fixedSize()
+                            .onChange(of: iCloudSyncEnabled) { _, newValue in
+                                Task {
+                                    await iCloudContainerManager.shared.setICloudSyncEnabled(newValue)
+                                    await updateStorageLocation()
+                                    NotificationCenter.default.post(name: .storageLocationChanged, object: nil)
+                                }
+                            }
                     }
+                    
+
 
                     HStack {
                         Text("Storage Location")
@@ -70,6 +77,7 @@ struct SettingsView: View {
                 } message: {
                     Text("Your private lists are stored in your iCloud account and sync automatically across all your Apple devices. Disabling this will store lists only on this device.")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Section {
                     Toggle("Show Welcome List", isOn: Binding(
@@ -85,11 +93,8 @@ struct SettingsView: View {
                 
                 Section {
                     HStack {
-                        Toggle("Quick Add Items", isOn: Binding(
-                            get: { !hideQuickAdd },
-                            set: { hideQuickAdd = !$0 }
-                        ))
-                        .toggleStyle(.switch)
+                        Text("Quick Add Items")
+                        Spacer()
                         
                         Button {
                             showQuickAddInfo = true
@@ -97,15 +102,22 @@ struct SettingsView: View {
                             Image(systemName: "info.circle")
                                 .foregroundColor(.secondary)
                         }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.plain)
+                        
+                        Toggle("", isOn: Binding(
+                            get: { !hideQuickAdd },
+                            set: { hideQuickAdd = !$0 }
+                        ))
+                        .toggleStyle(.switch)
+                        .fixedSize()
+                        
+                        
                     }
                     
                     HStack {
-                        Toggle("Show Empty Labels", isOn: Binding(
-                            get: { !hideEmptyLabels },
-                            set: { hideEmptyLabels = !$0 }
-                        ))
-                        .toggleStyle(.switch)
+                        Text("Show Empty Labels")
+                        
+                        Spacer()
                         
                         Button {
                             showEmptyLabelsInfo = true
@@ -113,7 +125,17 @@ struct SettingsView: View {
                             Image(systemName: "info.circle")
                                 .foregroundColor(.secondary)
                         }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.plain)
+                        
+                        Toggle("", isOn: Binding(
+                            get: { !hideEmptyLabels },
+                            set: { hideEmptyLabels = !$0 }
+                        ))
+                        .toggleStyle(.switch)
+                        .fixedSize()
+                        
+                        
+                        
                     }
                 } header: {
                     Text("Lists & Labels")
