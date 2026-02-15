@@ -98,15 +98,6 @@ extension FocusedValues {
     }
 }
 
-extension String {
-    func removingLabelNumberPrefix() -> String {
-        let pattern = #"^\d+\.\s*"#
-        if let range = self.range(of: pattern, options: .regularExpression) {
-            return String(self[range.upperBound...])
-        }
-        return self
-    }
-}
 
 extension Color {
     init(hex: String) {

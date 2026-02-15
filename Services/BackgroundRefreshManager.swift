@@ -12,6 +12,7 @@
 //
 
 import BackgroundTasks
+import os
 import UserNotifications
 
 enum BackgroundRefreshManager {
@@ -29,7 +30,7 @@ enum BackgroundRefreshManager {
             guard let refreshTask = task as? BGAppRefreshTask else { return }
             handleBackgroundRefresh(task: refreshTask)
         }
-        print("🔄 [BGRefresh] Registered background task: \(taskIdentifier)")
+        AppLogger.background.info("Registered background task: \(taskIdentifier)")
     }
 
     // MARK: - Scheduling
@@ -54,9 +55,9 @@ enum BackgroundRefreshManager {
             do {
                 try BGTaskScheduler.shared.submit(request)
                 let minutes = Int(interval / 60)
-                print("🔄 [BGRefresh] Scheduled next refresh in ~\(minutes) minutes")
+                AppLogger.background.info("Scheduled next refresh in ~\(minutes) minutes")
             } catch {
-                print("❌ [BGRefresh] Failed to schedule: \(error)")
+                AppLogger.background.error("Failed to schedule: \(error)")
             }
         }
     }
@@ -104,14 +105,14 @@ enum BackgroundRefreshManager {
         task.expirationHandler = {
             workTask.cancel()
             scheduleNextRefresh()
-            print("⚠️ [BGRefresh] Task expired before completion")
+            AppLogger.background.warning("Task expired before completion")
         }
 
         // Wait for completion
         Task {
             _ = await workTask.value
             task.setTaskCompleted(success: true)
-            print("✅ [BGRefresh] Task completed successfully")
+            AppLogger.background.info("Task completed successfully")
         }
     }
 
@@ -120,20 +121,20 @@ enum BackgroundRefreshManager {
     /// The main background work: load lists, scan for reminders, reconcile notifications.
     @MainActor
     private static func performReminderReconciliation() async {
-        print("🔄 [BGRefresh] Starting background reconciliation")
+        AppLogger.background.debug("Starting background reconciliation")
 
         let provider = UnifiedListProvider()
         await provider.loadAllLists()
 
         let allLists = provider.allLists
         guard !allLists.isEmpty else {
-            print("🔄 [BGRefresh] No lists found, skipping")
+            AppLogger.background.debug("No lists found, skipping")
             return
         }
 
         // Select which lists to scan (budget-aware)
         let listsToScan = await selectListsToScan(from: allLists)
-        print("🔄 [BGRefresh] Scanning \(listsToScan.count) of \(allLists.count) lists")
+        AppLogger.background.debug("Scanning \(listsToScan.count) of \(allLists.count) lists")
 
         // Collect all reminder items across selected lists
         var allReminderItems: [(item: ShoppingItem, listName: String, listId: String)] = []
@@ -150,11 +151,11 @@ enum BackgroundRefreshManager {
                 listsScanned += 1
             } catch {
                 listsFailed += 1
-                print("⚠️ [BGRefresh] Failed to fetch items for \(list.summary.name): \(error)")
+                AppLogger.background.warning("Failed to fetch items for \(list.summary.name): \(error)")
             }
         }
 
-        print("🔄 [BGRefresh] Scanned \(listsScanned) lists (\(listsFailed) failed), found \(allReminderItems.count) reminder items")
+        AppLogger.background.info("Scanned \(listsScanned) lists (\(listsFailed) failed), found \(allReminderItems.count) reminder items")
 
         // Reconcile with notification budget
         await ReminderManager.reconcileWithBudget(allItems: allReminderItems, trigger: "background")

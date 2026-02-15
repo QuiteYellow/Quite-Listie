@@ -5,6 +5,7 @@
 //  Updated to work seamlessly with both local and external lists
 //
 
+import os
 import SwiftUI
 
 // MARK: - Section Header View
@@ -22,7 +23,7 @@ struct SectionHeaderView: View {
                 Image(systemName: "tag.fill")
                     .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
                 
-                Text(labelName.removingLabelNumberPrefix())
+                Text(labelName)
                     .foregroundColor(.primary)
                 
                 Spacer()
@@ -318,13 +319,14 @@ struct ShoppingListView: View {
             }
             return keys
         } else {
-            var allLabels: [String] = viewModel.labels
+            let filteredLabels = viewModel.labels
                 .filter { !hiddenLabelIDs.contains($0.id) }
-                .map { $0.name }
-                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            let names = filteredLabels.map { $0.name }
+            var allLabels = sortedLabelNames(names, labels: viewModel.labels, labelOrder: list.labelOrder)
 
             if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
-               !noLabelItems.isEmpty {
+               !noLabelItems.isEmpty,
+               !allLabels.contains("No Label") {
                 allLabels.append("No Label")
             }
             return allLabels
@@ -548,7 +550,12 @@ struct ShoppingListView: View {
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
                 .refreshable {
-                    try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+                    do {
+                        try await unifiedProvider.syncIfNeeded(for: unifiedList)
+                    } catch {
+                        AppLogger.sync.warning("Sync failed on refresh: \(error, privacy: .public)")
+                        await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
+                    }
                     await viewModel.loadLabels()
                     await viewModel.loadItems()
                     viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
@@ -626,7 +633,12 @@ struct ShoppingListView: View {
                         kanbanRefreshState = .refreshing
                         Task {
                             let start = Date()
-                            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+                            do {
+                                try await unifiedProvider.syncIfNeeded(for: unifiedList)
+                            } catch {
+                                AppLogger.sync.warning("Sync failed on kanban refresh: \(error, privacy: .public)")
+                                await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
+                            }
                             await viewModel.loadLabels()
                             await viewModel.loadItems()
                             // Ensure spinner shows for at least 0.6s
@@ -687,7 +699,12 @@ struct ShoppingListView: View {
         
         .task {
             showContent = false
-            try? await unifiedProvider.syncIfNeeded(for: unifiedList)
+            do {
+                try await unifiedProvider.syncIfNeeded(for: unifiedList)
+            } catch {
+                AppLogger.sync.warning("Sync failed on load: \(error, privacy: .public)")
+                await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
+            }
             await unifiedProvider.cleanupOldDeletedItems(for: unifiedList)
             
             await viewModel.loadLabels()
@@ -930,7 +947,11 @@ private struct ShoppingListSheetsModifier: ViewModifier {
             .fullScreenCover(item: $editingItem, onDismiss: {
                 Task { await refreshReminderCounts() }
             }) { item in
-                EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList)
+                if list.id == "example-welcome-list" {
+                    ItemPreviewView(item: item)
+                } else {
+                    EditItemView(viewModel: viewModel, item: item, list: list, unifiedList: unifiedList)
+                }
             }
             .sheet(isPresented: $showingRecycleBin) {
                 RecycleBinView(list: unifiedList, provider: unifiedProvider) {
@@ -974,15 +995,20 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                     list: list,
                     unifiedList: unifiedList,
                     unifiedProvider: unifiedProvider
-                ) { updatedName, icon, hiddenLabels in
+                ) { updatedName, icon, hiddenLabels, labelOrder in
                     Task {
-                        let _ = try? await unifiedProvider.fetchItems(for: unifiedList)
-                        try? await unifiedProvider.updateList(
-                            unifiedList,
-                            name: updatedName,
-                            icon: icon,
-                            hiddenLabels: hiddenLabels
-                        )
+                        do {
+                            let _ = try await unifiedProvider.fetchItems(for: unifiedList)
+                            try await unifiedProvider.updateList(
+                                unifiedList,
+                                name: updatedName,
+                                icon: icon,
+                                hiddenLabels: hiddenLabels,
+                                labelOrder: labelOrder
+                            )
+                        } catch {
+                            AppLogger.fileStore.warning("Failed to save list settings: \(error, privacy: .public)")
+                        }
                         await unifiedProvider.loadAllLists()
                     }
                 }

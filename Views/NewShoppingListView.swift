@@ -5,6 +5,7 @@
 //  Updated to use V2 format with clean IDs
 //
 
+import os
 import SwiftUI
 import SymbolPicker
 
@@ -88,7 +89,7 @@ struct NewShoppingListView: View {
             onCreate()
             dismiss()
         } catch {
-            print("❌ Failed to create list:", error.localizedDescription)
+            AppLogger.fileStore.error("Failed to create list: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

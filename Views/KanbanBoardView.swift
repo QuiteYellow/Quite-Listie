@@ -18,6 +18,7 @@ struct KanbanBoardView: View {
 
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
+    @AppStorage("kanbanColumnWidth") private var kanbanColumnWidth = "normal"
 
     @State private var activeInlineAdd: String? = nil
     @State private var inlineAddText: String = ""
@@ -38,13 +39,13 @@ struct KanbanBoardView: View {
                     return items.contains(where: { !$0.checked })
                 }
             } else {
-                var allLabels = viewModel.labels
-                    .filter { !hiddenLabelIDs.contains($0.id) }
-                    .map { $0.name }
-                    .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                let filteredLabels = viewModel.labels.filter { !hiddenLabelIDs.contains($0.id) }
+                let names = filteredLabels.map { $0.name }
+                var allLabels = sortedLabelNames(names, labels: viewModel.labels, labelOrder: list.labelOrder)
 
                 if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
-                   !noLabelItems.isEmpty {
+                   !noLabelItems.isEmpty,
+                   !allLabels.contains("No Label") {
                     allLabels.append("No Label")
                 }
                 return allLabels
@@ -53,13 +54,13 @@ struct KanbanBoardView: View {
             if hideEmptyLabels {
                 return viewModel.filteredSortedLabelKeys.filter { $0 != "Completed" }
             } else {
-                var allLabels = viewModel.labels
-                    .filter { !hiddenLabelIDs.contains($0.id) }
-                    .map { $0.name }
-                    .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                let filteredLabels = viewModel.labels.filter { !hiddenLabelIDs.contains($0.id) }
+                let names = filteredLabels.map { $0.name }
+                var allLabels = sortedLabelNames(names, labels: viewModel.labels, labelOrder: list.labelOrder)
 
                 if let noLabelItems = viewModel.filteredItemsGroupedByLabel["No Label"],
-                   !noLabelItems.isEmpty {
+                   !noLabelItems.isEmpty,
+                   !allLabels.contains("No Label") {
                     allLabels.append("No Label")
                 }
                 return allLabels
@@ -69,9 +70,15 @@ struct KanbanBoardView: View {
 
     // MARK: - Body
 
-    /// Column width: 400 on wide screens (>600), 300 on narrow (phones).
+    /// Column width based on user setting: narrow (300), normal (400), wide (500).
+    /// Falls back to 300 on narrow screens (phones).
     private func columnWidth(for availableWidth: CGFloat) -> CGFloat {
-        availableWidth > 600 ? 400 : 300
+        guard availableWidth > 600 else { return 300 }
+        switch kanbanColumnWidth {
+        case "narrow": return 300
+        case "wide": return 500
+        default: return 400
+        }
     }
 
     var body: some View {
@@ -175,7 +182,7 @@ struct KanbanBoardView: View {
             Image(systemName: "tag.fill")
                 .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
 
-            Text(labelName.removingLabelNumberPrefix())
+            Text(labelName)
                 .font(.headline)
                 .foregroundColor(.primary)
 

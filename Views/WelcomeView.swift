@@ -5,6 +5,7 @@
 //  All lists (local and external) shown together with unified UI
 //
 
+import os
 import SwiftUI
 
 struct WelcomeView: View {
@@ -174,7 +175,7 @@ struct WelcomeView: View {
             do {
                 try await MigrationManager.shared.runMigrationsIfNeeded()
             } catch {
-                print("❌ Migration failed: \(error)")
+                AppLogger.migration.error("Migration failed: \(error, privacy: .public)")
             }
 
             await unifiedProvider.loadAllLists()
@@ -321,15 +322,20 @@ struct WelcomeView: View {
             list: unifiedList.summary,
             unifiedList: unifiedList,
             unifiedProvider: unifiedProvider
-        ) { updatedName, icon, hiddenLabels in  // Updated signature
+        ) { updatedName, icon, hiddenLabels, labelOrder in
             Task {
-                let _ = try? await unifiedProvider.fetchItems(for: unifiedList)
-                try? await unifiedProvider.updateList(
-                    unifiedList,
-                    name: updatedName,
-                    icon: icon,
-                    hiddenLabels: hiddenLabels
-                )
+                do {
+                    let _ = try await unifiedProvider.fetchItems(for: unifiedList)
+                    try await unifiedProvider.updateList(
+                        unifiedList,
+                        name: updatedName,
+                        icon: icon,
+                        hiddenLabels: hiddenLabels,
+                        labelOrder: labelOrder
+                    )
+                } catch {
+                    AppLogger.fileStore.warning("Failed to save list settings: \(error, privacy: .public)")
+                }
                 await unifiedProvider.loadAllLists()
             }
         }
@@ -361,7 +367,7 @@ struct WelcomeView: View {
     }
 
     private func syncAndReconcileReminders() async {
-        print("🔄 [Sync] Starting foreground reminder sync")
+        AppLogger.sync.debug("Starting foreground reminder sync")
         await unifiedProvider.syncAllExternalLists()
 
         // Fetch pending notifications once (not per-list)
@@ -383,7 +389,7 @@ struct WelcomeView: View {
                     allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
                 }
             } catch {
-                print("❌ [Sync] Failed to fetch items for \(list.summary.name): \(error)")
+                AppLogger.sync.error("Failed to fetch items for \(list.summary.name, privacy: .public): \(error, privacy: .public)")
             }
         }
 
@@ -392,7 +398,7 @@ struct WelcomeView: View {
 
         // Schedule next background refresh
         BackgroundRefreshManager.scheduleNextRefresh()
-        print("🔄 [Sync] Foreground reminder sync complete")
+        AppLogger.sync.info("Foreground reminder sync complete")
     }
     
     @MainActor
@@ -407,7 +413,7 @@ struct WelcomeView: View {
             pendingExportType = .exportExisting
             showFileExporter = true
         } catch {
-            print("Failed to prepare export: \(error)")
+            AppLogger.fileStore.error("Failed to prepare export: \(error, privacy: .public)")
         }
     }
     
@@ -429,13 +435,13 @@ struct WelcomeView: View {
                             conflictingDocument = nsError.userInfo["document"] as? ListDocument
                             showIDConflictAlert = true
                         } else {
-                            print("Failed to open file: \(error)")
+                            AppLogger.fileStore.error("Failed to open file: \(error, privacy: .public)")
                         }
                     }
                 }
             }
         case .failure(let error):
-            print("File import error: \(error)")
+            AppLogger.fileStore.error("File import error: \(error, privacy: .public)")
         }
     }
     
@@ -444,7 +450,7 @@ struct WelcomeView: View {
         
         switch result {
         case .success(let url):
-            print("Exported to: \(url)")
+            AppLogger.fileStore.info("Exported to: \(url, privacy: .public)")
             
             if exportType == .newConnectedList {
                 Task {
@@ -453,7 +459,7 @@ struct WelcomeView: View {
             }
             
         case .failure(let error):
-            print("Export error: \(error)")
+            AppLogger.fileStore.error("Export error: \(error, privacy: .public)")
         }
         
         exportingDocument = nil
@@ -478,12 +484,12 @@ struct WelcomeView: View {
                 return false
             }) {
                 selectedListID = newList.id
-                print("✅ Selected new list: \(newList.summary.name)")
+                AppLogger.general.info("Selected new list: \(newList.summary.name, privacy: .public)")
             } else {
-                print("⚠️ Could not find newly created list at: \(url.path)")
+                AppLogger.general.warning("Could not find newly created list at: \(url.path, privacy: .public)")
             }
         } catch {
-            print("❌ Failed to create new connected list: \(error)")
+            AppLogger.general.error("Failed to create new connected list: \(error, privacy: .public)")
         }
     }
     
@@ -495,7 +501,11 @@ struct WelcomeView: View {
             
             document.list.id = UUID().uuidString
             
-            try? await ExternalFileStore.shared.saveFile(document, to: url)
+            do {
+                try await ExternalFileStore.shared.saveFile(document, to: url)
+            } catch {
+                AppLogger.fileStore.error("Failed to save resolved conflict: \(error, privacy: .public)")
+            }
             
             await unifiedProvider.loadAllLists()
             
@@ -529,7 +539,7 @@ struct WelcomeView: View {
                     selectedListID = listId
                 }
             } catch {
-                print("Failed to open file from deeplink: \(error)")
+                AppLogger.deeplinks.error("Failed to open file from deeplink: \(error, privacy: .public)")
             }
         }
     }

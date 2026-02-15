@@ -7,6 +7,7 @@
 
 
 import Foundation
+import os
 import SwiftUI
 import Compression
 
@@ -34,25 +35,25 @@ class DeeplinkCoordinator: ObservableObject {
     }
 
     func handle(_ url: URL, provider: UnifiedListProvider) async {
-        print("📱 [Deeplink] Received URL: \(url)")
+        AppLogger.deeplinks.info("[Deeplink] Received URL: \(url, privacy: .public)")
 
         // Handle external JSON files
         if url.pathExtension == "listie" || url.pathExtension == "json" {
-            print("📄 [Deeplink] Detected file")
+            AppLogger.deeplinks.info("[Deeplink] Detected file")
             fileToOpen = url
             return
         }
 
         // Handle listie:// scheme
         guard url.scheme == "listie" else {
-            print("⚠️ [Deeplink] Unhandled URL scheme: \(url.scheme ?? "nil")")
+            AppLogger.deeplinks.warning("[Deeplink] Unhandled URL scheme: \(url.scheme ?? "nil", privacy: .public)")
             return
         }
 
         if url.host == "import" {
             await handleMarkdownImport(url, provider: provider)
         } else {
-            print("⚠️ [Deeplink] Unknown host: \(url.host ?? "nil")")
+            AppLogger.deeplinks.warning("[Deeplink] Unknown host: \(url.host ?? "nil", privacy: .public)")
         }
     }
 
@@ -68,7 +69,7 @@ class DeeplinkCoordinator: ObservableObject {
     }
 
     private func handleMarkdownImport(_ url: URL, provider: UnifiedListProvider) async {
-        print("📥 [Deeplink] Import action detected")
+        AppLogger.deeplinks.info("[Deeplink] Import action detected")
 
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
               let queryItems = components.queryItems else {

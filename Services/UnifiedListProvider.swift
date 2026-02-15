@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import os
 
 enum ListSource: Hashable {
     /// Private list stored in the app's iCloud container (or local fallback)
@@ -98,8 +99,9 @@ class UnifiedListProvider: ObservableObject {
     // MARK: - Load Lists
 
     func loadAllLists() async {
-        // Refresh bookmark availability to detect trashed/deleted files
-        await FileStore.shared.refreshBookmarkAvailability()
+        // Single-pass: refresh bookmark availability AND get resolved URLs in one call
+        // (eliminates the old pattern of resolving bookmarks 3x on startup)
+        let externalURLs = await FileStore.shared.refreshBookmarkAvailability()
 
         var unified: [UnifiedList] = []
         var seenExternalURLs: Set<String> = []
@@ -122,11 +124,11 @@ class UnifiedListProvider: ObservableObject {
                         isReadOnly: false
                     ))
                 } catch {
-                    print("❌ Failed to load private list \(url): \(error)")
+                    AppLogger.fileStore.error("Failed to load private list \(url, privacy: .public): \(error, privacy: .public)")
                 }
             }
         } catch {
-            print("Failed to discover private lists: \(error)")
+            AppLogger.fileStore.error("Failed to discover private lists: \(error, privacy: .public)")
         }
 
         // Add welcome list (read-only example)
@@ -137,9 +139,8 @@ class UnifiedListProvider: ObservableObject {
             originalFileId: nil,
             isReadOnly: true
         ))
-        
-        // External lists (user-selected files)
-        let externalURLs = await FileStore.shared.getBookmarkedURLs()
+
+        // External lists (user-selected files) — URLs already resolved above
         let totalFiles = externalURLs.count
         var currentFileIndex = 0
 
@@ -178,7 +179,7 @@ class UnifiedListProvider: ObservableObject {
                 externalLabels[url] = document.labels
 
             } catch {
-                print("❌ Failed to load external file \(url): \(error)")
+                AppLogger.fileStore.error("Failed to load external file \(url, privacy: .public): \(error, privacy: .public)")
                 // NOTE: Don't call closeFile here - that would remove the bookmark permanently
                 // We want to keep the bookmark so the user can retry later
 
@@ -267,7 +268,7 @@ class UnifiedListProvider: ObservableObject {
             }
             return false
         }) {
-            print("ℹ️ File already open: \(existing.summary.name)")
+            AppLogger.general.info("File already open: \(existing.summary.name, privacy: .public)")
             return existing.id
         }
 
@@ -282,7 +283,7 @@ class UnifiedListProvider: ObservableObject {
         // Check for ID conflicts with private lists
         let privateLists = allLists.filter { $0.isPrivate }
         if privateLists.contains(where: { $0.summary.id == document.list.id }) {
-            print("⚠️ ID conflict detected for: \(document.list.name)")
+            AppLogger.general.warning("ID conflict detected for: \(document.list.name, privacy: .public)")
             await FileStore.shared.closeFile(at: url)
             throw NSError(domain: "UnifiedListProvider", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "ID conflict",
@@ -310,7 +311,7 @@ class UnifiedListProvider: ObservableObject {
         externalLabels[url] = document.labels
         saveStatus[runtimeId] = .saved
 
-        print("✅ Opened and selected: \(newList.summary.name)")
+        AppLogger.general.info("Opened and selected: \(newList.summary.name, privacy: .public)")
         return newList.id
     }
     
@@ -345,14 +346,14 @@ class UnifiedListProvider: ObservableObject {
     func syncIfNeeded(for list: UnifiedList) async throws {
         // Prevent duplicate syncs for same list
         guard !activeSyncs.contains(list.id) else {
-            print("⏸️ [Sync] Already syncing \(list.summary.name), skipping")
+            AppLogger.sync.debug("[Sync] Already syncing \(list.summary.name, privacy: .public), skipping")
             return
         }
 
         let fileSource = list.source.asFileSource
 
         if await FileStore.shared.hasFileChanged(for: fileSource) {
-            print("🔄 File changed, syncing: \(list.summary.name)")
+            AppLogger.sync.debug("File changed, syncing: \(list.summary.name, privacy: .public)")
 
             activeSyncs.insert(list.id)
             defer { activeSyncs.remove(list.id) }
@@ -391,7 +392,11 @@ class UnifiedListProvider: ObservableObject {
     /// Checks all lists for changes and syncs if needed
     func syncAllLists() async {
         for list in allLists where !list.isReadOnly {
-            try? await syncIfNeeded(for: list)
+            do {
+                try await syncIfNeeded(for: list)
+            } catch {
+                AppLogger.sync.warning("Sync skipped for \(list.id, privacy: .public): \(error, privacy: .public)")
+            }
         }
     }
 
@@ -485,6 +490,11 @@ class UnifiedListProvider: ObservableObject {
     // MARK: - Labels
 
     func fetchLabels(for list: UnifiedList) async throws -> [ShoppingLabel] {
+        // Handle welcome list (read-only example)
+        if list.summary.id == ExampleData.welcomeListId {
+            return ExampleData.welcomeLabels
+        }
+
         // Return cached labels for external files if available (prevents stale reads)
         if case .external(let url) = list.source, let cached = externalLabels[url] {
             return cached
@@ -518,10 +528,10 @@ class UnifiedListProvider: ObservableObject {
     }
 
     func updateLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
-        print("📝 [updateLabel] Starting update for label: \(label.name)")
+        AppLogger.labels.debug("[updateLabel] Starting update for label: \(label.name, privacy: .public)")
 
         var document = try await FileStore.shared.openFile(from: list.source.asFileSource)
-        print("📝 [updateLabel] Document has \(document.labels.count) labels")
+        AppLogger.labels.debug("[updateLabel] Document has \(document.labels.count, privacy: .public) labels")
 
         if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
             document.labels[index] = label
@@ -531,29 +541,29 @@ class UnifiedListProvider: ObservableObject {
             case .privateICloud(let listId):
                 let url = await iCloudContainerManager.shared.fileURL(for: listId)
                 await FileStore.shared.updateCache(document, at: url)
-                print("💾 [updateLabel] Saving document with updated label...")
+                AppLogger.labels.debug("[updateLabel] Saving document with updated label...")
                 try await saveFile(document, for: list)
-                print("✅ [updateLabel] Label saved successfully")
+                AppLogger.labels.info("[updateLabel] Label saved successfully")
             case .external(let url):
                 await FileStore.shared.updateCache(document, at: url)
-                print("💾 [updateLabel] Saving document with updated label...")
+                AppLogger.labels.debug("[updateLabel] Saving document with updated label...")
                 try await saveFile(document, for: list)
                 externalLabels[url] = document.labels
-                print("✅ [updateLabel] Label saved successfully")
+                AppLogger.labels.info("[updateLabel] Label saved successfully")
             }
         } else {
-            print("⚠️ [updateLabel] Label not found in document!")
+            AppLogger.labels.warning("[updateLabel] Label not found in document!")
         }
     }
 
     func deleteLabel(_ label: ShoppingLabel, from list: UnifiedList) async throws {
-        print("🗑️ [deleteLabel] Starting delete for label: \(label.name)")
+        AppLogger.labels.debug("[deleteLabel] Starting delete for label: \(label.name, privacy: .public)")
 
         var document = try await FileStore.shared.openFile(from: list.source.asFileSource)
-        print("🗑️ [deleteLabel] Document has \(document.labels.count) labels before delete")
+        AppLogger.labels.debug("[deleteLabel] Document has \(document.labels.count, privacy: .public) labels before delete")
 
         document.labels.removeAll { $0.id == label.id }
-        print("🗑️ [deleteLabel] Document has \(document.labels.count) labels after delete")
+        AppLogger.labels.debug("[deleteLabel] Document has \(document.labels.count, privacy: .public) labels after delete")
 
         document.list.modifiedAt = Date()
 
@@ -561,35 +571,52 @@ class UnifiedListProvider: ObservableObject {
         case .privateICloud(let listId):
             let url = await iCloudContainerManager.shared.fileURL(for: listId)
             await FileStore.shared.updateCache(document, at: url)
-            print("💾 [deleteLabel] Saving document...")
+            AppLogger.labels.debug("[deleteLabel] Saving document...")
             try await saveFile(document, for: list)
-            print("✅ [deleteLabel] Label deleted successfully")
+            AppLogger.labels.info("[deleteLabel] Label deleted successfully")
         case .external(let url):
             await FileStore.shared.updateCache(document, at: url)
-            print("💾 [deleteLabel] Saving document...")
+            AppLogger.labels.debug("[deleteLabel] Saving document...")
             try await saveFile(document, for: list)
             externalLabels[url] = document.labels
-            print("✅ [deleteLabel] Label deleted successfully")
+            AppLogger.labels.info("[deleteLabel] Label deleted successfully")
         }
     }
-    
+
+    func updateLabelOrder(_ order: [String], for list: UnifiedList) async throws {
+        var document = try await FileStore.shared.openFile(from: list.source.asFileSource)
+        document.list.labelOrder = order
+        document.list.modifiedAt = Date()
+
+        switch list.source {
+        case .privateICloud(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            await FileStore.shared.updateCache(document, at: url)
+            try await saveFile(document, for: list)
+        case .external(let url):
+            await FileStore.shared.updateCache(document, at: url)
+            try await saveFile(document, for: list)
+        }
+    }
+
     // MARK: - List Management
 
-    func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?) async throws {
-        print("📋 [updateList] Loading document...")
+    func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?, labelOrder: [String]? = nil) async throws {
+        AppLogger.general.debug("[updateList] Loading document...")
         var document = try await FileStore.shared.openFile(from: list.source.asFileSource)
-        print("📋 [updateList] Document has \(document.labels.count) labels, \(document.items.count) items")
+        AppLogger.general.debug("[updateList] Document has \(document.labels.count, privacy: .public) labels, \(document.items.count, privacy: .public) items")
 
         document.list.name = name
         document.list.icon = icon
         document.list.hiddenLabels = hiddenLabels
+        document.list.labelOrder = labelOrder
         document.list.modifiedAt = Date()
 
         switch list.source {
         case .privateICloud(let listId):
             let url = await iCloudContainerManager.shared.fileURL(for: listId)
             await FileStore.shared.updateCache(document, at: url)
-            print("💾 [updateList] Saving document...")
+            AppLogger.general.debug("[updateList] Saving document...")
             try await saveFile(document, for: list)
 
             // Update allLists
@@ -598,13 +625,13 @@ class UnifiedListProvider: ObservableObject {
                 updatedList.summary = document.list
                 allLists[index] = updatedList
             }
-            print("✅ [updateList] List updated successfully")
+            AppLogger.general.info("[updateList] List updated successfully")
 
         case .external(let url):
             await FileStore.shared.updateCache(document, at: url)
-            print("💾 [updateList] Saving document with \(document.labels.count) labels...")
+            AppLogger.general.debug("[updateList] Saving document with \(document.labels.count, privacy: .public) labels...")
             try await saveFile(document, for: list)
-            print("✅ [updateList] List updated successfully")
+            AppLogger.general.info("[updateList] List updated successfully")
         }
     }
 
@@ -647,7 +674,7 @@ class UnifiedListProvider: ObservableObject {
 
     /// Unified save method for both private and external lists
     private func saveFile(_ document: ListDocument, for list: UnifiedList) async throws {
-        print("💾 [saveFile] Saving document with \(document.labels.count) labels, \(document.items.count) items")
+        AppLogger.fileStore.debug("[saveFile] Saving document with \(document.labels.count, privacy: .public) labels, \(document.items.count, privacy: .public) items")
 
         var docToSave = document
 
@@ -659,21 +686,21 @@ class UnifiedListProvider: ObservableObject {
         do {
             try await FileStore.shared.saveFile(docToSave, to: list.source.asFileSource)
             await MainActor.run { saveStatus[list.id] = .saved }
-            print("✅ [saveFile] Save successful")
+            AppLogger.fileStore.info("[saveFile] Save successful")
         } catch {
             let nsError = error as NSError
-            print("❌ Save error: \(error)")
-            print("   Domain: \(nsError.domain)")
-            print("   Code: \(nsError.code)")
-            print("   Description: \(nsError.localizedDescription)")
+            AppLogger.fileStore.error("Save error: \(error, privacy: .public)")
+            AppLogger.fileStore.debug("Domain: \(nsError.domain, privacy: .public)")
+            AppLogger.fileStore.debug("Code: \(nsError.code, privacy: .public)")
+            AppLogger.fileStore.debug("Description: \(nsError.localizedDescription, privacy: .public)")
 
             // For external files, check if file became read-only
             if case .external(let url) = list.source {
                 let isWritable = FileStore.isFileWritable(at: url)
-                print("   File is writable: \(isWritable)")
+                AppLogger.fileStore.debug("File is writable: \(isWritable, privacy: .public)")
 
                 if !isWritable {
-                    print("⚠️ File became read-only, reverting changes and reloading from disk")
+                    AppLogger.fileStore.warning("File became read-only, reverting changes and reloading from disk")
 
                     do {
                         // Reload clean version from disk
@@ -694,7 +721,7 @@ class UnifiedListProvider: ObservableObject {
                             updatedList.summary = cleanDocument.list
                             updatedList.summary.id = list.id  // Keep runtime ID
                             allLists[index] = updatedList
-                            print("✅ Marked list as read-only and updated")
+                            AppLogger.fileStore.info("Marked list as read-only and updated")
                         }
 
                         // Update save status
@@ -706,9 +733,9 @@ class UnifiedListProvider: ObservableObject {
                         NotificationCenter.default.post(name: .externalListChanged, object: list.id)
                         objectWillChange.send()
 
-                        print("✅ Successfully reverted to clean version")
+                        AppLogger.fileStore.info("Successfully reverted to clean version")
                     } catch {
-                        print("❌ Failed to reload clean version: \(error)")
+                        AppLogger.fileStore.error("Failed to reload clean version: \(error, privacy: .public)")
                     }
                 } else {
                     await MainActor.run {
@@ -743,7 +770,7 @@ class UnifiedListProvider: ObservableObject {
             }
             objectWillChange.send()
         } catch {
-            print("Failed to reload list: \(error)")
+            AppLogger.fileStore.error("Failed to reload list: \(error, privacy: .public)")
         }
     }
     
@@ -784,12 +811,16 @@ class UnifiedListProvider: ObservableObject {
                 let deletionDate = item.deletedAt ?? item.modifiedAt
                 
                 if deletionDate < thirtyDaysAgo {
-                    print("🗑️ Auto-deleting old item: \(item.note) (deleted \(deletionDate))")
-                    try? await permanentlyDeleteItem(item, from: list)
+                    AppLogger.items.debug("Auto-deleting old item: \(item.note, privacy: .public) (deleted \(deletionDate, privacy: .public))")
+                    do {
+                        try await permanentlyDeleteItem(item, from: list)
+                    } catch {
+                        AppLogger.items.warning("Failed to auto-delete item \(item.id, privacy: .public): \(error, privacy: .public)")
+                    }
                 }
             }
         } catch {
-            print("Failed to cleanup old items: \(error)")
+            AppLogger.items.error("Failed to cleanup old items: \(error, privacy: .public)")
         }
     }
 }

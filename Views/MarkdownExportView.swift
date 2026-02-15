@@ -13,6 +13,7 @@
 //  View for exporting shopping lists as markdown
 //
 
+import os
 import SwiftUI
 import MarkdownView
 import UniformTypeIdentifiers
@@ -166,10 +167,7 @@ struct MarkdownExportView: View {
                 
             }
             .onAppear {
-                print("=== MARKDOWN START ===")
-                print(markdownText)
-                print("=== MARKDOWN END ===")
-                print("Character count: \(markdownText.count)")
+                AppLogger.markdown.debug("Export preview loaded, character count: \(markdownText.count, privacy: .public)")
             }
             .navigationTitle("Export Markdown")
             .navigationBarTitleDisplayMode(.inline)
@@ -216,9 +214,9 @@ struct MarkdownExportView: View {
             ) { result in
                 switch result {
                 case .success(let url):
-                    print("Ã¢Å“â€¦ Exported markdown to: \(url)")
+                    AppLogger.markdown.info("Exported markdown to: \(url, privacy: .public)")
                 case .failure(let error):
-                    print("Ã¢ÂÅ’ Export error: \(error)")
+                    AppLogger.markdown.error("Export error: \(error, privacy: .public)")
                 }
             }
             .overlay(

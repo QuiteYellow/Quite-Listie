@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - File Source
 
@@ -113,9 +114,8 @@ actor FileStore {
     private var unavailableBookmarks: [String: UnavailableBookmark] = [:]
 
     init() {
-        Task {
-            await loadBookmarkedFiles()
-        }
+        // Bookmark loading is handled by refreshBookmarkAvailability() in loadAllLists()
+        // No need to eagerly load here — it would just duplicate work on startup
     }
     
     private func resolveConflicts(at url: URL) async throws {
@@ -124,7 +124,7 @@ actor FileStore {
             return // No conflicts
         }
         
-        print("⚠️ Found \(conflicts.count) conflicting version(s) for \(url.lastPathComponent)")
+        AppLogger.sync.warning("Found \(conflicts.count) conflicting version(s) for \(url.lastPathComponent)")
         
         guard let currentVersion = NSFileVersion.currentVersionOfItem(at: url) else {
             throw NSError(domain: "ExternalFileStore", code: 2, userInfo: [
@@ -177,7 +177,7 @@ actor FileStore {
                 encoder.dateEncodingStrategy = .iso8601
                 let data = try encoder.encode(merged)
                 try data.write(to: url, options: .atomic)
-            print("✅ Merged \(conflicts.count) conflicting version(s)")
+            AppLogger.sync.info("Merged \(conflicts.count) conflicting version(s)")
         } else {
             // Fallback to original behavior if merge failed
             let allVersions = [currentVersion] + conflicts
@@ -190,7 +190,7 @@ actor FileStore {
             if newestVersion != currentVersion {
                 try newestVersion.replaceItem(at: url, options: .byMoving)
             }
-            print("⚠️ Merge failed, fell back to newest version")
+            AppLogger.sync.warning("Merge failed, fell back to newest version")
         }
         
         // Mark all conflicts as resolved
@@ -207,7 +207,10 @@ actor FileStore {
     /// Returns true if the file has an iCloud download status, meaning it exists in iCloud
     private func isICloudFile(at url: URL) -> Bool {
         do {
-            let values = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+            // Clear cached resource values to get fresh iCloud status
+            var freshURL = url
+            freshURL.removeAllCachedResourceValues()
+            let values = try freshURL.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
             // If we can get a download status, it's an iCloud file
             return values.ubiquitousItemDownloadingStatus != nil
         } catch {
@@ -217,13 +220,22 @@ actor FileStore {
 
     // Checks if an iCloud file is fully downloaded
     private func isFileDownloaded(at url: URL) throws -> Bool {
-        let values = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-        
+        // Primary check: if the file is readable on disk, it's downloaded
+        if FileManager.default.isReadableFile(atPath: url.path) {
+            return true
+        }
+
+        // File isn't readable — clear cached resource values and check iCloud status
+        var freshURL = url
+        freshURL.removeAllCachedResourceValues()
+
+        let values = try freshURL.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+
         guard let status = values.ubiquitousItemDownloadingStatus else {
             // Not an iCloud file
             return true
         }
-        
+
         switch status {
         case .current:
             return true  // File is downloaded and current
@@ -236,41 +248,43 @@ actor FileStore {
 
     // Ensures an iCloud file is downloaded, triggering download if needed
     private func ensureFileDownloaded(at url: URL) async throws {
-        // Check if it's an iCloud file
-        let values = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-        
-        guard values.ubiquitousItemDownloadingStatus != nil else {
-            // Not an iCloud file
+        // Primary check: if the file is already readable on disk, skip all iCloud logic
+        if FileManager.default.isReadableFile(atPath: url.path) {
+            AppLogger.iCloud.info("File already on disk: \(url.lastPathComponent)")
             return
         }
-        
-        // If not current, trigger download
-        if values.ubiquitousItemDownloadingStatus != .current {
-            print("☁️ [iCloud] File not fully downloaded, requesting: \(url.lastPathComponent)")
-            try FileManager.default.startDownloadingUbiquitousItem(at: url)
-            
-            // Wait a moment for iCloud to respond
-            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+        // File isn't readable — clear cached resource values to get fresh iCloud status
+        var freshURL = url
+        freshURL.removeAllCachedResourceValues()
+
+        let values = try freshURL.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+
+        guard values.ubiquitousItemDownloadingStatus != nil else {
+            // Not an iCloud file and not readable — just return, caller will handle the error
+            return
         }
-        
-        // Now try to read the file - this will block until iCloud downloads it
-        print("☁️ [iCloud] Attempting file access (will auto-download if needed)...")
-        let coordinator = NSFileCoordinator()
-        var error: NSError?
-        var fileSize: Int64 = 0
-        
-        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &error) { readURL in
-            if let attributes = try? FileManager.default.attributesOfItem(atPath: readURL.path),
-               let size = attributes[.size] as? Int64 {
-                fileSize = size
+
+        // Trigger download
+        AppLogger.iCloud.info("File not on disk, requesting download: \(url.lastPathComponent)")
+        try FileManager.default.startDownloadingUbiquitousItem(at: url)
+
+        // Poll using isReadableFile instead of resource values
+        let maxWait: TimeInterval = 30
+        let pollInterval: UInt64 = 500_000_000 // 0.5 seconds
+        let startTime = Date()
+
+        while !FileManager.default.isReadableFile(atPath: url.path) {
+            if Date().timeIntervalSince(startTime) > maxWait {
+                AppLogger.iCloud.warning("Timed out waiting for download: \(url.lastPathComponent)")
+                break
             }
+            try await Task.sleep(nanoseconds: pollInterval)
         }
-        
-        if let error = error {
-            throw error
+
+        if FileManager.default.isReadableFile(atPath: url.path) {
+            AppLogger.iCloud.info("File downloaded: \(url.lastPathComponent)")
         }
-        
-        print("✅ [iCloud] File accessible: \(url.lastPathComponent) (\(fileSize) bytes)")
     }
     
     
@@ -281,17 +295,17 @@ actor FileStore {
     func openFile(at url: URL, forceReload: Bool = false) async throws -> ListDocument {
         // Return cached document if available and not forcing reload
         if !forceReload, let cached = getOpenedFile(at: url) {
-            print("✅ [Cache] Using cached document for \(url.lastPathComponent)")
+            AppLogger.cache.info("Using cached document for \(url.lastPathComponent)")
             return cached
         }
 
-        print("📂 [Cache] Cache miss/expired for \(url.lastPathComponent) - loading from disk")
-        
-        print("📂 Attempting to open: \(url.path)")
+        AppLogger.cache.debug("Cache miss/expired for \(url.lastPathComponent) - loading from disk")
+
+        AppLogger.fileStore.debug("Attempting to open: \(url.path)")
 
         // Try to access security-scoped resource FIRST
         let didStart = url.startAccessingSecurityScopedResource()
-        print("   Security scope started: \(didStart)")
+        AppLogger.fileStore.debug("Security scope started: \(didStart)")
 
         defer {
             if didStart {
@@ -309,8 +323,8 @@ actor FileStore {
             ])
         }
 
-        print("   File exists: \(FileManager.default.fileExists(atPath: url.path))")
-        print("   Is readable: \(FileManager.default.isReadableFile(atPath: url.path))")
+        AppLogger.fileStore.debug("File exists: \(FileManager.default.fileExists(atPath: url.path))")
+        AppLogger.fileStore.debug("Is readable: \(FileManager.default.isReadableFile(atPath: url.path))")
 
         // Resolve any iCloud conflicts before opening
         try await resolveConflicts(at: url)
@@ -320,9 +334,9 @@ actor FileStore {
         
         do {
             content = try Data(contentsOf: url)
-            print("✅ Successfully read \(content?.count ?? 0) bytes")
+            AppLogger.fileStore.info("Successfully read \(content?.count ?? 0) bytes")
         } catch {
-            print("❌ Failed to read file: \(error)")
+            AppLogger.fileStore.error("Failed to read file: \(error)")
             throw error
         }
         
@@ -340,7 +354,7 @@ actor FileStore {
         // Ensure clean ID
         let cleanId = document.list.cleanId
         if document.list.id != cleanId {
-            print("🧹 Cleaning external file ID: \(document.list.id) -> \(cleanId)")
+            AppLogger.fileStore.debug("Cleaning external file ID: \(document.list.id) -> \(cleanId)")
             var cleanDoc = document
             cleanDoc.list.id = cleanId
             // Don't save here - let user decide if they want to keep it
@@ -350,12 +364,12 @@ actor FileStore {
         openedFiles[url.path] = (url, document)
         
         cacheTimestamps[url.path] = Date()
-        print("✅ [Cache] Cached \(document.list.name) (expires in \(cacheTTL)s)")
-        
+        AppLogger.cache.info("Cached \(document.list.name) (expires in \(self.cacheTTL)s)")
+
         // Save bookmark
         try await saveBookmark(for: url)
-        
-        print("✅ Opened external file: \(document.list.name) (V\(document.version))")
+
+        AppLogger.fileStore.info("Opened external file: \(document.list.name) (V\(document.version))")
         
         // After loading, store the file's modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -370,7 +384,7 @@ actor FileStore {
         // Check if file is downloaded - if not, DON'T treat as changed
         // (just means iOS evicted it to save space)
         guard let downloaded = try? isFileDownloaded(at: url), downloaded else {
-            print("☁️ [Sync] File evicted but not changed: \(url.lastPathComponent)")
+            AppLogger.sync.info("File evicted but not changed: \(url.lastPathComponent)")
             return false  // Eviction is NOT a change
         }
         
@@ -382,13 +396,13 @@ actor FileStore {
         
         let changed = currentModDate > storedModDate
         if changed {
-            print("📝 [Sync] File actually modified: \(url.lastPathComponent)")
+            AppLogger.sync.debug("File actually modified: \(url.lastPathComponent)")
         }
         return changed
     }
     
     func saveFile(_ document: ListDocument, to url: URL, bypassOptimisticCheck: Bool = false) async throws {
-        print("💾 Attempting to save file: \(url.lastPathComponent)")
+        AppLogger.fileStore.debug("Attempting to save file: \(url.lastPathComponent)")
         
         var didStart = false
         if url.startAccessingSecurityScopedResource() {
@@ -402,7 +416,7 @@ actor FileStore {
         
         // Check writability BEFORE attempting save
         let isWritable = FileManager.default.isWritableFile(atPath: url.path)
-        print("   isWritableFile returned: \(isWritable)")
+        AppLogger.fileStore.debug("isWritableFile returned: \(isWritable)")
         
         // If not writable, throw immediately
         if !isWritable {
@@ -417,12 +431,12 @@ actor FileStore {
             if let currentAttrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                let currentDate = currentAttrs[.modificationDate] as? Date,
                currentDate > lastKnownDate {
-                print("⚠️ [OPTIMISTIC LOCK] File changed externally - triggering merge")
-                print("   Last known: \(lastKnownDate)")
-                print("   Current:    \(currentDate)")   
+                AppLogger.sync.warning("[OPTIMISTIC LOCK] File changed externally - triggering merge")
+                AppLogger.sync.debug("Last known: \(lastKnownDate)")
+                AppLogger.sync.debug("Current: \(currentDate)")
                 
                 let mergedDocument = try await syncFile(at: url)
-                print("   After merge: \(mergedDocument.labels.count) labels")
+                AppLogger.sync.debug("After merge: \(mergedDocument.labels.count) labels")
                 
                 
                 // Recursive call with bypass flag to prevent infinite loop
@@ -431,7 +445,7 @@ actor FileStore {
             }
         }
         
-        print("💾 [DIRECT SAVE] Writing \(document.labels.count) labels to disk")
+        AppLogger.fileStore.debug("[DIRECT SAVE] Writing \(document.labels.count) labels to disk")
 
         
         // Resolve any conflicts before saving
@@ -464,18 +478,18 @@ actor FileStore {
         openedFiles[url.path] = (url, document)
         
         cacheTimestamps[url.path] = Date()
-        print("✅ [Cache] Cached \(document.list.name) (expires in \(cacheTTL)s)")
-        
+        AppLogger.cache.info("Cached \(document.list.name) (expires in \(self.cacheTTL)s)")
+
         // Update modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
            let modDate = attributes[.modificationDate] as? Date {
             fileModificationDates[url.path] = modDate
         }
-        
+
         // Save bookmark
         try await saveBookmark(for: url)
-        
-        print("✅ Saved external file: \(document.list.name) (V2)")
+
+        AppLogger.fileStore.info("Saved external file: \(document.list.name) (V2)")
     }
     
     static func isFileWritable(at url: URL) -> Bool {
@@ -496,7 +510,7 @@ actor FileStore {
         guard let timestamp = cacheTimestamps[url.path],
               Date().timeIntervalSince(timestamp) < cacheTTL else {
             if cacheTimestamps[url.path] != nil {
-                print("🔄 [Cache] Expired for \(url.lastPathComponent) (TTL: \(cacheTTL)s)")
+                AppLogger.cache.debug("Expired for \(url.lastPathComponent) (TTL: \(self.cacheTTL)s)")
             }
             return nil  // Cache expired
         }
@@ -511,7 +525,7 @@ actor FileStore {
         }.map(\.key)
         
         if !expiredPaths.isEmpty {
-            print("🗑️ [Cache] Cleaning up \(expiredPaths.count) expired entries")
+            AppLogger.cache.debug("Cleaning up \(expiredPaths.count) expired entries")
             for path in expiredPaths {
                 openedFiles.removeValue(forKey: path)
                 cacheTimestamps.removeValue(forKey: path)
@@ -569,7 +583,7 @@ actor FileStore {
         
         if !keysToRemove.isEmpty {
             saveBookmarks(bookmarks)
-            print("🗑️ [External] Removed \(keysToRemove.count) bookmark(s) for \(url.path)")
+            AppLogger.fileStore.debug("Removed \(keysToRemove.count) bookmark(s) for \(url.path)")
         }
     }
     
@@ -595,9 +609,9 @@ actor FileStore {
             var bookmarks = loadBookmarks()
             bookmarks[url.path] = bookmark
             saveBookmarks(bookmarks)
-            print("✅ Saved bookmark for: \(url.lastPathComponent)")
+            AppLogger.fileStore.info("Saved bookmark for: \(url.lastPathComponent)")
         } catch {
-            print("⚠️ Could not save bookmark (read-only file?): \(error)")
+            AppLogger.fileStore.warning("Could not save bookmark (read-only file?): \(error)")
             // Don't throw - read-only files can't create bookmarks, but that's OK
             // The file will need to be reopened manually next time
         }
@@ -617,12 +631,15 @@ actor FileStore {
         }
     }
     
-    private func loadBookmarkedFiles() async {
+    /// Single-pass bookmark resolution: validates all bookmarks, refreshes stale ones (batched),
+    /// populates unavailableBookmarks, and returns the list of available URLs.
+    private func loadAndResolveBookmarks() async -> [URL] {
         let bookmarks = loadBookmarks()
         unavailableBookmarks.removeAll()
 
-        // Track seen resolved paths to avoid duplicates
+        var resolvedURLs: [URL] = []
         var seenResolvedPaths: Set<String> = []
+        var staleBookmarksToSave: [(url: URL, path: String)] = []
 
         for (path, bookmarkData) in bookmarks {
             do {
@@ -660,22 +677,14 @@ actor FileStore {
                 let fileName = url.deletingPathExtension().lastPathComponent
                 let folderName = url.deletingLastPathComponent().lastPathComponent
 
-                // If bookmark is stale, try to refresh it while we still have access
+                // Collect stale bookmarks for batched refresh
                 if isStale && didStartAccess {
-                    print("🔄 [External] Refreshing stale bookmark for: \(url.lastPathComponent)")
-                    do {
-                        try await saveBookmark(for: url)
-                    } catch {
-                        print("⚠️ [External] Failed to refresh stale bookmark: \(error)")
-                    }
+                    staleBookmarksToSave.append((url: url, path: path))
                 }
 
                 // If we couldn't start security-scoped access, the bookmark may have lost permissions
-                // This can happen after iOS updates, app reinstalls, or extended time without access
                 if !didStartAccess {
-                    print("⚠️ [External] Security scope access denied for: \(fileName)")
-                    // Don't mark as unavailable yet - the file might still be accessible
-                    // The openFile() call will be the final arbiter
+                    AppLogger.fileStore.warning("Security scope access denied for: \(fileName)")
                 }
 
                 // Check if file is in trash
@@ -687,23 +696,19 @@ actor FileStore {
                         fileName: fileName,
                         folderName: folderName
                     )
-                    print("⚠️ [External] File is in Trash: \(path)")
+                    AppLogger.fileStore.warning("File is in Trash: \(path)")
                     continue
                 }
 
                 // Check if file exists locally OR is an iCloud placeholder
-                if !FileManager.default.fileExists(atPath: url.path) {
-                    // Check if it's an iCloud file that's just not downloaded
-                    let isICloudPlaceholder = isICloudFile(at: url)
-
-                    if isICloudPlaceholder {
-                        // File exists in iCloud but not downloaded locally - treat as available
-                        // It will be downloaded on-demand when opened via ensureFileDownloaded()
-                        print("☁️ [External] iCloud file not downloaded locally (available): \(fileName)")
-                        continue
-                    }
-
-                    // Truly not found - not an iCloud placeholder
+                if FileManager.default.fileExists(atPath: url.path) {
+                    resolvedURLs.append(url)
+                } else if isICloudFile(at: url) {
+                    // File exists in iCloud but not downloaded locally - treat as available
+                    AppLogger.iCloud.info("File not downloaded locally (available): \(fileName)")
+                    resolvedURLs.append(url)
+                } else {
+                    // Truly not found
                     unavailableBookmarks[url.path] = UnavailableBookmark(
                         id: path,
                         originalPath: url.path,
@@ -711,13 +716,10 @@ actor FileStore {
                         fileName: fileName,
                         folderName: folderName
                     )
-                    print("⚠️ [External] File not found: \(path)")
-                    continue
+                    AppLogger.fileStore.warning("File not found: \(path)")
                 }
-
-                // File is available - not in unavailableBookmarks
             } catch {
-                // Bookmark can't be resolved - track as unavailable (use bookmark key path)
+                // Bookmark can't be resolved - track as unavailable
                 guard !seenResolvedPaths.contains(path) else {
                     continue
                 }
@@ -732,74 +734,56 @@ actor FileStore {
                     fileName: (fileName as NSString).lastPathComponent,
                     folderName: folderName
                 )
-                print("⚠️ [External] Invalid bookmark for \(path): \(error)")
+                AppLogger.fileStore.warning("Invalid bookmark for \(path): \(error)")
             }
+        }
+
+        // Batch-refresh all stale bookmarks in one UserDefaults write
+        if !staleBookmarksToSave.isEmpty {
+            AppLogger.fileStore.debug("Refreshing \(staleBookmarksToSave.count) stale bookmark(s)...")
+            var allBookmarks = loadBookmarks()
+            for entry in staleBookmarksToSave {
+                // Re-start security-scoped access (it was stopped in the defer above)
+                let didStart = entry.url.startAccessingSecurityScopedResource()
+                defer {
+                    if didStart {
+                        entry.url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                do {
+                    let bookmark: Data
+#if os(macOS)
+                    bookmark = try entry.url.bookmarkData(
+                        options: [.withSecurityScope],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+#else
+                    bookmark = try entry.url.bookmarkData(
+                        options: [],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+#endif
+                    allBookmarks[entry.url.path] = bookmark
+                } catch {
+                    AppLogger.fileStore.warning("Failed to refresh stale bookmark for \(entry.url.lastPathComponent): \(error)")
+                }
+            }
+            saveBookmarks(allBookmarks)
+            AppLogger.fileStore.info("Refreshed \(staleBookmarksToSave.count) stale bookmark(s)")
         }
 
         if !unavailableBookmarks.isEmpty {
-            print("⚠️ [External] \(unavailableBookmarks.count) bookmark(s) are unavailable")
+            AppLogger.fileStore.warning("\(self.unavailableBookmarks.count) bookmark(s) are unavailable")
         }
+
+        return resolvedURLs
     }
-    
-    func getBookmarkedURLs() -> [URL] {
-        let bookmarks = loadBookmarks()
-        var urls: [URL] = []
-        var seenPaths: Set<String> = []
 
-        for (_, bookmarkData) in bookmarks {
-            do {
-                var isStale = false
-#if os(macOS)
-                let url = try URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [.withSecurityScope],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                )
-#else
-                let url = try URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                )
-#endif
-
-                // Skip duplicates
-                guard !seenPaths.contains(url.path) else { continue }
-                seenPaths.insert(url.path)
-
-                // Skip files in .Trash (handled by unavailableBookmarks)
-                if url.path.contains("/.Trash/") {
-                    continue
-                }
-
-                // Start security-scoped access to check file attributes
-                let didStartAccess = url.startAccessingSecurityScopedResource()
-                defer {
-                    if didStartAccess {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
-
-                // Check if file exists OR is an iCloud placeholder
-                if FileManager.default.fileExists(atPath: url.path) {
-                    urls.append(url)
-                } else if isICloudFile(at: url) {
-                    // iCloud file not downloaded locally - still include it
-                    // openFile() will handle downloading via ensureFileDownloaded()
-                    urls.append(url)
-                }
-                // If neither exists nor is iCloud placeholder, skip it
-                // (handled by unavailableBookmarks from loadBookmarkedFiles)
-            } catch {
-                // Bookmark resolution failed - skip silently
-                // (handled by unavailableBookmarks from loadBookmarkedFiles)
-                continue
-            }
-        }
-
-        return urls
+    /// Legacy wrapper — callers that only need the URL list
+    func getBookmarkedURLs() async -> [URL] {
+        return await loadAndResolveBookmarks()
     }
     
     func clearBookmarks() {
@@ -825,7 +809,7 @@ actor FileStore {
             fileModificationDates.removeValue(forKey: key)
         }
 
-        print("🧹 [Cache] Cleared \(keysToRemove.count) private list cache entries")
+        AppLogger.cache.debug("Cleared \(keysToRemove.count) private list cache entries")
     }
 
     /// Returns all bookmarks that are currently unavailable
@@ -839,12 +823,13 @@ actor FileStore {
         bookmarks.removeValue(forKey: bookmark.id)
         saveBookmarks(bookmarks)
         unavailableBookmarks.removeValue(forKey: bookmark.id)
-        print("🗑️ [External] Removed unavailable bookmark: \(bookmark.fileName)")
+        AppLogger.fileStore.debug("Removed unavailable bookmark: \(bookmark.fileName)")
     }
 
-    /// Refreshes the availability status of all bookmarks
-    func refreshBookmarkAvailability() async {
-        await loadBookmarkedFiles()
+    /// Refreshes the availability status of all bookmarks and returns available URLs
+    @discardableResult
+    func refreshBookmarkAvailability() async -> [URL] {
+        return await loadAndResolveBookmarks()
     }
     
     private func preferredFileExtension() -> String {
@@ -855,14 +840,14 @@ actor FileStore {
         openedFiles[url.path] = (url, document)
         
         cacheTimestamps[url.path] = Date()
-        print("✅ [Cache] Cached \(document.list.name) (expires in \(cacheTTL)s)")
+        AppLogger.cache.info("Cached \(document.list.name) (expires in \(self.cacheTTL)s)")
     }
-    
+
     // MARK: - Sync Resolution
     
     /// Syncs file by merging cached changes with disk changes, using modification dates to resolve conflicts
     func syncFile(at url: URL) async throws -> ListDocument {
-        print("🔄 Syncing file: \(url.lastPathComponent)")
+        AppLogger.sync.debug("Syncing file: \(url.lastPathComponent)")
         
         // Resolve conflicts first to ensure clean state
         try await resolveConflicts(at: url)
@@ -875,7 +860,7 @@ actor FileStore {
         
         // 3. If no cache existed, just return disk version
         guard let cached = cachedDocument else {
-            print("✅ No cache, using disk version")
+            AppLogger.sync.info("No cache, using disk version")
             return diskDocument
         }
         
@@ -898,7 +883,7 @@ actor FileStore {
         // 7. Save merged version back to disk
         try await saveFile(mergedDocument, to: url)
         
-        print("✅ Sync complete: \(mergedItems.count) items, \(mergedLabels.count) labels")
+        AppLogger.sync.info("Sync complete: \(mergedItems.count) items, \(mergedLabels.count) labels")
         
         return mergedDocument
     }
@@ -924,38 +909,55 @@ actor FileStore {
                     itemsById[cachedItem.id] = cachedItem
                     // Only log if there's a meaningful time difference (> 1 second)
                     if cachedItem.modifiedAt.timeIntervalSince(diskItem.modifiedAt) > 1 {
-                        print("  📝 Item '\(cachedItem.note)': cache is newer (\(cachedItem.modifiedAt) vs \(diskItem.modifiedAt))")
+                        AppLogger.merge.debug("Item '\(cachedItem.note)': cache is newer (\(cachedItem.modifiedAt) vs \(diskItem.modifiedAt))")
                     }
                 } else if diskItem.modifiedAt > cachedItem.modifiedAt {
                     // Disk is newer - already in dict, just log if meaningful difference
                     if diskItem.modifiedAt.timeIntervalSince(cachedItem.modifiedAt) > 1 {
-                        print("  📝 Item '\(diskItem.note)': disk is newer (\(diskItem.modifiedAt) vs \(cachedItem.modifiedAt))")
+                        AppLogger.merge.debug("Item '\(diskItem.note)': disk is newer (\(diskItem.modifiedAt) vs \(cachedItem.modifiedAt))")
                     }
                 }
                 // If timestamps are equal (within 1 second), don't log - no conflict
             } else {
                 // Only in cache - add it (new item created locally)
                 itemsById[cachedItem.id] = cachedItem
-                print("  ➕ Item '\(cachedItem.note)': added from cache")
+                AppLogger.merge.debug("Item '\(cachedItem.note)': added from cache")
             }
         }
         
         // Check for items only in disk (new items created remotely)
         for diskItem in disk {
             if !cached.contains(where: { $0.id == diskItem.id }) {
-                print("  ➕ Item '\(diskItem.note)': added from disk")
+                AppLogger.merge.debug("Item '\(diskItem.note)': added from disk")
             }
         }
         
         return Array(itemsById.values).sorted { $0.modifiedAt > $1.modifiedAt }
     }
     
-    /// Merges labels from cache and disk
-    /// Merges labels from cache and disk
+    /// Merges labels from cache and disk — union of both sets.
+    /// Labels only in cache (new local) are kept. Labels only on disk (new remote) are kept.
+    /// Labels in both are kept (name/color from cache since it's the latest local state).
     private func mergeLabels(cached: [ShoppingLabel], disk: [ShoppingLabel]) -> [ShoppingLabel] {
-        // LATEST SAVE WINS - just use cached labels (what we're about to save)
-        // Merging labels is unnecessary complexity for a low-risk operation
-        return cached
+        var labelsById: [String: ShoppingLabel] = [:]
+
+        // Add all disk labels first (remote state)
+        for label in disk {
+            labelsById[label.id] = label
+        }
+
+        // Merge cached labels on top (local changes win for shared IDs, new locals are added)
+        for label in cached {
+            labelsById[label.id] = label
+        }
+
+        // Preserve disk order, then append any new cached labels at the end
+        let diskIDs = Set(disk.map { $0.id })
+        var result = disk.compactMap { labelsById[$0.id] }
+        let newFromCache = cached.filter { !diskIDs.contains($0.id) }
+        result.append(contentsOf: newFromCache)
+
+        return result
     }
 
     // MARK: - FileSource-Based API (Unified Interface)
@@ -1019,7 +1021,7 @@ actor FileStore {
 
         // Delete the file using NSFileCoordinator for proper iCloud sync
         guard FileManager.default.fileExists(atPath: url.path) else {
-            print("⚠️ [Private] File already deleted: \(listId)")
+            AppLogger.fileStore.warning("[Private] File already deleted: \(listId)")
             return
         }
 
@@ -1030,14 +1032,14 @@ actor FileStore {
         coordinator.coordinate(writingItemAt: url, options: .forDeleting, error: &coordinatorError) { deleteURL in
             do {
                 try FileManager.default.removeItem(at: deleteURL)
-                print("🗑️ [Private] Deleted list: \(listId)")
+                AppLogger.fileStore.debug("[Private] Deleted list: \(listId)")
             } catch {
                 deleteError = error
             }
         }
 
         if let error = coordinatorError ?? deleteError {
-            print("❌ [Private] Failed to delete list: \(error)")
+            AppLogger.fileStore.error("[Private] Failed to delete list: \(error)")
             throw error
         }
     }
@@ -1048,11 +1050,11 @@ actor FileStore {
     private func openPrivateFile(at url: URL, forceReload: Bool = false) async throws -> ListDocument {
         // Return cached document if available and not forcing reload
         if !forceReload, let cached = getOpenedFile(at: url) {
-            print("✅ [Cache] Using cached document for \(url.lastPathComponent)")
+            AppLogger.cache.info("Using cached document for \(url.lastPathComponent)")
             return cached
         }
 
-        print("📂 [Private] Loading: \(url.lastPathComponent)")
+        AppLogger.fileStore.debug("[Private] Loading: \(url.lastPathComponent)")
 
         // Ensure file is downloaded from iCloud if needed
         try await ensureFileDownloaded(at: url)
@@ -1085,13 +1087,13 @@ actor FileStore {
             fileModificationDates[url.path] = modDate
         }
 
-        print("✅ [Private] Opened: \(document.list.name)")
+        AppLogger.fileStore.info("[Private] Opened: \(document.list.name)")
         return document
     }
 
     /// Saves a private file (no security-scoped access needed)
     private func savePrivateFile(_ document: ListDocument, to url: URL, bypassOptimisticCheck: Bool = false) async throws {
-        print("💾 [Private] Saving: \(url.lastPathComponent)")
+        AppLogger.fileStore.debug("[Private] Saving: \(url.lastPathComponent)")
 
         // Ensure directory exists
         let directory = url.deletingLastPathComponent()
@@ -1102,7 +1104,7 @@ actor FileStore {
             if let currentAttrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                let currentDate = currentAttrs[.modificationDate] as? Date,
                currentDate > lastKnownDate {
-                print("⚠️ [Private] File changed externally - triggering merge")
+                AppLogger.sync.warning("[Private] File changed externally - triggering merge")
                 let mergedDocument = try await syncPrivateFile(at: url)
                 try await savePrivateFile(mergedDocument, to: url, bypassOptimisticCheck: true)
                 return
@@ -1145,12 +1147,12 @@ actor FileStore {
             fileModificationDates[url.path] = modDate
         }
 
-        print("✅ [Private] Saved: \(document.list.name)")
+        AppLogger.fileStore.info("[Private] Saved: \(document.list.name)")
     }
 
     /// Syncs a private file by merging cached changes with disk changes
     private func syncPrivateFile(at url: URL) async throws -> ListDocument {
-        print("🔄 [Private] Syncing: \(url.lastPathComponent)")
+        AppLogger.sync.debug("[Private] Syncing: \(url.lastPathComponent)")
 
         // Resolve conflicts first
         try await resolveConflicts(at: url)
@@ -1196,7 +1198,7 @@ actor FileStore {
         let listId = document.list.id
         let source = FileSource.privateList(listId)
         try await saveFile(document, to: source)
-        print("✅ [Private] Created new list: \(document.list.name)")
+        AppLogger.fileStore.info("[Private] Created new list: \(document.list.name)")
     }
 
     /// Checks if a private list exists
