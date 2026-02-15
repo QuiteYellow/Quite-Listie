@@ -13,6 +13,7 @@
 //  Sidebar view for managing and displaying all shopping lists
 //
 
+import os
 import SwiftUI
 
 struct SidebarView: View {
@@ -218,7 +219,7 @@ struct SidebarView: View {
                         }
                         await welcomeViewModel.loadLists()
                     } catch {
-                        print("❌ Failed to delete list: \(error)")
+                        AppLogger.fileStore.error("Failed to delete list: \(error, privacy: .public)")
                     }
                 }
             }
@@ -395,7 +396,7 @@ struct SidebarView: View {
 
                 Button("Retry") {
                     Task {
-                        await ExternalFileStore.shared.refreshBookmarkAvailability()
+                        // loadAllLists() handles bookmark refresh internally (single-pass)
                         await unifiedProvider.loadAllLists()
                     }
                 }

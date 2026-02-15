@@ -14,6 +14,7 @@
 //
 
 import Foundation
+import os
 
 struct ExportResult {
     let markdown: String
@@ -86,18 +87,14 @@ enum MarkdownListGenerator {
         activeOnly: Bool = false,
         includeNotes: Bool = false
     ) -> ExportResult {
-        // Debug logging
-        print("📝 Generating markdown for '\(listName)'")
-        print("   Items count: \(items.count)")
-        print("   Labels count: \(labels.count)")
-        print("   Active only: \(activeOnly)")
+        AppLogger.markdown.debug("Generating markdown for '\(listName, privacy: .public)' — items: \(items.count, privacy: .public), labels: \(labels.count, privacy: .public), activeOnly: \(activeOnly, privacy: .public)")
 
         var markdown = "# \(listName)\n\n"
         var warnings: [String] = []
 
         // Filter items if needed
         let itemsToExport = activeOnly ? items.filter { !$0.checked } : items
-        print("   Items to export: \(itemsToExport.count)")
+        AppLogger.markdown.debug("Items to export: \(itemsToExport.count, privacy: .public)")
 
         // Handle empty list case
         if itemsToExport.isEmpty {
@@ -118,7 +115,7 @@ enum MarkdownListGenerator {
             return "No Label"
         }
         
-        print("   Grouped into \(grouped.keys.count) labels: \(grouped.keys.joined(separator: ", "))")
+        AppLogger.markdown.debug("Grouped into \(grouped.keys.count, privacy: .public) labels")
         
         // Sort label names
         let sortedLabelNames = grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -204,12 +201,9 @@ enum MarkdownListGenerator {
             markdown += "\n"
         }
         
-        print("✅ Generated \(markdown.count) characters of markdown")
+        AppLogger.markdown.info("Generated \(markdown.count, privacy: .public) characters of markdown")
         if !warnings.isEmpty {
-            print("⚠️ Export warnings: \(warnings.count)")
-            for warning in warnings {
-                print("   - \(warning)")
-            }
+            AppLogger.markdown.warning("Export warnings: \(warnings.count, privacy: .public)")
         }
 
         return ExportResult(markdown: markdown, warnings: warnings)

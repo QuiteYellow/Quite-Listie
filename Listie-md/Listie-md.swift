@@ -5,6 +5,7 @@
 //  Now supports opening .json shopping list files directly and export commands
 //
 
+import os
 import SwiftUI
 import UserNotifications
 
@@ -159,7 +160,7 @@ struct ShoppingListApp: App {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let titlebar = windowScene.titlebar else { return }
         
-        print("✅ [Catalyst] Configuring window titlebar")
+        AppLogger.ui.info("[Catalyst] Configuring window titlebar")
         
         // Hide the window title
         titlebar.titleVisibility = .hidden

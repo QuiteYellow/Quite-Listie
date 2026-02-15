@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 actor MigrationManager {
     static let shared = MigrationManager()
@@ -25,7 +26,7 @@ actor MigrationManager {
         let lastMigrationVersion = UserDefaults.standard.integer(forKey: migrationVersionKey)
 
         if lastMigrationVersion < currentMigrationVersion {
-            print("🔄 [Migration] Running migrations from version \(lastMigrationVersion) to \(currentMigrationVersion)")
+            AppLogger.migration.debug("Running migrations from version \(lastMigrationVersion) to \(self.currentMigrationVersion)")
 
             // Run migrations in order
             if lastMigrationVersion < 2 {
@@ -34,7 +35,7 @@ actor MigrationManager {
 
             // Update migration version
             UserDefaults.standard.set(currentMigrationVersion, forKey: migrationVersionKey)
-            print("✅ [Migration] Completed all migrations")
+            AppLogger.migration.info("Completed all migrations")
         }
     }
 
@@ -49,10 +50,10 @@ actor MigrationManager {
 
     /// Migrates old local lists (list_*.json in Documents) to the new iCloud container
     private func migrateLocalListsToICloud() async throws {
-        print("🔄 [Migration] Starting local lists migration to iCloud...")
+        AppLogger.migration.debug("Starting local lists migration to iCloud...")
 
         guard let oldDirectory = iCloudContainerManager.shared.getOldLocalListsDirectory() else {
-            print("⚠️ [Migration] Could not find old Documents directory")
+            AppLogger.migration.warning("Could not find old Documents directory")
             return
         }
 
@@ -67,18 +68,18 @@ actor MigrationManager {
         do {
             contents = try fileManager.contentsOfDirectory(atPath: oldDirectory.path)
         } catch {
-            print("⚠️ [Migration] Could not read old directory: \(error)")
+            AppLogger.migration.warning("Could not read old directory: \(error)")
             return
         }
 
         let oldListFiles = contents.filter { $0.hasPrefix("list_") && $0.hasSuffix(".json") }
 
         if oldListFiles.isEmpty {
-            print("✅ [Migration] No old lists to migrate")
+            AppLogger.migration.info("No old lists to migrate")
             return
         }
 
-        print("📦 [Migration] Found \(oldListFiles.count) list(s) to migrate")
+        AppLogger.migration.debug("Found \(oldListFiles.count) list(s) to migrate")
 
         var successCount = 0
         var failCount = 0
@@ -89,7 +90,7 @@ actor MigrationManager {
 
             // Skip if already migrated
             if migratedLists.contains(listId) {
-                print("⏭️ [Migration] Skipping already migrated: \(listId)")
+                AppLogger.migration.debug("Skipping already migrated: \(listId)")
                 continue
             }
 
@@ -117,7 +118,7 @@ actor MigrationManager {
                         let newData = try encoder.encode(document)
                         try newData.write(to: writeURL, options: .atomic)
                     } catch {
-                        print("❌ [Migration] Failed to write \(listId): \(error)")
+                        AppLogger.migration.error("Failed to write \(listId): \(error)")
                     }
                 }
 
@@ -136,20 +137,20 @@ actor MigrationManager {
                 // Delete old file
                 try fileManager.removeItem(at: oldURL)
 
-                print("✅ [Migration] Migrated: \(document.list.name)")
+                AppLogger.migration.info("Migrated: \(document.list.name)")
                 successCount += 1
 
             } catch {
-                print("❌ [Migration] Failed to migrate \(listId): \(error)")
+                AppLogger.migration.error("Failed to migrate \(listId): \(error)")
                 failCount += 1
                 // Continue with other lists - don't fail the whole migration
             }
         }
 
-        print("📊 [Migration] Complete: \(successCount) succeeded, \(failCount) failed")
+        AppLogger.migration.info("Complete: \(successCount) succeeded, \(failCount) failed")
 
         if failCount > 0 {
-            print("⚠️ [Migration] Some lists failed to migrate. They remain in the old location.")
+            AppLogger.migration.warning("Some lists failed to migrate. They remain in the old location.")
         }
     }
 
@@ -174,7 +175,7 @@ actor MigrationManager {
     /// Attempts to rollback migration (for recovery scenarios)
     /// This copies files back from iCloud to local, but doesn't delete from iCloud
     func rollbackMigration() async throws {
-        print("⏪ [Migration] Starting rollback...")
+        AppLogger.migration.debug("Starting rollback...")
 
         guard let oldDirectory = iCloudContainerManager.shared.getOldLocalListsDirectory() else {
             throw MigrationError.rollbackFailed("Could not find Documents directory")
@@ -193,9 +194,9 @@ actor MigrationManager {
             if fileManager.fileExists(atPath: newURL.path) && !fileManager.fileExists(atPath: oldURL.path) {
                 do {
                     try fileManager.copyItem(at: newURL, to: oldURL)
-                    print("✅ [Rollback] Restored: \(listId)")
+                    AppLogger.migration.info("[Rollback] Restored: \(listId)")
                 } catch {
-                    print("❌ [Rollback] Failed to restore \(listId): \(error)")
+                    AppLogger.migration.error("[Rollback] Failed to restore \(listId): \(error)")
                 }
             }
         }
@@ -204,7 +205,7 @@ actor MigrationManager {
         UserDefaults.standard.removeObject(forKey: migrationVersionKey)
         UserDefaults.standard.removeObject(forKey: migratedListsKey)
 
-        print("✅ [Migration] Rollback complete")
+        AppLogger.migration.info("Rollback complete")
     }
 
     // MARK: - Error Types

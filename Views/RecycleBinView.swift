@@ -6,6 +6,7 @@
 //
 
 
+import os
 import SwiftUI
 
 struct RecycleBinView: View {
@@ -18,6 +19,8 @@ struct RecycleBinView: View {
     @State private var showDeleteAllConfirmation = false
     @State private var showRestoreAllConfirmation = false
     @State private var itemToDelete: ShoppingItem?
+    @State private var bulkErrorMessage: String?
+    @State private var showBulkError = false
     
     var body: some View {
             NavigationView {
@@ -129,14 +132,19 @@ struct RecycleBinView: View {
             } message: {
                 Text("All items will be permanently deleted and cannot be recovered.")
             }
+            .alert("Partial Failure", isPresented: $showBulkError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(bulkErrorMessage ?? "Some items could not be processed.")
+            }
         }
     }
-    
+
     private func loadDeletedItems() async {
         do {
             deletedItems = try await provider.fetchDeletedItems(for: list)
         } catch {
-            print("Failed to load deleted items: \(error)")
+            AppLogger.items.error("Failed to load deleted items: \(error, privacy: .public)")
         }
     }
     
@@ -146,7 +154,7 @@ struct RecycleBinView: View {
             await loadDeletedItems()
             onItemsChanged?()
         } catch {
-            print("Failed to restore item: \(error)")
+            AppLogger.items.error("Failed to restore item: \(error, privacy: .public)")
         }
     }
     
@@ -156,25 +164,45 @@ struct RecycleBinView: View {
             await loadDeletedItems()
             onItemsChanged?()
         } catch {
-            print("Failed to permanently delete item: \(error)")
+            AppLogger.items.error("Failed to permanently delete item: \(error, privacy: .public)")
         }
     }
     
     private func restoreAll() async {
+        var failCount = 0
         for item in deletedItems {
-            try? await provider.restoreItem(item, in: list)
+            do {
+                try await provider.restoreItem(item, in: list)
+            } catch {
+                failCount += 1
+                AppLogger.items.warning("Failed to restore item \(item.id, privacy: .public): \(error, privacy: .public)")
+            }
         }
         await loadDeletedItems()
         showRestoreAllConfirmation = false
         onItemsChanged?()
+        if failCount > 0 {
+            bulkErrorMessage = "Failed to restore \(failCount) item\(failCount == 1 ? "" : "s")."
+            showBulkError = true
+        }
     }
-    
+
     private func deleteAll() async {
+        var failCount = 0
         for item in deletedItems {
-            try? await provider.permanentlyDeleteItem(item, from: list)
+            do {
+                try await provider.permanentlyDeleteItem(item, from: list)
+            } catch {
+                failCount += 1
+                AppLogger.items.warning("Failed to permanently delete item \(item.id, privacy: .public): \(error, privacy: .public)")
+            }
         }
         await loadDeletedItems()
         showDeleteAllConfirmation = false
-        onItemsChanged?() 
+        onItemsChanged?()
+        if failCount > 0 {
+            bulkErrorMessage = "Failed to delete \(failCount) item\(failCount == 1 ? "" : "s")."
+            showBulkError = true
+        }
     }
 }

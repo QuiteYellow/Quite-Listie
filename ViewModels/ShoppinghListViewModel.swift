@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 import SwiftUI
 
 enum ListViewMode: String, Codable {
@@ -76,7 +77,7 @@ class ShoppingListViewModel: ObservableObject {
             // Filter out soft-deleted items
             items = allItems.filter { !($0.isDeleted) }
         } catch {
-            print("Error loading items: \(error)")
+            AppLogger.items.error("Error loading items: \(error, privacy: .public)")
         }
         isLoading = false
     }
@@ -85,7 +86,7 @@ class ShoppingListViewModel: ObservableObject {
         do {
             labels = try await provider.fetchLabels(for: list)
         } catch {
-            print("Error loading labels: \(error)")
+            AppLogger.labels.error("Error loading labels: \(error, privacy: .public)")
         }
     }
     
@@ -128,7 +129,11 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     var filteredSortedLabelKeys: [String] {
-        filteredItemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+        sortedLabelNames(
+            Array(filteredItemsGroupedByLabel.keys),
+            labels: labels,
+            labelOrder: list.summary.labelOrder
+        )
     }
     
     var filteredCompletedItems: [ShoppingItem] {
@@ -164,7 +169,7 @@ class ShoppingListViewModel: ObservableObject {
             await loadItems()
             return true
         } catch {
-            print("⚠️ Error adding item:", error)
+            AppLogger.items.warning("Error adding item: \(error, privacy: .public)")
             return false
         }
     }
@@ -175,7 +180,7 @@ class ShoppingListViewModel: ObservableObject {
             do {
                 try await provider.deleteItem(item, from: list)
             } catch {
-                print("Error deleting item: \(error)")
+                AppLogger.items.error("Error deleting item: \(error, privacy: .public)")
             }
         }
         await loadItems()
@@ -192,7 +197,7 @@ class ShoppingListViewModel: ObservableObject {
             
             return true
         } catch {
-            print("⚠️ Failed to delete item:", error)
+            AppLogger.items.warning("Failed to delete item: \(error, privacy: .public)")
             return false
         }
     }
@@ -232,7 +237,7 @@ class ShoppingListViewModel: ObservableObject {
             let count = items.filter { !$0.checked }.count
             await didUpdate(count)
         } catch {
-            print("Error toggling item: \(error)")
+            AppLogger.items.error("Error toggling item: \(error, privacy: .public)")
         }
     }
     
@@ -265,7 +270,7 @@ class ShoppingListViewModel: ObservableObject {
                 do {
                     try await provider.updateItem(item, in: list)
                 } catch {
-                    print("Error updating item: \(error)")
+                    AppLogger.items.error("Error updating item: \(error, privacy: .public)")
                 }
             }
         }
@@ -325,7 +330,7 @@ class ShoppingListViewModel: ObservableObject {
 
             return true
         } catch {
-            print("⚠️ Failed to update item:", error)
+            AppLogger.items.warning("Failed to update item: \(error, privacy: .public)")
             return false
         }
     }

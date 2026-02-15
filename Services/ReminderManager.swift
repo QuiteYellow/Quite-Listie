@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 import UserNotifications
 
 enum ReminderManager {
@@ -31,7 +32,7 @@ enum ReminderManager {
         )
 
         UNUserNotificationCenter.current().setNotificationCategories([category])
-        print("🔔 Registered notification category with Complete action")
+        AppLogger.reminders.info("Registered notification category with Complete action")
     }
 
     // MARK: - Permission
@@ -41,10 +42,10 @@ enum ReminderManager {
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound, .badge])
-            print(granted ? "🔔 Notification permission granted" : "🔕 Notification permission denied")
+            AppLogger.reminders.info("Notification permission \(granted ? "granted" : "denied", privacy: .public)")
             return granted
         } catch {
-            print("❌ Notification permission error: \(error)")
+            AppLogger.reminders.error("Notification permission error: \(error, privacy: .public)")
             return false
         }
     }
@@ -104,9 +105,9 @@ enum ReminderManager {
 
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("❌ Failed to schedule reminder for '\(item.note)': \(error)")
+                AppLogger.reminders.error("Failed to schedule reminder for '\(item.note, privacy: .public)': \(error, privacy: .public)")
             } else {
-                print("🔔 Scheduled reminder for '\(item.note)' at \(reminderDate)")
+                AppLogger.reminders.info("Scheduled reminder for '\(item.note, privacy: .public)' at \(reminderDate, privacy: .public)")
             }
         }
     }
@@ -117,7 +118,7 @@ enum ReminderManager {
     static func cancelReminder(for item: ShoppingItem) {
         let id = notificationId(for: item)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
-        print("🔕 Cancelled reminder for '\(item.note)'")
+        AppLogger.reminders.info("Cancelled reminder for '\(item.note, privacy: .public)'")
     }
 
     /// Cancels notifications for multiple items.
@@ -125,7 +126,7 @@ enum ReminderManager {
         let ids = items.map { notificationId(for: $0) }
         guard !ids.isEmpty else { return }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
-        print("🔕 Cancelled \(ids.count) reminder(s)")
+        AppLogger.reminders.info("Cancelled \(ids.count, privacy: .public) reminder(s)")
     }
 
     // MARK: - Reconciliation
@@ -146,7 +147,7 @@ enum ReminderManager {
 
         if !idsToCancel.isEmpty {
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: idsToCancel)
-            print("🔄 [Reconcile] Cancelled \(idsToCancel.count) stale notification(s) for list \(listId)")
+            AppLogger.reminders.debug("[Reconcile] Cancelled \(idsToCancel.count, privacy: .public) stale notification(s) for list \(listId, privacy: .public)")
         }
     }
 
@@ -171,12 +172,12 @@ enum ReminderManager {
         allItems: [(item: ShoppingItem, listName: String, listId: String)],
         trigger: String
     ) async {
-        print("🔔 [Reconcile] Starting budget reconciliation (trigger: \(trigger))")
+        AppLogger.reminders.debug("[Reconcile] Starting budget reconciliation (trigger: \(trigger, privacy: .public))")
 
         // Ensure notification permission before scheduling anything
         let hasPermission = await ensurePermission()
         if !hasPermission {
-            print("🔕 [Reconcile] Notification permission not granted — skipping scheduling")
+            AppLogger.reminders.warning("[Reconcile] Notification permission not granted — skipping scheduling")
             return
         }
 
@@ -225,14 +226,9 @@ enum ReminderManager {
         let alreadyScheduled = itemsToSchedule.count - scheduledCount
         let finalPending = alreadyScheduled + scheduledCount
 
-        print("🔔 [Reconcile] Summary (trigger: \(trigger)):")
-        print("   📋 Total reminder items found: \(validItems.count)")
-        print("   ✅ Already scheduled: \(alreadyScheduled)")
-        print("   🆕 Newly scheduled: \(scheduledCount)")
-        print("   🗑️ Cancelled (stale/over budget): \(idsToCancel.count)")
-        print("   📊 Active notifications: \(finalPending)/\(notificationBudget)")
+        AppLogger.reminders.info("[Reconcile] Summary (trigger: \(trigger, privacy: .public)): total=\(validItems.count, privacy: .public) scheduled=\(alreadyScheduled, privacy: .public) new=\(scheduledCount, privacy: .public) cancelled=\(idsToCancel.count, privacy: .public) active=\(finalPending, privacy: .public)/\(self.notificationBudget, privacy: .public)")
         if overflow > 0 {
-            print("   ⚠️ Deferred (over budget): \(overflow)")
+            AppLogger.reminders.warning("[Reconcile] Deferred (over budget): \(overflow, privacy: .public)")
         }
     }
 
@@ -306,13 +302,13 @@ enum ReminderManager {
     /// Handles repeating reminders (advance to next date) and one-off reminders (check off + clear).
     @MainActor
     static func completeItemFromNotification(itemId: String, listId: String) async {
-        print("✅ [Notification] Complete action for item \(itemId) in list \(listId)")
+        AppLogger.reminders.info("[Notification] Complete action for item \(itemId, privacy: .public) in list \(listId, privacy: .public)")
 
         let provider = UnifiedListProvider()
         await provider.loadAllLists()
 
         guard let unifiedList = provider.allLists.first(where: { $0.id == listId }) else {
-            print("❌ [Notification] List not found: \(listId)")
+            AppLogger.reminders.error("[Notification] List not found: \(listId, privacy: .public)")
             return
         }
 
@@ -320,7 +316,7 @@ enum ReminderManager {
             let items = try await provider.fetchItems(for: unifiedList)
             guard let itemUUID = UUID(uuidString: itemId),
                   var item = items.first(where: { $0.id == itemUUID }) else {
-                print("❌ [Notification] Item not found: \(itemId)")
+                AppLogger.reminders.error("[Notification] Item not found: \(itemId, privacy: .public)")
                 return
             }
 
@@ -337,18 +333,18 @@ enum ReminderManager {
                 item.reminderDate = nextDate
                 cancelReminder(for: item)
                 scheduleReminder(for: item, listName: unifiedList.summary.name, listId: listId)
-                print("🔁 [Notification] Repeating reminder advanced to \(nextDate)")
+                AppLogger.reminders.info("[Notification] Repeating reminder advanced to \(nextDate, privacy: .public)")
             } else {
                 // One-off: check off and clear reminder
                 item.checked = true
                 item.reminderDate = nil
                 cancelReminder(for: item)
-                print("✅ [Notification] Item checked off")
+                AppLogger.reminders.info("[Notification] Item checked off")
             }
 
             try await provider.updateItem(item, in: unifiedList)
         } catch {
-            print("❌ [Notification] Failed to complete item: \(error)")
+            AppLogger.reminders.error("[Notification] Failed to complete item: \(error, privacy: .public)")
         }
     }
 

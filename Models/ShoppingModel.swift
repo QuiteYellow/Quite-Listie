@@ -49,11 +49,12 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
     // Optional fields for compatibility and features
     var icon: String?
     var hiddenLabels: [String]?  // Array of label IDs to hide
-    
+    var labelOrder: [String]?    // Array of label IDs defining custom display order
 
-    
+
+
     enum CodingKeys: String, CodingKey {
-            case id, name, modifiedAt, icon, hiddenLabels
+            case id, name, modifiedAt, icon, hiddenLabels, labelOrder
         }
         
         // Custom decoder for defensive parsing
@@ -74,15 +75,17 @@ struct ShoppingListSummary: Codable, Identifiable, Hashable {
             // Optional fields
             self.icon = try container.decodeIfPresent(String.self, forKey: .icon)
             self.hiddenLabels = try container.decodeIfPresent([String].self, forKey: .hiddenLabels)
-            
+            self.labelOrder = try container.decodeIfPresent([String].self, forKey: .labelOrder)
+
         }
-        
-        init(id: String, name: String, modifiedAt: Date = Date(), icon: String? = nil, hiddenLabels: [String]? = nil) {
+
+        init(id: String, name: String, modifiedAt: Date = Date(), icon: String? = nil, hiddenLabels: [String]? = nil, labelOrder: [String]? = nil) {
             self.id = id
             self.name = name
             self.modifiedAt = modifiedAt
             self.icon = icon
             self.hiddenLabels = hiddenLabels
+            self.labelOrder = labelOrder
         }
     
     // Helper to get clean ID (remove "local-" prefix if present)
@@ -251,4 +254,73 @@ extension ShoppingLabel {
     var isLocal: Bool {
         id.hasPrefix("local-")
     }
+}
+
+// MARK: - Label Ordering Helper
+
+/// Sorts label names respecting a custom label order.
+/// Labels in `labelOrder` appear first (in that sequence), remaining labels follow alphabetically.
+/// "No Label" is always placed last.
+func sortedLabelNames(_ names: [String], labels: [ShoppingLabel], labelOrder: [String]?) -> [String] {
+    guard let order = labelOrder, !order.isEmpty else {
+        // No custom order — alphabetical, "No Label" last
+        return names.sorted { lhs, rhs in
+            if lhs == "No Label" { return false }
+            if rhs == "No Label" { return true }
+            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        }
+    }
+
+    // Build a lookup from label ID → label name
+    let idToName = Dictionary(uniqueKeysWithValues: labels.map { ($0.id, $0.name) })
+
+    // Build ordered names from the order array (skip IDs that don't resolve to a name in our set)
+    let nameSet = Set(names)
+    var orderedNames: [String] = []
+    var seen = Set<String>()
+
+    for labelId in order {
+        if let name = idToName[labelId], nameSet.contains(name), !seen.contains(name) {
+            orderedNames.append(name)
+            seen.insert(name)
+        }
+    }
+
+    // Append any remaining names not in the order (new labels) — alphabetically
+    let remaining = names.filter { !seen.contains($0) && $0 != "No Label" }
+        .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    orderedNames.append(contentsOf: remaining)
+
+    // "No Label" always last
+    if nameSet.contains("No Label") {
+        orderedNames.append("No Label")
+    }
+
+    return orderedNames
+}
+
+/// Sorts ShoppingLabel objects respecting a custom label order.
+/// Labels in `labelOrder` appear first (in that sequence), remaining labels follow alphabetically.
+func sortedLabels(_ labels: [ShoppingLabel], by labelOrder: [String]?) -> [ShoppingLabel] {
+    guard let order = labelOrder, !order.isEmpty else {
+        return labels.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    let idToLabel = Dictionary(uniqueKeysWithValues: labels.map { ($0.id, $0) })
+    var result: [ShoppingLabel] = []
+    var seen = Set<String>()
+
+    for labelId in order {
+        if let label = idToLabel[labelId], !seen.contains(labelId) {
+            result.append(label)
+            seen.insert(labelId)
+        }
+    }
+
+    // Append remaining labels not in order — alphabetically
+    let remaining = labels.filter { !seen.contains($0.id) }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    result.append(contentsOf: remaining)
+
+    return result
 }
