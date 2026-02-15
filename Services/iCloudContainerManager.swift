@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 actor iCloudContainerManager {
     static let shared = iCloudContainerManager()
@@ -44,12 +45,13 @@ actor iCloudContainerManager {
             containerAvailable = true
 
             // Ensure the directory exists
-            try? FileManager.default.createDirectory(at: containerURL!, withIntermediateDirectories: true)
-
-            print("☁️ [iCloud] Container available at: \(containerURL!.path)")
+            if let containerURL {
+                try? FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true)
+                AppLogger.iCloud.info("Container available at: \(containerURL.path)")
+            }
         } else {
             containerAvailable = false
-            print("⚠️ [iCloud] Container not available")
+            AppLogger.iCloud.warning("Container not available")
         }
 
         // Check if user has disabled iCloud sync in settings
@@ -60,7 +62,7 @@ actor iCloudContainerManager {
             // User explicitly disabled sync - use local even if iCloud is available
             isICloudAvailable = false
             hasCheckedAvailability = true
-            print("☁️ [iCloud] Sync disabled by user, using local fallback")
+            AppLogger.iCloud.info("Sync disabled by user, using local fallback")
             return false
         }
 
@@ -69,7 +71,7 @@ actor iCloudContainerManager {
         hasCheckedAvailability = true
 
         if !containerAvailable {
-            print("⚠️ [iCloud] Using local fallback (container unavailable)")
+            AppLogger.iCloud.warning("Using local fallback (container unavailable)")
         }
 
         return containerAvailable
@@ -89,7 +91,10 @@ actor iCloudContainerManager {
         // Fallback to local directory
         guard let localURL = localFallbackURL else {
             // Last resort fallback
-            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                // Absolute last resort — should never happen on a real device
+                return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("LocalLists", isDirectory: true)
+            }
             return documentsURL.appendingPathComponent("LocalLists", isDirectory: true)
         }
 
@@ -121,7 +126,7 @@ actor iCloudContainerManager {
         // Filter for .listie files
         let listFiles = contents.filter { $0.pathExtension == "listie" }
 
-        print("📂 [iCloud] Discovered \(listFiles.count) private list(s)")
+        AppLogger.iCloud.debug("Discovered \(listFiles.count) private list(s)")
         return listFiles
     }
 
@@ -178,7 +183,7 @@ actor iCloudContainerManager {
         hasCheckedAvailability = false
         _ = await checkICloudAvailability()
 
-        print("☁️ [iCloud] Sync \(enabled ? "enabled" : "disabled")")
+        AppLogger.iCloud.info("Sync \(enabled ? "enabled" : "disabled")")
     }
 
     /// Migrates all .listie files from source to destination directory
@@ -190,7 +195,7 @@ actor iCloudContainerManager {
 
         // Check if source exists and has files
         guard fileManager.fileExists(atPath: source.path) else {
-            print("☁️ [Migration] Source directory doesn't exist: \(source.path)")
+            AppLogger.iCloud.info("[Migration] Source directory doesn't exist: \(source.path)")
             return
         }
 
@@ -204,37 +209,37 @@ actor iCloudContainerManager {
             let listFiles = contents.filter { $0.pathExtension == "listie" }
 
             if listFiles.isEmpty {
-                print("☁️ [Migration] No files to migrate")
+                AppLogger.iCloud.info("[Migration] No files to migrate")
                 return
             }
 
-            print("☁️ [Migration] Migrating \(listFiles.count) file(s) from \(source.lastPathComponent) to \(destination.lastPathComponent)")
+            AppLogger.iCloud.info("[Migration] Migrating \(listFiles.count) file(s) from \(source.lastPathComponent) to \(destination.lastPathComponent)")
 
             for file in listFiles {
                 let destFile = destination.appendingPathComponent(file.lastPathComponent)
 
                 // Skip if file already exists at destination
                 if fileManager.fileExists(atPath: destFile.path) {
-                    print("☁️ [Migration] Skipping \(file.lastPathComponent) - already exists at destination")
+                    AppLogger.iCloud.debug("[Migration] Skipping \(file.lastPathComponent) - already exists at destination")
                     continue
                 }
 
                 do {
                     // Copy file to destination
                     try fileManager.copyItem(at: file, to: destFile)
-                    print("☁️ [Migration] Copied \(file.lastPathComponent)")
+                    AppLogger.iCloud.info("[Migration] Copied \(file.lastPathComponent)")
 
                     // Remove from source after successful copy
                     try fileManager.removeItem(at: file)
-                    print("☁️ [Migration] Removed original \(file.lastPathComponent)")
+                    AppLogger.iCloud.debug("[Migration] Removed original \(file.lastPathComponent)")
                 } catch {
-                    print("❌ [Migration] Failed to migrate \(file.lastPathComponent): \(error)")
+                    AppLogger.iCloud.error("[Migration] Failed to migrate \(file.lastPathComponent): \(error)")
                 }
             }
 
-            print("☁️ [Migration] Migration complete")
+            AppLogger.iCloud.info("[Migration] Migration complete")
         } catch {
-            print("❌ [Migration] Failed to read source directory: \(error)")
+            AppLogger.iCloud.error("[Migration] Failed to read source directory: \(error)")
         }
     }
 

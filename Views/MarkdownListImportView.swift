@@ -13,6 +13,7 @@
 //  View for importing markdown lists with preview
 //
 
+import os
 import SwiftUI
 
 struct MarkdownListImportView: View {
@@ -113,44 +114,37 @@ struct MarkdownListImportView: View {
                 }
             }
             .task {
-                print("🎬 [MarkdownImport] View task started")
-                print("   List: \(list.summary.name)")
-                print("   Initial items count: \(existingItems.count)")
-                print("   Initial labels count: \(existingLabels.count)")
-                print("   Has initial markdown: \(initialMarkdown != nil)")
-                print("   Auto-preview: \(autoPreview)")
-                
+                AppLogger.markdown.debug("View task started for list: \(list.summary.name, privacy: .public), items: \(existingItems.count, privacy: .public), labels: \(existingLabels.count, privacy: .public)")
+
                 // Load existing items and labels if needed (for deeplinks)
                 if existingItems.isEmpty || existingLabels.isEmpty {
-                    print("📦 [MarkdownImport] Loading existing data...")
+                    AppLogger.markdown.debug("Loading existing data...")
                     do {
                         let items = try await provider.fetchItems(for: list)
                         let labels = try await provider.fetchLabels(for: list)
-                        
-                        print("   Loaded \(items.count) items, \(labels.count) labels")
-                        
+
+                        AppLogger.markdown.debug("Loaded \(items.count, privacy: .public) items, \(labels.count, privacy: .public) labels")
+
                         await MainActor.run {
                             self.existingItems = items
                             self.existingLabels = labels
-                            print("   ✅ Updated state")
                         }
                     } catch {
-                        print("   ❌ Failed to load existing data: \(error)")
+                        AppLogger.markdown.error("Failed to load existing data: \(error, privacy: .public)")
                     }
                 }
-                
+
                 // Apply initial markdown if provided
                 if let initial = initialMarkdown {
-                    print("📝 [MarkdownImport] Applying initial markdown (\(initial.count) chars)")
+                    AppLogger.markdown.debug("Applying initial markdown (\(initial.count, privacy: .public) chars)")
                     markdownText = initial
-                    
+
                     if autoPreview {
-                        print("   🔍 Auto-previewing...")
                         parseAndPreview()
                     }
                 }
-                
-                print("✅ [MarkdownImport] Task complete")
+
+                AppLogger.markdown.info("Import view task complete")
             }
         }
     }
@@ -545,7 +539,7 @@ struct MarkdownListImportView: View {
             
             dismiss()
         } catch {
-            print("❌ Failed to import items: \(error)")
+            AppLogger.markdown.error("Failed to import items: \(error, privacy: .public)")
         }
     }
 }

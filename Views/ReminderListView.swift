@@ -401,7 +401,7 @@ private struct ReminderEntryRow: View {
                             .adjusted(forBackground: Color(.systemBackground))
                         MetadataChip(
                             icon: "tag",
-                            text: labelName.removingLabelNumberPrefix(),
+                            text: labelName,
                             color: chipColor
                         )
                     }

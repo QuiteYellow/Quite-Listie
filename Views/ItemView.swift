@@ -5,6 +5,7 @@
 //  Updated EditItemView to use V2 format with direct markdownNotes field
 //
 
+import os
 import SwiftUI
 import MarkdownView
 
@@ -136,7 +137,7 @@ struct ItemFormView: View {
                         Text("No Label").tag(Optional<ShoppingLabel>(nil))
 
                         ForEach(availableLabels, id: \.id) { label in
-                            Text(label.name.removingLabelNumberPrefix())
+                            Text(label.name)
                                 .tag(Optional(label))
                         }
                     }
@@ -398,7 +399,7 @@ struct AddItemView: View {
                         $0.name.localizedStandardCompare($1.name) == .orderedAscending
                     }
                 } catch {
-                    print("⚠️ Failed to fetch labels:", error)
+                    AppLogger.labels.warning("Failed to fetch labels: \(error, privacy: .public)")
                 }
                 isLoading = false
             }
@@ -540,7 +541,7 @@ struct EditItemView: View {
                         selectedLabel = nil
                     }
                 } catch {
-                    print("⚠️ Failed to fetch labels:", error)
+                    AppLogger.labels.warning("Failed to fetch labels: \(error, privacy: .public)")
                 }
                 isLoading = false
             }
@@ -556,6 +557,44 @@ struct EditItemView: View {
             }
             repeatRule = item.reminderRepeatRule
             repeatMode = item.reminderRepeatMode ?? .fixed
+        }
+    }
+}
+
+// MARK: - Item Preview View (Read-only markdown preview)
+
+struct ItemPreviewView: View {
+    @Environment(\.dismiss) var dismiss
+    let item: ShoppingItem
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let notes = item.markdownNotes, !notes.isEmpty {
+                        MarkdownView(notes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text("No notes")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: 800, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+            .navigationTitle(item.note)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                }
+            }
         }
     }
 }

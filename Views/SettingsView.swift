@@ -22,8 +22,11 @@ struct SettingsView: View {
     @Binding var hideQuickAdd: Bool
     @Binding var hideEmptyLabels: Bool
 
+    @AppStorage("kanbanColumnWidth") private var kanbanColumnWidth = "normal"
+
     @State private var showQuickAddInfo = false
     @State private var showEmptyLabelsInfo = false
+    @State private var showKanbanWidthInfo = false
     @State private var iCloudSyncEnabled = true
     @State private var storageLocation = "Loading..."
     @State private var showICloudInfo = false
@@ -116,9 +119,9 @@ struct SettingsView: View {
                     
                     HStack {
                         Text("Show Empty Labels")
-                        
+
                         Spacer()
-                        
+
                         Button {
                             showEmptyLabelsInfo = true
                         } label: {
@@ -126,16 +129,37 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
-                        
+
                         Toggle("", isOn: Binding(
                             get: { !hideEmptyLabels },
                             set: { hideEmptyLabels = !$0 }
                         ))
                         .toggleStyle(.switch)
                         .fixedSize()
-                        
-                        
-                        
+
+
+
+                    }
+
+                    HStack {
+                        Text("Kanban Column Width")
+
+                        Spacer()
+
+                        Button {
+                            showKanbanWidthInfo = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        Picker("", selection: $kanbanColumnWidth) {
+                            Text("Narrow").tag("narrow")
+                            Text("Normal").tag("normal")
+                            Text("Wide").tag("wide")
+                        }
+                        .fixedSize()
                     }
                 } header: {
                     Text("Lists & Labels")
@@ -150,7 +174,12 @@ struct SettingsView: View {
                 } message: {
                     Text("Displays all labels even when they have no items, making it easy to add items to any category.")
                 }
-                
+                .alert("Kanban Column Width", isPresented: $showKanbanWidthInfo) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Sets the width of columns in kanban board view. On narrow screens (such as iPhone), columns always use the narrow width.")
+                }
+
                 // MARK: - Third-Party Libraries
                 Section {
                     DisclosureGroup("Open Source Libraries") {

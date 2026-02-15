@@ -5,6 +5,7 @@
 //  Updated to use V2 format with direct fields instead of extras
 //
 
+import os
 import SwiftUI
 import SymbolPicker
 
@@ -14,7 +15,7 @@ struct ListSettingsView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    let onSave: (String, String?, [String]?) -> Void  // (name, icon, hiddenLabels)
+    let onSave: (String, String?, [String]?, [String]?) -> Void  // (name, icon, hiddenLabels, labelOrder)
 
     
     @Environment(\.dismiss) var dismiss
@@ -51,12 +52,28 @@ struct ListSettingsView: View {
     
     private func loadLabels() async {
         do {
-            allLabels = try await unifiedProvider.fetchLabels(for: unifiedList)
+            let fetched = try await unifiedProvider.fetchLabels(for: unifiedList)
+            if allLabels.isEmpty {
+                // First load — sort by persisted label order
+                allLabels = sortedLabels(fetched, by: unifiedList.summary.labelOrder)
+            } else {
+                // Subsequent loads (after create/edit/delete) — preserve current order,
+                // merge any new labels at the end, remove deleted ones
+                let currentIDs = Set(allLabels.map { $0.id })
+                let fetchedMap = Dictionary(uniqueKeysWithValues: fetched.map { ($0.id, $0) })
+
+                // Update existing labels in place (name/color may have changed)
+                allLabels = allLabels.compactMap { fetchedMap[$0.id] }
+
+                // Append any newly created labels not yet in our order
+                let newLabels = fetched.filter { !currentIDs.contains($0.id) }
+                allLabels.append(contentsOf: newLabels)
+            }
         } catch {
-            print("Failed to load labels: \(error)")
+            AppLogger.labels.error("Failed to load labels: \(error, privacy: .public)")
         }
     }
-    
+
     private func createLabel(name: String, color: String) async {
         // Use ModelHelpers to create a label with a simple, unique ID
         let newLabel = ModelHelpers.createNewLabel(
@@ -69,7 +86,7 @@ struct ListSettingsView: View {
             try await unifiedProvider.createLabel(newLabel, for: unifiedList)
             await loadLabels()
         } catch {
-            print("âŒ Failed to create label: \(error)")
+            AppLogger.labels.error("Failed to create label: \(error, privacy: .public)")
         }
     }
     
@@ -78,7 +95,7 @@ struct ListSettingsView: View {
             try await unifiedProvider.updateLabel(label, for: unifiedList)
             await loadLabels()
         } catch {
-            print("âŒ Failed to update label: \(error)")
+            AppLogger.labels.error("Failed to update label: \(error, privacy: .public)")
         }
     }
     
@@ -88,7 +105,7 @@ struct ListSettingsView: View {
             await loadLabels()
             NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
         } catch {
-            print("âŒ Could not delete label: \(error)")
+            AppLogger.labels.error("Could not delete label: \(error, privacy: .public)")
         }
     }
     
@@ -242,15 +259,19 @@ struct ListSettingsView: View {
                             .foregroundColor(.secondary)
                             .font(.callout)
                     } else {
-                        ForEach(allLabels.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }), id: \.id) { label in
+                        ForEach($allLabels, id: \.id) { $label in
                             HStack {
+                                Image(systemName: "line.3.horizontal")
+                                    .foregroundColor(.secondary)
+                                    .font(.footnote)
+
                                 Image(systemName: "tag.fill")
                                     .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
-                                
+
                                 Text(label.name)
-                                
+
                                 Spacer()
-                                
+
                                 // Show/hide toggle
                                 let isShown = !hiddenLabelIDs.contains(label.id)
                                 Toggle("", isOn: Binding(
@@ -290,7 +311,7 @@ struct ListSettingsView: View {
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
-                                
+
                                 Button(role: .destructive) {
                                     labelToDelete = label
                                     showingDeleteConfirmation = true
@@ -298,6 +319,9 @@ struct ListSettingsView: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
+                        }
+                        .onMove { from, to in
+                            allLabels.move(fromOffsets: from, toOffset: to)
                         }
                     }
                 }
@@ -336,7 +360,8 @@ struct ListSettingsView: View {
 
                         // Call with direct values (convert Set to Array)
                         let hiddenArray = hiddenLabelIDs.isEmpty ? nil : Array(hiddenLabelIDs)
-                        onSave(name, icon, hiddenArray)
+                        let labelOrderArray = allLabels.map { $0.id }
+                        onSave(name, icon, hiddenArray, labelOrderArray)
                         
                         NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
 
@@ -410,7 +435,7 @@ struct ListSettingsView: View {
                 icon = currentList.icon ?? "checklist"
                 hiddenLabelIDs = Set(currentList.hiddenLabels ?? [])
                 
-                print("🔍 Loaded hiddenLabelIDs: \(hiddenLabelIDs)")
+                AppLogger.labels.debug("Loaded hiddenLabelIDs: \(hiddenLabelIDs, privacy: .public)")
                 
                 isFavourited = favouriteListIDs.contains(currentList.id)
                 await loadLabels()
