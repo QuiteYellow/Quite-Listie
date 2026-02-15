@@ -536,15 +536,22 @@ struct ShoppingListView: View {
                     }
                 )
             } else {
+                // Snapshot grouped data in a single pass to prevent key/value
+                // divergence if @Published arrays update between SwiftUI render passes.
+                let sectionKeys = labelsForListBody
+                let groupedItems = viewModel.filteredItemsGroupedByLabel
+                let completedItems = viewModel.filteredCompletedItems
+                let showCompleted = viewModel.showCompletedAtBottom
+
                 List {
-                    ForEach(labelsForListBody, id: \.self) { labelName in
-                        let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
+                    ForEach(sectionKeys, id: \.self) { labelName in
+                        let items = groupedItems[labelName] ?? []
                         let color = viewModel.colorForLabel(name: labelName)
                         renderSection(labelName: labelName, items: items, color: color)
                     }
 
-                    if viewModel.showCompletedAtBottom && !viewModel.filteredCompletedItems.isEmpty {
-                        renderSection(labelName: "Completed", items: viewModel.filteredCompletedItems, color: .primary)
+                    if showCompleted && !completedItems.isEmpty {
+                        renderSection(labelName: "Completed", items: completedItems, color: .primary)
                     }
                 }
                 .listStyle(.insetGrouped)
