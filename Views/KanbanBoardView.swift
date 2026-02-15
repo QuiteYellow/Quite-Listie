@@ -84,21 +84,26 @@ struct KanbanBoardView: View {
     var body: some View {
         GeometryReader { geometry in
             let isWide = geometry.size.width > 600
+            // Snapshot grouped data to prevent key/value divergence mid-render
+            let columns = labelsToShow
+            let groupedItems = viewModel.filteredItemsGroupedByLabel
+            let completedItems = viewModel.filteredCompletedItems
+            let showCompleted = viewModel.showCompletedAtBottom
+
             ScrollView(.horizontal, showsIndicators: true) {
                 HStack(alignment: .top, spacing: 12) {
-                    let columns = labelsToShow
                     let colWidth = columnWidth(for: geometry.size.width)
                     ForEach(columns, id: \.self) { labelName in
-                        let items = viewModel.filteredItemsGroupedByLabel[labelName] ?? []
+                        let items = groupedItems[labelName] ?? []
                         let color = viewModel.colorForLabel(name: labelName)
                         kanbanColumn(labelName: labelName, items: items, color: color, columnHeight: geometry.size.height, columnWidth: colWidth)
                     }
 
                     // Completed column (when showing completed at bottom)
-                    if viewModel.showCompletedAtBottom && !viewModel.filteredCompletedItems.isEmpty {
+                    if showCompleted && !completedItems.isEmpty {
                         kanbanColumn(
                             labelName: "Completed",
-                            items: viewModel.filteredCompletedItems,
+                            items: completedItems,
                             color: .primary,
                             columnHeight: geometry.size.height,
                             columnWidth: colWidth
