@@ -112,8 +112,8 @@ struct KanbanBoardView: View {
                 }
                 .padding(.horizontal, 12)
             }
-            .frame(height: geometry.size.height + (isWide ? geometry.safeAreaInsets.bottom : 0))
-            .ignoresSafeArea(edges: isWide ? .bottom : [])
+            .frame(height: geometry.size.height + geometry.safeAreaInsets.bottom)
+            .ignoresSafeArea(edges: .bottom)
         }
         .environment(\.chipsInline, false)
     }
@@ -173,9 +173,10 @@ struct KanbanBoardView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 0, for: .scrollContent)
+            .contentMargins(.bottom, 80, for: .scrollContent)
         }
         .frame(width: columnWidth, alignment: .top)
-        .padding(.bottom, 12)
+        .padding(.bottom, 0)
     }
 
     // MARK: - Column Header
@@ -194,7 +195,6 @@ struct KanbanBoardView: View {
             Spacer()
 
             Text("\(displayCount)")
-                .foregroundColor(.primary)
                 .foregroundColor(.secondary)
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.25), value: displayCount)

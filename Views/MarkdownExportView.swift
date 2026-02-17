@@ -20,24 +20,26 @@ import UniformTypeIdentifiers
 
 struct MarkdownExportView: View {
     let listName: String
-    let listId: String? 
+    let listId: String?
     let items: [ShoppingItem]
     let labels: [ShoppingLabel]
+    let labelOrder: [String]?
     let activeOnly: Bool
-    
+
     @Environment(\.dismiss) var dismiss
     @State private var showCopiedConfirmation = false
     @State private var showFileExporter = false
     @State private var showRawMarkdown = false  // Toggle between raw and preview
     @State private var includeNotes = false  // Toggle for including item notes
     @State private var showActiveOnly = true  // Toggle for active items only
-    
+
     // Generate markdown from items and labels
     private var exportResult: ExportResult {
         MarkdownListGenerator.generate(
             listName: listName,
             items: items,
             labels: labels,
+            labelOrder: labelOrder,
             activeOnly: !showActiveOnly,
             includeNotes: includeNotes
         )
@@ -334,6 +336,7 @@ struct MarkdownDocument: FileDocument {
             ShoppingLabel(id: "produce", name: "Produce", color: "#4CAF50"),
             ShoppingLabel(id: "dairy", name: "Dairy", color: "#2196F3")
         ],
+        labelOrder: nil,
         activeOnly: false
     )
 }

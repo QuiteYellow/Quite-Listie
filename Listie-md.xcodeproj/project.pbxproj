@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		379DF6462F01885B00475782 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6452F01885B00475782 /* MarkdownView */; };
+		CB001A012F100000002F4B13 /* ListieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A002F100000002F4B13 /* ListieTests.swift */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
 /* End PBXBuildFile section */
@@ -31,6 +32,7 @@
 
 /* Begin PBXFileReference section */
 		37F742762EF8531900C4EEF4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = "Listie-md/Info.plist"; sourceTree = "<group>"; };
+		CB001A002F100000002F4B13 /* ListieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListieTests.swift; sourceTree = "<group>"; };
 		CBEFA7AB2DE31318002F4B13 /* Listie.md.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listie.md.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7B92DE3131A002F4B13 /* Listie.mdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listie.mdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7C32DE3131A002F4B13 /* Listie.mdUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listie.mdUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +112,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		CB001A022F100000002F4B13 /* Listie-mdTests */ = {
+			isa = PBXGroup;
+			children = (
+				CB001A002F100000002F4B13 /* ListieTests.swift */,
+			);
+			path = "Listie-mdTests";
+			sourceTree = "<group>";
+		};
 		CB3015E22DE9D43700CCFCC8 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -129,6 +139,7 @@
 				CBEFA7D72DE313B0002F4B13 /* Services */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
 				CB3015E22DE9D43700CCFCC8 /* Frameworks */,
+				CB001A022F100000002F4B13 /* Listie-mdTests */,
 				CBEFA7AC2DE31318002F4B13 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -300,6 +311,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CB001A012F100000002F4B13 /* ListieTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -454,7 +466,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 112;
+				CURRENT_PROJECT_VERSION = 116;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -519,7 +531,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 112;
+				CURRENT_PROJECT_VERSION = 116;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -585,18 +597,16 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
-				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.ListsForMealieTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ListsForMealie.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ListsForMealie";
-				XROS_DEPLOYMENT_TARGET = 2.4;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Listie.md.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Listie.md";
 			};
 			name = Debug;
 		};
@@ -609,18 +619,16 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
-				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.ListsForMealieTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ListsForMealie.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ListsForMealie";
-				XROS_DEPLOYMENT_TARGET = 2.4;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Listie.md.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Listie.md";
 			};
 			name = Release;
 		};

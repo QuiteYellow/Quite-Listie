@@ -12,6 +12,7 @@ struct ShareLinkSheet: View {
     let listId: String?
     let items: [ShoppingItem]
     let labels: [ShoppingLabel]
+    let labelOrder: [String]?
 
     @Environment(\.dismiss) var dismiss
 
@@ -52,7 +53,7 @@ struct ShareLinkSheet: View {
             Form {
                 // Info
                 Section {
-                    Text("Anyone with this link can import these items into their Listie app.")
+                    Text("Anyone with this link can import these items into their Listie app. They will be importing a copy. To collaborate, share a .listie file directly via icloud (or similar).")
                         .font(.callout)
                         .foregroundColor(.secondary)
                 }
@@ -192,6 +193,7 @@ struct ShareLinkSheet: View {
             listName: listName,
             items: filteredItems,
             labels: labels,
+            labelOrder: labelOrder,
             activeOnly: includeActiveOnly,
             includeNotes: includeComments
         )

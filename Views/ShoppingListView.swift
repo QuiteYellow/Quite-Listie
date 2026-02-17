@@ -241,6 +241,7 @@ struct MarkdownExport: Identifiable {
     let listId: String?
     let items: [ShoppingItem]
     let labels: [ShoppingLabel]
+    let labelOrder: [String]?
     let activeOnly: Bool
 }
 
@@ -838,6 +839,7 @@ struct ShoppingListView: View {
                     listId: unifiedList.originalFileId ?? unifiedList.id,
                     items: viewModel.items,
                     labels: viewModel.labels,
+                    labelOrder: list.labelOrder,
                     activeOnly: true
                 )
             } label: {
@@ -851,6 +853,7 @@ struct ShoppingListView: View {
                     listId: unifiedList.originalFileId ?? unifiedList.id,
                     items: viewModel.items,
                     labels: viewModel.labels,
+                    labelOrder: list.labelOrder,
                     activeOnly: true
                 )
             } label: {
@@ -984,6 +987,7 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                     listId: export.listId,
                     items: export.items,
                     labels: export.labels,
+                    labelOrder: export.labelOrder,
                     activeOnly: export.activeOnly
                 )
             }
@@ -992,7 +996,8 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                     listName: export.listName,
                     listId: export.listId,
                     items: export.items,
-                    labels: export.labels
+                    labels: export.labels,
+                    labelOrder: export.labelOrder
                 )
             }
             .sheet(isPresented: $showingListSettings, onDismiss: {
@@ -1160,6 +1165,7 @@ private struct ShoppingListObserversModifier: ViewModifier {
                         listId: unifiedList.originalFileId ?? unifiedList.id,
                         items: viewModel.items,
                         labels: viewModel.labels,
+                        labelOrder: list.labelOrder,
                         activeOnly: true
                     )
                     triggerMarkdownExport = false
@@ -1178,6 +1184,7 @@ private struct ShoppingListObserversModifier: ViewModifier {
                         listId: unifiedList.originalFileId ?? unifiedList.id,
                         items: viewModel.items,
                         labels: viewModel.labels,
+                        labelOrder: list.labelOrder,
                         activeOnly: true
                     )
                     triggerShareLink = false
