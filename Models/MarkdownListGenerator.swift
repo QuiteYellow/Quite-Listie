@@ -84,6 +84,7 @@ enum MarkdownListGenerator {
         listName: String,
         items: [ShoppingItem],
         labels: [ShoppingLabel],
+        labelOrder: [String]? = nil,
         activeOnly: Bool = false,
         includeNotes: Bool = false
     ) -> ExportResult {
@@ -117,11 +118,11 @@ enum MarkdownListGenerator {
         
         AppLogger.markdown.debug("Grouped into \(grouped.keys.count, privacy: .public) labels")
         
-        // Sort label names
-        let sortedLabelNames = grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        
+        // Sort label names, respecting custom label order
+        let orderedLabelNames = sortedLabelNames(Array(grouped.keys), labels: labels, labelOrder: labelOrder)
+
         // Generate sections
-        for labelName in sortedLabelNames {
+        for labelName in orderedLabelNames {
             guard let itemsInLabel = grouped[labelName] else { continue }
             
             // Add label heading
