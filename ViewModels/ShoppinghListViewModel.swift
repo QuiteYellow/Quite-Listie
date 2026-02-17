@@ -145,7 +145,7 @@ class ShoppingListViewModel: ObservableObject {
     @MainActor
     func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
-        let newItem = ModelHelpers.createNewItem(
+        var newItem = ModelHelpers.createNewItem(
             note: note,
             quantity: quantity ?? 1,
             checked: checked,
@@ -156,11 +156,26 @@ class ShoppingListViewModel: ObservableObject {
             reminderRepeatMode: reminderRepeatMode
         )
 
+        // Handle recurrence when adding a checked item with a repeat rule
+        if checked && newItem.reminderDate != nil {
+            let mode = newItem.reminderRepeatMode ?? .fixed
+
+            if let rule = newItem.reminderRepeatRule,
+               let nextDate = ReminderManager.nextReminderDate(from: newItem.reminderDate, rule: rule, mode: mode) {
+                // Repeating reminder: uncheck, advance to next date
+                newItem.checked = false
+                newItem.reminderDate = nextDate
+            } else {
+                // One-off reminder: clear it
+                newItem.reminderDate = nil
+            }
+        }
+
         do {
             try await provider.addItem(newItem, to: list)
 
             // Schedule reminder if set
-            if reminderDate != nil {
+            if let date = newItem.reminderDate, date > Date() {
                 if await ReminderManager.requestPermission() {
                     ReminderManager.scheduleReminder(for: newItem, listName: list.summary.name, listId: list.id)
                 }
@@ -311,6 +326,24 @@ class ShoppingListViewModel: ObservableObject {
         updatedItem.reminderRepeatMode = reminderRepeatMode
         updatedItem.modifiedAt = Date()  // Update timestamp
 
+        // Handle recurrence when checking off an item with a repeat rule
+        if !item.checked && checked && updatedItem.reminderDate != nil {
+            let mode = updatedItem.reminderRepeatMode ?? .fixed
+
+            if let rule = updatedItem.reminderRepeatRule,
+               let nextDate = ReminderManager.nextReminderDate(from: updatedItem.reminderDate, rule: rule, mode: mode) {
+                // Repeating reminder: uncheck, advance to next date, reschedule
+                updatedItem.checked = false
+                updatedItem.reminderDate = nextDate
+                ReminderManager.cancelReminder(for: item)
+                ReminderManager.scheduleReminder(for: updatedItem, listName: list.summary.name, listId: list.id)
+            } else {
+                // One-off reminder: clear it
+                updatedItem.reminderDate = nil
+                ReminderManager.cancelReminder(for: item)
+            }
+        }
+
         do {
             try await provider.updateItem(updatedItem, in: list)
 
@@ -318,13 +351,15 @@ class ShoppingListViewModel: ObservableObject {
                 items[index] = updatedItem
             }
 
-            // Handle reminder scheduling/cancellation
-            if let date = reminderDate, date > Date() {
+            // Handle reminder scheduling/cancellation (for non-recurrence cases)
+            if updatedItem.checked || updatedItem.reminderDate == nil {
+                // Item is checked or reminder was cleared — no scheduling needed
+            } else if let date = updatedItem.reminderDate, date > Date() {
                 if await ReminderManager.requestPermission() {
                     ReminderManager.scheduleReminder(for: updatedItem, listName: list.summary.name, listId: list.id)
                 }
             } else {
-                // Reminder removed or in the past — cancel
+                // Reminder in the past — cancel
                 ReminderManager.cancelReminder(for: updatedItem)
             }
 
@@ -353,7 +388,11 @@ class ShoppingListViewModel: ObservableObject {
     }
 
     var sortedLabelKeys: [String] {
-        itemsGroupedByLabel.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
+        sortedLabelNames(
+            Array(itemsGroupedByLabel.keys),
+            labels: labels,
+            labelOrder: list.summary.labelOrder
+        )
     }
     
     // MARK: - Quantity Management
