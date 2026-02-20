@@ -71,20 +71,30 @@ class ShoppingListViewModel: ObservableObject {
     }
     
     func loadItems() async {
+        guard !Task.isCancelled else { return }
         isLoading = true
         do {
             let allItems = try await provider.fetchItems(for: list)
+            guard !Task.isCancelled else { return }
             // Filter out soft-deleted items
             items = allItems.filter { !($0.isDeleted) }
+        } catch is CancellationError {
+            // Task was cancelled — don't publish anything further
         } catch {
             AppLogger.items.error("Error loading items: \(error, privacy: .public)")
         }
+        guard !Task.isCancelled else { return }
         isLoading = false
     }
-    
+
     func loadLabels() async {
+        guard !Task.isCancelled else { return }
         do {
-            labels = try await provider.fetchLabels(for: list)
+            let fetched = try await provider.fetchLabels(for: list)
+            guard !Task.isCancelled else { return }
+            labels = fetched
+        } catch is CancellationError {
+            // Task was cancelled — don't publish anything further
         } catch {
             AppLogger.labels.error("Error loading labels: \(error, privacy: .public)")
         }

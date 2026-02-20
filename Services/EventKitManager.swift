@@ -6,9 +6,9 @@
 //  The user can then share that calendar from Calendar.app to get a real webcal:// URL
 //  hosted by Apple's iCloud infrastructure — works on iOS, Mac, Google Calendar, etc.
 //
-//  Events are identified via a local [ShoppingItem.UUID → EKEvent.eventIdentifier] mapping
-//  persisted in UserDefaults. This avoids polluting the notes field and correctly handles
-//  recurring events (store.event(withIdentifier:) returns the root, not an occurrence).
+//  Events are identified via the event's URL field (listie://item?id=<UUID>), which syncs
+//  via iCloud and is readable on every device. A local [UUID → eventIdentifier] cache in
+//  UserDefaults is rebuilt from this URL each sync, preventing cross-device duplication.
 //
 
 import EventKit
@@ -45,7 +45,6 @@ class EventKitManager: ObservableObject {
     private let calendarIdKey = "com.listie.eventkit-calendar-id"
     private let sourceIdKey = "com.listie.eventkit-source-id"
     private let eventMappingKey = "com.listie.eventkit-event-mapping"
-    private let bootstrapDoneKey = "com.listie.eventkit-bootstrap-done"
 
     /// Debounce task for coalescing rapid sync calls.
     private var syncTask: Task<Void, Never>?
@@ -54,11 +53,19 @@ class EventKitManager: ObservableObject {
 
     // MARK: - Event Mapping (UserDefaults-persisted)
 
-    /// Maps ShoppingItem.id.uuidString → EKEvent.eventIdentifier.
-    /// Persisted in UserDefaults so we can look up events by ID without enumerating.
+    /// Maps ShoppingItem.id.uuidString → EKEvent.calendarItemExternalIdentifier.
+    /// calendarItemExternalIdentifier is identical on every device for the same iCloud event,
+    /// unlike eventIdentifier which is device-local. Storing the external ID means Device B
+    /// can look up an event created by Device A without a second reconciliation pass.
     private var eventMapping: [String: String] {
         get { UserDefaults.standard.dictionary(forKey: eventMappingKey) as? [String: String] ?? [:] }
         set { UserDefaults.standard.set(newValue, forKey: eventMappingKey) }
+    }
+
+    /// Looks up a Listie event by its calendarItemExternalIdentifier, preferring the series root.
+    private func findEvent(externalId: String) -> EKEvent? {
+        let matches = store.calendarItems(withExternalIdentifier: externalId).compactMap { $0 as? EKEvent }
+        return matches.first(where: { !$0.isDetached }) ?? matches.first
     }
 
     // MARK: - Auth Helpers
@@ -155,8 +162,8 @@ class EventKitManager: ObservableObject {
 
         // Remove all managed events
         let mapping = eventMapping
-        for (_, eventId) in mapping {
-            if let event = store.event(withIdentifier: eventId) {
+        for (_, externalId) in mapping {
+            if let event = findEvent(externalId: externalId) {
                 try? store.remove(event, span: .futureEvents)
             }
         }
@@ -170,7 +177,6 @@ class EventKitManager: ObservableObject {
 
         eventMapping = [:]
         UserDefaults.standard.removeObject(forKey: calendarIdKey)
-        UserDefaults.standard.set(false, forKey: bootstrapDoneKey)
         calendarExists = false
     }
 
@@ -213,23 +219,20 @@ class EventKitManager: ObservableObject {
         let activeIds = Set(activeItems.map { $0.item.id })
         var mapping = eventMapping
 
-        // Bootstrap: one-time enumeration to rebuild mapping on a new device
-        // that connects to an existing calendar with events from another device.
-        if mapping.isEmpty && !activeItems.isEmpty
-            && !UserDefaults.standard.bool(forKey: bootstrapDoneKey) {
-            bootstrapMapping(from: calendar, activeItems: activeItems, mapping: &mapping)
-            UserDefaults.standard.set(true, forKey: bootstrapDoneKey)
-        }
+        // Scan the calendar to: (a) recover mappings from synced event URLs on devices that
+        // don't have them locally yet, (b) delete duplicates for the same UUID keeping newest,
+        // (c) validate existing mapping entries are still pointing at the right event.
+        rebuildMappingFromCalendar(calendar, mapping: &mapping)
 
-        // Upsert active items — O(1) lookup per item via eventIdentifier
+        // Upsert active items — O(1) lookup per item via cross-device external identifier
         for entry in activeItems {
-            let existing = mapping[entry.item.id.uuidString].flatMap { store.event(withIdentifier: $0) }
+            let existing = mapping[entry.item.id.uuidString].flatMap { findEvent(externalId: $0) }
             let event = upsertEvent(for: entry.item, listName: entry.listName,
                                      calendar: calendar, existing: existing)
-            if let event {
-                mapping[entry.item.id.uuidString] = event.eventIdentifier
+            if let event, let externalId = event.calendarItemExternalIdentifier {
+                mapping[entry.item.id.uuidString] = externalId
             } else {
-                // Save failed — remove stale mapping so a fresh event is created next time
+                // Save failed or no external ID yet — remove so a fresh event is created next time
                 mapping.removeValue(forKey: entry.item.id.uuidString)
             }
         }
@@ -240,8 +243,8 @@ class EventKitManager: ObservableObject {
             return !activeIds.contains(uuid)
         }
         for key in orphanKeys {
-            if let eventId = mapping[key],
-               let event = store.event(withIdentifier: eventId) {
+            if let externalId = mapping[key],
+               let event = findEvent(externalId: externalId) {
                 try? store.remove(event, span: .futureEvents)
             }
             mapping.removeValue(forKey: key)
@@ -284,7 +287,7 @@ class EventKitManager: ObservableObject {
         let calendar = EKCalendar(for: .event, eventStore: store)
         calendar.title = calendarName
         calendar.source = resolvedSource
-        calendar.cgColor = UIColor.systemBlue.cgColor
+        calendar.cgColor = UIColor(white: 0.55, alpha: 1).cgColor
 
         do {
             try store.saveCalendar(calendar, commit: true)
@@ -306,7 +309,6 @@ class EventKitManager: ObservableObject {
         }
 
         UserDefaults.standard.removeObject(forKey: calendarIdKey)
-        UserDefaults.standard.set(false, forKey: bootstrapDoneKey)
         eventMapping = [:]
         calendarExists = false
 
@@ -337,119 +339,158 @@ class EventKitManager: ObservableObject {
             title = item.note
         }
 
-        // Build expected recurrence
-        let isRecurring: Bool
+        // Build expected recurrence — only .fixed repeat mode maps to a calendar recurrence rule.
+        // "after completed" items advance their date on check-off in Listie itself, so they are
+        // stored as plain (non-recurring) events in the calendar.
         let expectedRule: EKRecurrenceRule?
         if let rule = item.reminderRepeatRule,
            item.reminderRepeatMode == .fixed,
            let ekRule = ekRecurrenceRule(from: rule) {
             expectedRule = ekRule
-            isRecurring = true
         } else {
             expectedRule = nil
-            isRecurring = false
+        }
+
+        // For a recurring series, always operate on the root event rather than an occurrence.
+        // Saving an occurrence with .futureEvents splits the series, producing a new
+        // eventIdentifier each time — which is the root cause of cross-device duplication.
+        let resolvedEvent: EKEvent
+        if let existing {
+            if existing.isDetached || (existing.recurrenceRules?.isEmpty == false),
+               let rootId = existing.calendarItemExternalIdentifier,
+               let root = findEvent(externalId: rootId) {
+                // Use the series root so we never mutate a detached occurrence.
+                resolvedEvent = root
+            } else {
+                resolvedEvent = existing
+            }
+        } else {
+            resolvedEvent = event  // newly created EKEvent
         }
 
         let deeplink = URL(string: "listie://item?id=\(item.id.uuidString)")
 
-        // Dirty check — skip save if existing event already matches all fields.
-        // Note: url is intentionally excluded — existing events without a url get it added
-        // as a silent one-time migration without causing duplicate event writes.
+        // Dirty check — skip save if the resolved event already matches all fields.
+        // url is intentionally excluded so existing events without one get it added silently.
         if existing != nil {
-            let titleMatches = event.title == title
-            let startMatches = event.startDate == reminderDate
-            let notesMatch = event.notes == item.markdownNotes
-            let locationMatches = event.location == listName
-            let urlAlreadySet = event.url == deeplink
+            let titleMatches = resolvedEvent.title == title
+            let startMatches = resolvedEvent.startDate == reminderDate
+            let notesMatch = resolvedEvent.notes == item.markdownNotes
+            let locationMatches = resolvedEvent.location == listName
+            let urlAlreadySet = resolvedEvent.url == deeplink
 
-            // Compare recurrence: both nil, or both have same frequency+interval
             let recurrenceMatches: Bool
-            if let existingRule = event.recurrenceRules?.first, let newRule = expectedRule {
+            if let existingRule = resolvedEvent.recurrenceRules?.first, let newRule = expectedRule {
                 recurrenceMatches = existingRule.frequency == newRule.frequency
                     && existingRule.interval == newRule.interval
             } else {
-                recurrenceMatches = event.recurrenceRules?.first == nil && expectedRule == nil
+                recurrenceMatches = resolvedEvent.recurrenceRules?.first == nil && expectedRule == nil
             }
 
             if titleMatches && startMatches && notesMatch && locationMatches && urlAlreadySet && recurrenceMatches {
-                return event // Nothing changed — skip save
+                return resolvedEvent // Nothing changed — skip save
             }
         }
 
-        // Apply fields
-        event.title = title
-        event.startDate = reminderDate
-        event.endDate = reminderDate.addingTimeInterval(1200)
-        event.isAllDay = false
-        event.notes = item.markdownNotes
-        event.location = listName
-        event.url = deeplink
-        event.alarms = [EKAlarm(relativeOffset: 0)]
+        // Apply fields to the resolved (root) event
+        resolvedEvent.title = title
+        resolvedEvent.startDate = reminderDate
+        resolvedEvent.endDate = reminderDate.addingTimeInterval(1200)
+        resolvedEvent.isAllDay = false
+        resolvedEvent.notes = item.markdownNotes
+        resolvedEvent.location = listName
+        resolvedEvent.url = deeplink
+        resolvedEvent.alarms = []  // No alerts — Listie's own notification handles that
 
         if let rule = expectedRule {
-            event.recurrenceRules = [rule]
+            resolvedEvent.recurrenceRules = [rule]
         } else {
-            event.recurrenceRules = nil
+            resolvedEvent.recurrenceRules = nil
         }
 
+        // Always save with .thisEvent — we are already on the root event, so this updates
+        // the whole series without splitting it or minting a new eventIdentifier.
         do {
-            try store.save(event, span: isRecurring ? .futureEvents : .thisEvent)
-            return event
+            try store.save(resolvedEvent, span: .thisEvent)
+            return resolvedEvent
         } catch {
             return nil
         }
     }
 
-    // MARK: - Bootstrap (cross-device fallback)
+    // MARK: - Mapping Recovery & Deduplication
 
-    /// One-time enumeration to rebuild the mapping when it's empty but the calendar has events.
-    /// Matches events to items by (title, startDate) pair for disambiguation.
-    private func bootstrapMapping(from calendar: EKCalendar,
-                                   activeItems: [(item: ShoppingItem, listName: String)],
-                                   mapping: inout [String: String]) {
+    /// Scans the calendar for all Listie events, deduplicates any that share the same item UUID
+    /// (keeping the most recently modified), then rebuilds missing mapping entries.
+    ///
+    /// This is the source-of-truth pass that runs every sync. Because event.url syncs via iCloud
+    /// it is readable on every device, making this approach robust across the whole device fleet.
+    private func rebuildMappingFromCalendar(_ calendar: EKCalendar, mapping: inout [String: String]) {
         let start = Calendar.current.date(byAdding: .year, value: -2, to: Date()) ?? Date()
         let end   = Calendar.current.date(byAdding: .year, value: 5,  to: Date()) ?? Date()
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: [calendar])
 
-        // Build (title, startDate) → eventIdentifier. First match wins per key.
-        struct EventKey: Hashable { let title: String; let startDate: Date }
-        var keyToEventId: [EventKey: String] = [:]
-        // Also keep a title-only fallback for cases where dates drifted
-        var titleToEventId: [String: String] = [:]
-
+        // Collect ALL events per UUID — keyed by calendarItemExternalIdentifier (cross-device stable).
+        // enumerateEvents uses an escaping closure so we build locally and apply afterwards.
+        // Value: array of (externalIdentifier, eventIdentifier, lastModifiedDate)
+        struct EventCandidate { let externalId: String; let eventId: String; let modified: Date }
+        var candidates: [String: [EventCandidate]] = [:]
         store.enumerateEvents(matching: predicate) { event, _ in
-            let key = EventKey(title: event.title, startDate: event.startDate)
-            if keyToEventId[key] == nil {
-                keyToEventId[key] = event.eventIdentifier
+            guard let url = event.url,
+                  url.scheme == "listie",
+                  url.host == "item",
+                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let uuidStr = components.queryItems?.first(where: { $0.name == "id" })?.value,
+                  let externalId = event.calendarItemExternalIdentifier
+            else { return }
+            let modified = event.lastModifiedDate ?? event.creationDate ?? Date.distantPast
+            candidates[uuidStr, default: []].append(
+                EventCandidate(externalId: externalId, eventId: event.eventIdentifier, modified: modified)
+            )
+        }
+
+        // For each UUID, keep the newest event and delete all older duplicates.
+        var needsCommit = false
+        for (uuidStr, events) in candidates {
+            guard events.count > 1 else {
+                // No duplicates — fill in a missing mapping entry with the external identifier.
+                if mapping[uuidStr] == nil {
+                    mapping[uuidStr] = events[0].externalId
+                }
+                continue
             }
-            if titleToEventId[event.title] == nil {
-                titleToEventId[event.title] = event.eventIdentifier
+
+            // Sort newest-first, keep index 0, delete the rest.
+            let sorted = events.sorted { $0.modified > $1.modified }
+            mapping[uuidStr] = sorted[0].externalId
+
+            for duplicate in sorted.dropFirst() {
+                if let event = store.event(withIdentifier: duplicate.eventId) {
+                    try? store.remove(event, span: .futureEvents, commit: false)
+                    needsCommit = true
+                }
             }
         }
 
-        // Track which eventIdentifiers have been claimed to prevent double-mapping
-        var claimedEventIds: Set<String> = []
+        if needsCommit {
+            try? store.commit()
+        }
 
-        for entry in activeItems {
-            guard let reminderDate = entry.item.reminderDate else { continue }
-
-            let expectedTitle: String
-            if entry.item.quantity > 1 {
-                let qtyStr = entry.item.quantity.truncatingRemainder(dividingBy: 1) == 0
-                    ? String(Int(entry.item.quantity))
-                    : String(format: "%.1f", entry.item.quantity)
-                expectedTitle = "\(qtyStr)× \(entry.item.note)"
-            } else {
-                expectedTitle = entry.item.note
+        // Validate existing mapping entries — confirm each external ID still resolves to
+        // an event whose URL encodes the expected UUID. Clear stale entries so upsert
+        // creates a fresh event rather than failing silently.
+        for (uuidStr, externalId) in mapping {
+            guard let event = findEvent(externalId: externalId) else {
+                mapping.removeValue(forKey: uuidStr)
+                continue
             }
-
-            // Prefer (title, date) match, fall back to title-only
-            let key = EventKey(title: expectedTitle, startDate: reminderDate)
-            let eventId = keyToEventId[key] ?? titleToEventId[expectedTitle]
-
-            if let eventId, !claimedEventIds.contains(eventId) {
-                mapping[entry.item.id.uuidString] = eventId
-                claimedEventIds.insert(eventId)
+            if let url = event.url,
+               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let storedUUID = components.queryItems?.first(where: { $0.name == "id" })?.value,
+               storedUUID == uuidStr {
+                // Valid — leave as-is.
+            } else {
+                mapping.removeValue(forKey: uuidStr)
             }
         }
     }
