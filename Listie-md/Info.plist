@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

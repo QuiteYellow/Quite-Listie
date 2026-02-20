@@ -2,14 +2,6 @@
 //  SettingsView.swift
 //  Listie-md
 //
-//  Created by Jack Nagy on 27/12/2025.
-//
-
-
-//
-//  SettingsView.swift
-//  Listie-md
-//
 //  Settings view for app preferences
 //
 
@@ -31,17 +23,19 @@ struct SettingsView: View {
     @State private var storageLocation = "Loading..."
     @State private var showICloudInfo = false
 
+    @ObservedObject private var ekManager = EventKitManager.shared
+
     var body: some View {
         NavigationView {
             Form {
                 // MARK: - Storage Section
                 Section {
-                    
+
                     HStack {
                         Text("Sync with iCloud")
-                        
+
                         Spacer()
-                        
+
                         Button {
                             showICloudInfo = true
                         } label: {
@@ -49,7 +43,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
-                        
+
                         Toggle("", isOn: $iCloudSyncEnabled)
                             .toggleStyle(.switch)
                             .fixedSize()
@@ -61,7 +55,7 @@ struct SettingsView: View {
                                 }
                             }
                     }
-                    
+
 
 
                     HStack {
@@ -82,6 +76,61 @@ struct SettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                // MARK: - System Calendar Section
+                Section {
+                    Toggle("Add to System Calendar", isOn: $ekManager.isEnabled)
+                        .toggleStyle(.switch)
+                        .onChange(of: ekManager.isEnabled) { _, enabled in
+                            if enabled {
+                                Task { await EventKitManager.shared.requestAccessAndEnable() }
+                            } else {
+                                EventKitManager.shared.disable()
+                            }
+                        }
+
+                    if ekManager.isEnabled {
+                        if ekManager.isCalendarAccessGranted {
+                            Label("Writing to 'Listie Schedule' calendar", systemImage: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+
+                            if ekManager.availableSources.count > 1 {
+                                Picker("Account", selection: Binding(
+                                    get: { ekManager.selectedSourceId ?? "" },
+                                    set: { newId in
+                                        EventKitManager.shared.changeSource(to: newId)
+                                    }
+                                )) {
+                                    ForEach(ekManager.availableSources, id: \.sourceIdentifier) { source in
+                                        Text(source.title).tag(source.sourceIdentifier)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            } else if let source = ekManager.availableSources.first {
+                                LabeledContent("Account") {
+                                    Text(source.title)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else if ekManager.isCalendarAccessDenied {
+                            Label("Calendar access denied", systemImage: "xmark.circle.fill")
+                                .foregroundColor(.red)
+                            Button("Open Settings") {
+                                #if targetEnvironment(macCatalyst)
+                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                                    UIApplication.shared.open(url)
+                                }
+                                #else
+                                UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+                                #endif
+                            }
+                        }
+                    }
+                } header: {
+                    Label("Calendar", systemImage: "calendar")
+                } footer: {
+                    Text("Reminder items are added to a 'Listie Schedule' calendar in Calendar.app. Share that calendar to subscribe from any device — the sharing URL works on iOS, Mac, and Google Calendar.")
+                }
+
                 Section {
                     Toggle("Show Welcome List", isOn: Binding(
                         get: { !hideWelcomeList },
@@ -93,12 +142,12 @@ struct SettingsView: View {
                 } footer: {
                     Text("The welcome list contains helpful information about using Listie.")
                 }
-                
+
                 Section {
                     HStack {
                         Text("Quick Add Items")
                         Spacer()
-                        
+
                         Button {
                             showQuickAddInfo = true
                         } label: {
@@ -106,17 +155,17 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
-                        
+
                         Toggle("", isOn: Binding(
                             get: { !hideQuickAdd },
                             set: { hideQuickAdd = !$0 }
                         ))
                         .toggleStyle(.switch)
                         .fixedSize()
-                        
-                        
+
+
                     }
-                    
+
                     HStack {
                         Text("Show Empty Labels")
 

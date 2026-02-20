@@ -249,10 +249,15 @@ class UnifiedListProvider: ObservableObject {
         allLists = unified.sorted { list1, list2 in
             list1.summary.name.localizedCaseInsensitiveCompare(list2.summary.name) == .orderedAscending
         }
-        
+
         // Initialize save status
         for list in unified where saveStatus[list.id] == nil {
             saveStatus[list.id] = .saved
+        }
+
+        // Sync reminder items to native calendar
+        Task {
+            await EventKitManager.shared.syncIfEnabled(provider: self)
         }
     }
     
@@ -687,6 +692,11 @@ class UnifiedListProvider: ObservableObject {
             try await FileStore.shared.saveFile(docToSave, to: list.source.asFileSource)
             await MainActor.run { saveStatus[list.id] = .saved }
             AppLogger.fileStore.info("[saveFile] Save successful")
+
+            // Sync reminder items to native calendar after every successful save
+            Task {
+                await EventKitManager.shared.syncIfEnabled(provider: self)
+            }
         } catch {
             let nsError = error as NSError
             AppLogger.fileStore.error("Save error: \(error, privacy: .public)")

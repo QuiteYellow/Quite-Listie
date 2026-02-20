@@ -870,14 +870,35 @@ actor FileStore {
         // 5. Merge labels based on modification or presence
         let mergedLabels = mergeLabels(cached: cached.labels, disk: diskDocument.labels)
         
-        // 6. Create merged document (use latest list metadata)
+        // 6. Create merged document
         var mergedDocument = diskDocument
         mergedDocument.items = mergedItems
         mergedDocument.labels = mergedLabels
-        
-        // Use latest list modification date
+
+        // Use latest list modification date for name/icon/modifiedAt
         if cached.list.modifiedAt > diskDocument.list.modifiedAt {
             mergedDocument.list = cached.list
+        }
+
+        // Merge labelOrder independently — don't let a newer item edit on another device
+        // silently overwrite a custom label order set on this device (or vice versa).
+        // If both sides have a value, prefer the one with the newer modifiedAt.
+        // If only one side has a value, always keep it.
+        if let cachedOrder = cached.list.labelOrder,
+           let diskOrder = diskDocument.list.labelOrder {
+            mergedDocument.list.labelOrder =
+                cached.list.modifiedAt >= diskDocument.list.modifiedAt ? cachedOrder : diskOrder
+        } else {
+            mergedDocument.list.labelOrder = cached.list.labelOrder ?? diskDocument.list.labelOrder
+        }
+
+        // Same independent merge for hiddenLabels
+        if let cachedHidden = cached.list.hiddenLabels,
+           let diskHidden = diskDocument.list.hiddenLabels {
+            mergedDocument.list.hiddenLabels =
+                cached.list.modifiedAt >= diskDocument.list.modifiedAt ? cachedHidden : diskHidden
+        } else {
+            mergedDocument.list.hiddenLabels = cached.list.hiddenLabels ?? diskDocument.list.hiddenLabels
         }
         
         // 7. Save merged version back to disk

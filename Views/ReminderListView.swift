@@ -178,9 +178,15 @@ struct ReminderListView: View {
                         }
                         Spacer()
                         Button("Settings") {
+                            #if targetEnvironment(macCatalyst)
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Notifications") {
+                                UIApplication.shared.open(url)
+                            }
+                            #else
                             if let url = URL(string: UIApplication.openSettingsURLString) {
                                 UIApplication.shared.open(url)
                             }
+                            #endif
                         }
                         .font(.subheadline.weight(.medium))
                         .buttonStyle(.bordered)

@@ -21,6 +21,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().delegate = self
         ReminderManager.registerCategory()
         BackgroundRefreshManager.register()
+        Task { await EventKitManager.shared.restoreState() }
         return true
     }
 
