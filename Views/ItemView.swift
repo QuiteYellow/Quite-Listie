@@ -29,6 +29,10 @@ struct ItemFormView: View {
     var listIcon: String? = nil
     var listName: String? = nil
     var folderName: String? = nil
+    /// When set, a "Copy Item Link" button appears next to "Edit Notes".
+    var itemID: UUID? = nil
+
+    @State private var linkCopied = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -67,19 +71,45 @@ struct ItemFormView: View {
                     .listRowBackground(Color.clear)
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    Button {
-                        showMarkdownEditor = true
-                    } label: {
-                        Label("Edit Notes", systemImage: "square.and.pencil")
-                    }
-                    .controlSize(.large)
-                    .buttonStyle(.glass)
-                    .padding(20)
+                    notesButtonRow
+                        .padding(20)
                 }
             }
         }
     }
     
+    @ViewBuilder
+    private var notesButtonRow: some View {
+        HStack(spacing: 10) {
+            if let itemID {
+                Button {
+                    UIPasteboard.general.string = "listie://item?id=\(itemID.uuidString)"
+                    withAnimation(.easeInOut(duration: 0.15)) { linkCopied = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation(.easeInOut(duration: 0.3)) { linkCopied = false }
+                    }
+                } label: {
+                    Label(
+                        linkCopied ? "Copied!" : "Copy",
+                        systemImage: linkCopied ? "checkmark" : "link"
+                    )
+                }
+                .controlSize(.large)
+                .buttonStyle(.glass)
+                .tint(linkCopied ? .green : .primary)
+                .animation(.easeInOut(duration: 0.2), value: linkCopied)
+            }
+
+            Button {
+                showMarkdownEditor = true
+            } label: {
+                Label("Edit Notes", systemImage: "square.and.pencil")
+            }
+            .controlSize(.large)
+            .buttonStyle(.glass)
+        }
+    }
+
     private var formLeft: some View {
         Form {
             formLeftContent
@@ -95,15 +125,9 @@ struct ItemFormView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
                 .frame(maxWidth: .infinity)
-            
-            Button {
-                showMarkdownEditor = true
-            } label: {
-                Label("Edit Notes", systemImage: "square.and.pencil")
-            }
-            .controlSize(.large)
-            .buttonStyle(.glass)
-            .padding(20)
+
+            notesButtonRow
+                .padding(20)
         }
     }
     
@@ -112,9 +136,17 @@ struct ItemFormView: View {
             HStack {
                 Label("Name", systemImage: "textformat")
                 Spacer()
-                TextField("Item name", text: $itemName)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: 200)
+                if checked {
+                    Text(itemName.isEmpty ? "Item name" : itemName)
+                        .multilineTextAlignment(.trailing)
+                        .strikethrough(true, color: .secondary)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: 200, alignment: .trailing)
+                } else {
+                    TextField("Item name", text: $itemName)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 200)
+                }
             }
 
             HStack {
@@ -205,10 +237,10 @@ struct ItemFormView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if mdNotes.isEmpty {
-                    Text("Click \"Edit Notes\" to add a note, use Markdown for Sublists, links, images and more.")
+                    Text("Click \"Edit Notes\" to add a note, use Markdown for Sublists, links, images and more. Sublists can be directly toggled here!")
                         .foregroundStyle(.placeholder)
                 } else {
-                    MarkdownView(mdNotes)
+                    CheckableMarkdownView(text: $mdNotes)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -456,7 +488,8 @@ struct EditItemView: View {
                 isLoading: isLoading,
                 listIcon: list.icon,
                 listName: list.name,
-                folderName: editFolderName
+                folderName: editFolderName,
+                itemID: item.id
             )
             .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
@@ -497,7 +530,7 @@ struct EditItemView: View {
                         .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
-                
+
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
                         dismiss()
@@ -561,22 +594,87 @@ struct EditItemView: View {
     }
 }
 
+// MARK: - Checkable Markdown View (interactive checkboxes in markdown preview)
+
+/// Renders markdown with interactive checkboxes, mirroring writie's task-list preview.
+/// Pass a `Binding<String>` so checkbox toggles mutate the source text.
+struct CheckableMarkdownView: View {
+    @Binding var text: String
+
+    private enum CheckState { case none, checked, unchecked }
+
+    var body: some View {
+        let lines = text.components(separatedBy: "\n")
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                let state = checkState(of: line)
+                if state != .none {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Button {
+                            text = toggleCheckbox(at: index, in: text)
+                        } label: {
+                            Image(systemName: state == .checked ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(state == .checked ? .accentColor : .secondary)
+                        }
+                        .buttonStyle(.borderless)
+
+                        MarkdownView(state == .checked ? "~~\(labelText(from: line))~~" : labelText(from: line))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    MarkdownView(line)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("") // empty line spacer
+                }
+            }
+        }
+    }
+
+    private func checkState(of line: String) -> CheckState {
+        let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+        if trimmed.hasPrefix("- [x] ") || trimmed.hasPrefix("- [X] ") { return .checked }
+        if trimmed.hasPrefix("- [ ] ") { return .unchecked }
+        return .none
+    }
+
+    private func labelText(from line: String) -> String {
+        guard let range = line.range(of: #"- \[[ xX]\] "#, options: .regularExpression) else {
+            return line
+        }
+        return String(line[range.upperBound...])
+    }
+
+    private func toggleCheckbox(at index: Int, in text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        guard index >= 0, index < lines.count else { return text }
+        let line = lines[index]
+        if let range = line.range(of: "- [x] ", options: .caseInsensitive) {
+            lines[index] = line.replacingCharacters(in: range, with: "- [ ] ")
+        } else if let range = line.range(of: "- [ ] ") {
+            lines[index] = line.replacingCharacters(in: range, with: "- [x] ")
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 // MARK: - Item Preview View (Read-only markdown preview)
 
 struct ItemPreviewView: View {
     @Environment(\.dismiss) var dismiss
     let item: ShoppingItem
+    @State private var notes: String = ""
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let notes = item.markdownNotes, !notes.isEmpty {
-                        MarkdownView(notes)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
+                    if notes.isEmpty {
                         Text("No notes")
                             .foregroundStyle(.secondary)
+                    } else {
+                        CheckableMarkdownView(text: $notes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding()
@@ -595,6 +693,9 @@ struct ItemPreviewView: View {
                     }
                 }
             }
+        }
+        .onAppear {
+            notes = item.markdownNotes ?? ""
         }
     }
 }
@@ -649,7 +750,7 @@ struct MarkdownEditorView: View {
                             
                             VStack(alignment: .leading, spacing: 8) {
                                 ScrollView {
-                                    MarkdownView(text)
+                                    CheckableMarkdownView(text: $text)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding(.top, 4)
                                 }
@@ -690,7 +791,7 @@ struct MarkdownEditorView: View {
                             } else {
                                 // Preview view
                                 ScrollView {
-                                    MarkdownView(text)
+                                    CheckableMarkdownView(text: $text)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding()
                                 }

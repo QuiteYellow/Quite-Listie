@@ -111,3 +111,7 @@ crashlytics-build.properties
 *.p12
 *.mobileprovision
 *.cer
+*.p8
+.env
+.env.*
+*.sh
