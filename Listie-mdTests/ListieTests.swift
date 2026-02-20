@@ -624,3 +624,4 @@ final class ShoppingModelTests: XCTestCase {
         XCTAssertEqual(decoded.reminderRepeatMode, original.reminderRepeatMode)
     }
 }
+

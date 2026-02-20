@@ -19,6 +19,15 @@ class DeeplinkCoordinator: ObservableObject {
     @Published var errorMessage: String?
     @Published var showError = false
 
+    /// Set when a `listie://item?id=<itemUUID>` deeplink is received.
+    /// WelcomeView navigates to the resolved list and ShoppingListView opens the editor.
+    @Published var pendingItemNavigation: ItemNavigation?
+
+    struct ItemNavigation: Equatable {
+        let listId: String  // runtime list.id resolved during handling
+        let itemId: String
+    }
+
     struct MarkdownImportRequest: Identifiable, Equatable {
         let id = UUID()
         let markdown: String
@@ -52,6 +61,8 @@ class DeeplinkCoordinator: ObservableObject {
 
         if url.host == "import" {
             await handleMarkdownImport(url, provider: provider)
+        } else if url.host == "item" {
+            await handleItemNavigation(url, provider: provider)
         } else {
             AppLogger.deeplinks.warning("[Deeplink] Unknown host: \(url.host ?? "nil", privacy: .public)")
         }
@@ -152,6 +163,33 @@ class DeeplinkCoordinator: ObservableObject {
                 shouldPreview: shouldPreview
             )
         }
+    }
+
+    private func handleItemNavigation(_ url: URL, provider: UnifiedListProvider) async {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              let itemId = components.queryItems?.first(where: { $0.name == "id" })?.value else {
+            AppLogger.deeplinks.warning("[Deeplink] item URL missing id parameter")
+            return
+        }
+
+        AppLogger.deeplinks.info("[Deeplink] Looking up item \(itemId, privacy: .public)")
+
+        // Ensure lists are loaded — handles cold launch where allLists is still empty
+        if provider.allLists.isEmpty {
+            await provider.loadAllLists()
+        }
+
+        // Scan all lists for the item UUID — no listId needed since item UUIDs are globally unique
+        for list in provider.allLists where !list.isUnavailable {
+            if let items = try? await provider.fetchItems(for: list),
+               items.contains(where: { $0.id.uuidString == itemId }) {
+                AppLogger.deeplinks.info("[Deeplink] Found item in list \(list.summary.name, privacy: .public)")
+                pendingItemNavigation = ItemNavigation(listId: list.id, itemId: itemId)
+                return
+            }
+        }
+
+        AppLogger.deeplinks.warning("[Deeplink] Item \(itemId, privacy: .public) not found in any list")
     }
 
     func showErrorAlert(_ message: String) {

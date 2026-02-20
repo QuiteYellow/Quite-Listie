@@ -57,17 +57,20 @@ struct ListSettingsView: View {
                 // First load — sort by persisted label order
                 allLabels = sortedLabels(fetched, by: unifiedList.summary.labelOrder)
             } else {
-                // Subsequent loads (after create/edit/delete) — preserve current order,
-                // merge any new labels at the end, remove deleted ones
+                // Subsequent loads (after create/edit/delete) — re-sort by the latest
+                // persisted labelOrder so a sync from another device is reflected.
                 let currentIDs = Set(allLabels.map { $0.id })
                 let fetchedMap = Dictionary(uniqueKeysWithValues: fetched.map { ($0.id, $0) })
 
                 // Update existing labels in place (name/color may have changed)
-                allLabels = allLabels.compactMap { fetchedMap[$0.id] }
+                var merged = allLabels.compactMap { fetchedMap[$0.id] }
 
                 // Append any newly created labels not yet in our order
                 let newLabels = fetched.filter { !currentIDs.contains($0.id) }
-                allLabels.append(contentsOf: newLabels)
+                merged.append(contentsOf: newLabels)
+
+                // Re-apply persisted order (handles sync from another device)
+                allLabels = sortedLabels(merged, by: unifiedList.summary.labelOrder)
             }
         } catch {
             AppLogger.labels.error("Failed to load labels: \(error, privacy: .public)")
