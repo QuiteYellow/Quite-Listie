@@ -268,7 +268,6 @@ struct ShoppingListView: View {
     @State private var triggerJSONExport = false
     @State private var triggerShareLink = false
     
-    @State private var showContent = false
     @State private var isPerformingBulkAction = false
     @State private var showingRecycleBin = false
     @State private var showingListSettings = false
@@ -288,13 +287,15 @@ struct ShoppingListView: View {
     }
 
     @Binding var searchText: String
-    
-    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, onExportJSON exportJSON: (() -> Void)? = nil) {
+    @Binding var pendingItemID: String?
+
+    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, pendingItemID: Binding<String?> = .constant(nil), onExportJSON exportJSON: (() -> Void)? = nil) {
         self.list = list
         self.unifiedList = unifiedList
         self.unifiedProvider = unifiedProvider
         self.welcomeViewModel = welcomeViewModel
-        self._searchText = searchText  // Binding
+        self._searchText = searchText
+        self._pendingItemID = pendingItemID
         self.onExportJSON = exportJSON
         self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
     }
@@ -555,6 +556,7 @@ struct ShoppingListView: View {
                         renderSection(labelName: "Completed", items: completedItems, color: .primary)
                     }
                 }
+                .id(unifiedList.id)
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
                 .refreshable {
@@ -563,6 +565,9 @@ struct ShoppingListView: View {
                     } catch {
                         AppLogger.sync.warning("Sync failed on refresh: \(error, privacy: .public)")
                         await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
+                    }
+                    if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
+                        viewModel.updateList(updated)
                     }
                     await viewModel.loadLabels()
                     await viewModel.loadItems()
@@ -647,6 +652,9 @@ struct ShoppingListView: View {
                                 AppLogger.sync.warning("Sync failed on kanban refresh: \(error, privacy: .public)")
                                 await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
                             }
+                            if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
+                                viewModel.updateList(updated)
+                            }
                             await viewModel.loadLabels()
                             await viewModel.loadItems()
                             // Ensure spinner shows for at least 0.6s
@@ -706,20 +714,34 @@ struct ShoppingListView: View {
         .animation(nil, value: isPerformingBulkAction)
         
         .task {
-            showContent = false
             do {
                 try await unifiedProvider.syncIfNeeded(for: unifiedList)
             } catch {
                 AppLogger.sync.warning("Sync failed on load: \(error, privacy: .public)")
                 await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
             }
+            guard !Task.isCancelled else { return }
+
+            if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
+                viewModel.updateList(updated)
+            }
             await unifiedProvider.cleanupOldDeletedItems(for: unifiedList)
-            
+            guard !Task.isCancelled else { return }
+
             await viewModel.loadLabels()
+            guard !Task.isCancelled else { return }
+
             await viewModel.loadItems()
-            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)  // ← Use viewModel
-            
-            showContent = true
+            guard !Task.isCancelled else { return }
+
+            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
+
+            // Open item editor if arriving via a calendar deeplink
+            if let itemId = pendingItemID,
+               let item = viewModel.items.first(where: { $0.id.uuidString == itemId }) {
+                pendingItemID = nil
+                editingItem = item
+            }
         }
         
         .modifier(ShoppingListSheetsModifier(

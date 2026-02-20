@@ -14,6 +14,8 @@ struct WelcomeView: View {
     @StateObject private var deeplinkCoordinator = DeeplinkCoordinator()
     
     @State private var selectedListID: String? = nil
+    /// Item ID to open in the editor once the target ShoppingListView appears.
+    @State private var pendingItemID: String? = nil
     @State private var isPresentingNewList = false
     @State private var showFileImporter = false
     @State private var showFileExporter = false
@@ -258,6 +260,13 @@ struct WelcomeView: View {
         .onChange(of: deeplinkCoordinator.markdownImport) { _, request in
             handleMarkdownImportRequest(request)
         }
+        .onChange(of: deeplinkCoordinator.pendingItemNavigation) { _, navigation in
+            guard let navigation else { return }
+            // listId is already the runtime list.id, resolved during handling
+            pendingItemID = navigation.itemId
+            selectedListID = navigation.listId
+            deeplinkCoordinator.pendingItemNavigation = nil
+        }
     }
     
     // MARK: - Detail Pane (Extracted to Fix Type-Checker)
@@ -292,6 +301,7 @@ struct WelcomeView: View {
                     unifiedProvider: unifiedProvider,
                     welcomeViewModel: welcomeViewModel,
                     searchText: $detailSearchText,
+                    pendingItemID: $pendingItemID,
                     onExportJSON: {
                         Task {
                             await exportList(unifiedList.summary)

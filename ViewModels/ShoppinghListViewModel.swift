@@ -28,7 +28,7 @@ class ShoppingListViewModel: ObservableObject {
 
     @Published var searchText: String = ""
     
-    let list: UnifiedList
+    @Published var list: UnifiedList
     let provider: UnifiedListProvider
     
     var shoppingListId: String { list.summary.id }
@@ -88,6 +88,11 @@ class ShoppingListViewModel: ObservableObject {
         } catch {
             AppLogger.labels.error("Error loading labels: \(error, privacy: .public)")
         }
+    }
+
+    /// Updates the list reference after a sync, so labelOrder and other metadata stay current.
+    func updateList(_ updated: UnifiedList) {
+        list = updated
     }
     
     // MARK: - Filtering & Grouping
