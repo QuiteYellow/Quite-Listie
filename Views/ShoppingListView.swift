@@ -125,6 +125,12 @@ struct ItemRowView: View {
             Label("Edit Item...", systemImage: "pencil")
         }
 
+        Button {
+            UIPasteboard.general.string = "listie://item?id=\(item.id.uuidString)"
+        } label: {
+            Label("Copy Item Link", systemImage: "link")
+        }
+
         if !isReadOnly {
             Divider()
 
@@ -716,6 +722,8 @@ struct ShoppingListView: View {
         .task {
             do {
                 try await unifiedProvider.syncIfNeeded(for: unifiedList)
+            } catch is CancellationError {
+                return
             } catch {
                 AppLogger.sync.warning("Sync failed on load: \(error, privacy: .public)")
                 await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
