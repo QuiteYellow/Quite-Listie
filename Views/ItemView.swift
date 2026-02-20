@@ -419,8 +419,10 @@ struct AddItemView: View {
             } message: {
                 Text("Please check your internet connection or try again.")
             }
-            .fullScreenCover(isPresented: $showMarkdownEditor) {
+            .sheet(isPresented: $showMarkdownEditor) {
                 MarkdownEditorView(text: $mdNotes)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
             }
             .task {
                 do {
@@ -557,8 +559,10 @@ struct EditItemView: View {
             .alert("Failed to Save Changes", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             }
-            .fullScreenCover(isPresented: $showMarkdownEditor) {
+            .sheet(isPresented: $showMarkdownEditor) {
                 MarkdownEditorView(text: $mdNotes)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
             }
             .task {
                 do {
@@ -613,12 +617,15 @@ struct CheckableMarkdownView: View {
                         Button {
                             text = toggleCheckbox(at: index, in: text)
                         } label: {
-                            Image(systemName: state == .checked ? "checkmark.circle.fill" : "circle")
-                                .foregroundColor(state == .checked ? .accentColor : .secondary)
+                            Image(systemName: state == .checked ? "inset.filled.circle" : "circle")
+                                .imageScale(.large)
+                                .foregroundColor(state == .checked ? .gray : .accentColor)
                         }
                         .buttonStyle(.borderless)
 
-                        MarkdownView(state == .checked ? "~~\(labelText(from: line))~~" : labelText(from: line))
+                        MarkdownView(labelText(from: line))
+                            .foregroundColor(state == .checked ? .gray : .primary)
+                            .strikethrough(state == .checked, color: .gray)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -705,130 +712,226 @@ struct ItemPreviewView: View {
 struct MarkdownEditorView: View {
     @Binding var text: String
     @Environment(\.dismiss) var dismiss
-    @State private var selectedTab = 0
-    @FocusState private var isTextEditorFocused: Bool
-    
-    var body: some View {
-        GeometryReader { geometry in
-            let isWide = geometry.size.width > 700
-            
-            if isWide {
-                NavigationView {
-                    GeometryReader { geometry in
-                        let totalHeight = geometry.size.height
-                        let safeAreaTop = geometry.safeAreaInsets.top
-                        let navigationBarHeight: CGFloat = 44
-                        let _ = totalHeight - safeAreaTop - navigationBarHeight
-                        
-                        HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ZStack {
-                                    
-              
-                                    TextEditor(text: $text)
-                                    .padding()
-                                    .focused($isTextEditorFocused)
-                                        .onAppear {
-                                            isTextEditorFocused = true
-                                        }
-                                    
-                                    
-                                    /*
-                                    CustomTextEditor(text: $text)
-                                        .padding(8)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        .padding(15)
-                                        .frame(minHeight: usableHeight)*/
-                                }
-                            }
-                            .background(.clear)
-                            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                            .toolbarBackground(.visible, for: .navigationBar)
-                            .frame(width: geometry.size.width * 0.4)
-                            
-                            Divider()
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                ScrollView {
-                                    CheckableMarkdownView(text: $text)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.top, 4)
-                                }
-                            }
-                            .padding(15)
-                            .background(Color.clear)
-                            .frame(width: geometry.size.width * 0.6)
-                        }
-                        .navigationTitle("Edit Notes")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button(role : .close) { dismiss() }
-                            }
-                            
-                        }
-                    }
-                }
-                .navigationViewStyle(StackNavigationViewStyle())
+    @FocusState private var editorFocused: Bool
+
+    // AttributedString + selection state — gives us real cursor position.
+    @State private var attributedText = AttributedString("")
+    @State private var selection = AttributedTextSelection()
+
+    // MARK: Snippet insertion — uses actual cursor position from AttributedTextSelection
+    private func applySnippet(_ snippet: MarkdownSnippet) {
+        let str = String(attributedText.characters)
+        let nsStr = str as NSString
+
+        // 1. Convert AttributedTextSelection → NSRange (UTF-16 units, as NSRange expects).
+        //    AttributedString.Index bridges to String.Index via the characters view.
+        func attrIdxToUTF16(_ idx: AttributedString.Index) -> Int {
+            // AttributedString.Index can be used directly as a String.Index into .characters
+            let strIdx = String.Index(idx, within: str) ?? str.endIndex
+            return str.utf16.distance(from: str.utf16.startIndex, to: strIdx.samePosition(in: str.utf16) ?? str.utf16.endIndex)
+        }
+
+        let nsRange: NSRange
+        switch selection.indices(in: attributedText) {
+        case .insertionPoint(let idx):
+            let loc = attrIdxToUTF16(idx)
+            nsRange = NSRange(location: loc, length: 0)
+        case .ranges(let rangeSet):
+            if let first = rangeSet.ranges.first {
+                let loc = attrIdxToUTF16(first.lowerBound)
+                let end = attrIdxToUTF16(first.upperBound)
+                nsRange = NSRange(location: loc, length: end - loc)
             } else {
-                NavigationView {
-                    VStack(spacing: 0) {
-                        // Content area
-                        Group {
-                            if selectedTab == 0 {
-                                // Edit view
-                                TextEditor(text: $text)
-                                .padding()
-                                .focused($isTextEditorFocused)
-                                    .onAppear {
-                                        isTextEditorFocused = true
-                                    }
-                                
-                                //CustomTextEditor(text: $text)
-                                  //  .frame(maxWidth: .infinity, alignment: .leading)
-                                    //.padding()
-                                    //.background(Color(.secondarySystemGroupedBackground))
-                            } else {
-                                // Preview view
-                                ScrollView {
-                                    CheckableMarkdownView(text: $text)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding()
-                                }
-                                .background(Color(.systemGroupedBackground))
-                            }
-                        }
-                        //.ignoresSafeArea(edges: .top)
-                    }
-#if targetEnvironment(macCatalyst)
-                    .navigationTitle(selectedTab == 0 ? "Item Notes - Editing" : "Item Notes - Preview")
-#else
-                    .navigationTitle("Item Notes")
-                    .navigationSubtitle(selectedTab == 0 ? "Currently Editing" : "Previewing as Markdown")
-#endif
-                    .navigationBarTitleDisplayMode(.inline)
-                    
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                selectedTab = selectedTab == 0 ? 1 : 0
-                            } label: {
-                                Image(systemName: selectedTab == 0 ? "eye.slash" : "eye")
-                            }
-                            //.tint(selectedTab == 0 ? .primary.opacity(0.2) : .primary)
-                        }
-                        
-                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                        
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button(role : .close) { dismiss() }
-                        }
-                        
-                    }
+                nsRange = NSRange(location: nsStr.length, length: 0)
+            }
+        }
+
+        // 2. Apply the snippet to get the new plain string and desired new selection range.
+        let (newText, newNSRange) = snippet.apply(to: str, selectedRange: nsRange)
+
+        // 3. Replace attributedText with the new plain text, keeping selection valid.
+        attributedText.transform(updating: &selection) { attrStr in
+            attrStr = AttributedString(newText)
+        }
+
+        // 4. Position cursor at newNSRange (UTF-16) — after inline wrapping this selects
+        //    the placeholder; after line-prefix it's an insertion point.
+        let newStr = newText
+        if newNSRange.length > 0 {
+            // Convert UTF-16 range → AttributedString range
+            if let startIdx = newStr.utf16.index(newStr.utf16.startIndex,
+                                                  offsetBy: newNSRange.location,
+                                                  limitedBy: newStr.utf16.endIndex),
+               let endIdx = newStr.utf16.index(startIdx,
+                                               offsetBy: newNSRange.length,
+                                               limitedBy: newStr.utf16.endIndex),
+               let strStart = startIdx.samePosition(in: newStr),
+               let strEnd = endIdx.samePosition(in: newStr) {
+                let attrStart = AttributedString.Index(strStart, within: attributedText)
+                let attrEnd   = AttributedString.Index(strEnd,   within: attributedText)
+                if let s = attrStart, let e = attrEnd {
+                    selection = AttributedTextSelection(range: s..<e)
+                }
+            }
+        } else {
+            // Insertion point only
+            if let startIdx = newStr.utf16.index(newStr.utf16.startIndex,
+                                                  offsetBy: newNSRange.location,
+                                                  limitedBy: newStr.utf16.endIndex),
+               let strStart = startIdx.samePosition(in: newStr) {
+                if let attrStart = AttributedString.Index(strStart, within: attributedText) {
+                    selection = AttributedTextSelection(insertionPoint: attrStart)
                 }
             }
         }
+
+        text = newText
     }
+
+    // MARK: body
+
+    var body: some View {
+        NavigationStack {
+#if targetEnvironment(macCatalyst)
+            // TextEditor fills the full space; glass snippet bar floats over it at the top.
+            TextEditor(text: $attributedText, selection: $selection)
+                .font(.system(.body, design: .monospaced))
+                .focused($editorFocused)
+                .onChange(of: attributedText) { _, newVal in
+                    let str = String(newVal.characters)
+                    if str != text { text = str }
+                }
+                .navigationTitle("Notes")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .close) { dismiss() }
+                    }
+                }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    macSnippetBar
+                }
+#else
+            TextEditor(text: $attributedText, selection: $selection)
+                .font(.system(.body, design: .monospaced))
+                .padding(0)
+                .focused($editorFocused)
+                .onChange(of: attributedText) { _, newVal in
+                    let str = String(newVal.characters)
+                    if str != text { text = str }
+                }
+                .navigationTitle("Notes")
+                .navigationBarTitleDisplayMode(.inline)
+                // .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                // .toolbarBackground(.visible, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .close) { dismiss() }
+                    }
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Button { applySnippet(.taskItem) } label: { Label("Task", systemImage: MarkdownSnippet.taskItem.systemImage) }
+                        Button { applySnippet(.unorderedList) } label: { Label("List", systemImage: MarkdownSnippet.unorderedList.systemImage) }
+                        Menu {
+                            Button("H1 — Heading 1") { applySnippet(.heading(1)) }
+                            Button("H2 — Heading 2") { applySnippet(.heading(2)) }
+                            Button("H3 — Heading 3") { applySnippet(.heading(3)) }
+                        } label: { Label("Heading", systemImage: MarkdownSnippet.heading(1).systemImage) }
+                        Button { applySnippet(.link) } label: { Label("Link", systemImage: MarkdownSnippet.link.systemImage) }
+                        Spacer()
+                        Menu {
+                            Button { applySnippet(.bold) } label: { Label(MarkdownSnippet.bold.label, systemImage: MarkdownSnippet.bold.systemImage) }
+                            Button { applySnippet(.italic) } label: { Label(MarkdownSnippet.italic.label, systemImage: MarkdownSnippet.italic.systemImage) }
+                            Button { applySnippet(.code) } label: { Label(MarkdownSnippet.code.label, systemImage: MarkdownSnippet.code.systemImage) }
+                            Button { applySnippet(.codeBlock) } label: { Label(MarkdownSnippet.codeBlock.label, systemImage: MarkdownSnippet.codeBlock.systemImage) }
+                            Button { applySnippet(.blockquote) } label: { Label(MarkdownSnippet.blockquote.label, systemImage: MarkdownSnippet.blockquote.systemImage) }
+                            Button { applySnippet(.image) } label: { Label(MarkdownSnippet.image.label, systemImage: MarkdownSnippet.image.systemImage) }
+                            Button { applySnippet(.orderedList) } label: { Label(MarkdownSnippet.orderedList.label, systemImage: MarkdownSnippet.orderedList.systemImage) }
+                        } label: { Label("More", systemImage: "ellipsis") }
+                    }
+                }
+#endif
+        }
+        .onAppear {
+            attributedText = AttributedString(text)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                editorFocused = true
+            }
+        }
+        .onChange(of: text) { _, newVal in
+            let current = String(attributedText.characters)
+            if current != newVal { attributedText = AttributedString(newVal) }
+        }
+    }
+
+    // MARK: Mac Catalyst inline snippet bar (no keyboard on Mac)
+
+#if targetEnvironment(macCatalyst)
+    private var macSnippetBar: some View {
+        HStack(spacing: 12) {
+            Spacer()
+            // Primary group — single capsule glass surface behind all 4 buttons
+            HStack(spacing: 0) {
+                Button { applySnippet(.taskItem) } label: {
+                    Image(systemName: MarkdownSnippet.taskItem.systemImage)
+                        .imageScale(.medium)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .help("Task")
+
+                Button { applySnippet(.unorderedList) } label: {
+                    Image(systemName: MarkdownSnippet.unorderedList.systemImage)
+                        .imageScale(.medium)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .help("List")
+
+                Menu {
+                    Button("H1") { applySnippet(.heading(1)) }
+                    Button("H2") { applySnippet(.heading(2)) }
+                    Button("H3") { applySnippet(.heading(3)) }
+                } label: {
+                    Image(systemName: MarkdownSnippet.heading(1).systemImage)
+                        .imageScale(.medium)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .help("Heading")
+
+                Button { applySnippet(.link) } label: {
+                    Image(systemName: MarkdownSnippet.link.systemImage)
+                        .imageScale(.medium)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .help("Link")
+            }
+            .glassEffect(.regular.interactive(), in: .capsule)
+
+            // Overflow — separate floating circle
+            Menu {
+                Button { applySnippet(.bold) } label: { Label(MarkdownSnippet.bold.label, systemImage: MarkdownSnippet.bold.systemImage) }
+                Button { applySnippet(.italic) } label: { Label(MarkdownSnippet.italic.label, systemImage: MarkdownSnippet.italic.systemImage) }
+                Button { applySnippet(.code) } label: { Label(MarkdownSnippet.code.label, systemImage: MarkdownSnippet.code.systemImage) }
+                Button { applySnippet(.codeBlock) } label: { Label(MarkdownSnippet.codeBlock.label, systemImage: MarkdownSnippet.codeBlock.systemImage) }
+                Button { applySnippet(.blockquote) } label: { Label(MarkdownSnippet.blockquote.label, systemImage: MarkdownSnippet.blockquote.systemImage) }
+                Button { applySnippet(.image) } label: { Label(MarkdownSnippet.image.label, systemImage: MarkdownSnippet.image.systemImage) }
+                Button { applySnippet(.orderedList) } label: { Label(MarkdownSnippet.orderedList.label, systemImage: MarkdownSnippet.orderedList.systemImage) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .imageScale(.medium)
+                    .frame(width: 40, height: 40)
+            }
+            .glassEffect(.regular.interactive(), in: .circle)
+            .help("More")
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+#endif
 }
 
 // MARK: - Item Form Chip
@@ -854,85 +957,131 @@ private struct ItemFormChip: View {
     }
 }
 
-// MARK: - Custom Text Editor
+// MARK: - Markdown Snippet
 
-struct CustomTextEditor: UIViewRepresentable {
-    @Binding var text: String
+enum MarkdownSnippet {
+    case bold, italic, code, codeBlock, blockquote, link, image, taskItem, unorderedList, orderedList, heading(Int)
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+    var label: String {
+        switch self {
+        case .bold:          return "Bold"
+        case .italic:        return "Italic"
+        case .code:          return "Inline Code"
+        case .codeBlock:     return "Code Block"
+        case .blockquote:    return "Blockquote"
+        case .link:          return "Link"
+        case .image:         return "Image"
+        case .taskItem:      return "Task"
+        case .unorderedList: return "Unordered List"
+        case .orderedList:   return "Ordered List"
+        case .heading(let n): return "H\(n)"
+        }
     }
 
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
-        textView.delegate = context.coordinator
-        textView.backgroundColor = .clear
-        textView.isScrollEnabled = true
-        textView.font = UIFont.preferredFont(forTextStyle: .body)
-        textView.autocorrectionType = .yes
-        textView.autocapitalizationType = .sentences
-        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        // Create pure UIKit toolbar
-        let toolbar = UIToolbar()
-        toolbar.sizeToFit()
-        toolbar.backgroundColor = UIColor.systemGroupedBackground
-        
-        let snippets = ["**bold**", "*italic*", "[Link](URL)", "![Image](URL)", "`code`", "- item", "> quote"]
-        
-        var items: [UIBarButtonItem] = []
-        for snippet in snippets {
-            let button = UIBarButtonItem(title: snippet, style: .plain, target: context.coordinator, action: #selector(Coordinator.insertSnippet(_:)))
-            button.accessibilityLabel = snippet
-            items.append(button)
+    var systemImage: String {
+        switch self {
+        case .bold:          return "bold"
+        case .italic:        return "italic"
+        case .code:          return "chevron.left.forwardslash.chevron.right"
+        case .codeBlock:     return "doc.plaintext"
+        case .blockquote:    return "text.quote"
+        case .link:          return "link"
+        case .image:         return "photo"
+        case .taskItem:      return "checklist"
+        case .unorderedList: return "list.bullet"
+        case .orderedList:   return "list.number"
+        case .heading:       return "textformat.size"
         }
-        
-        // Add flexible space to push items together nicely
-        let _ = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        
-        // Intersperse buttons with small fixed spaces
-        var finalItems: [UIBarButtonItem] = []
-        for (index, item) in items.enumerated() {
-            finalItems.append(item)
-            if index < items.count - 1 {
-                let fixedSpace = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
-                fixedSpace.width = 8
-                finalItems.append(fixedSpace)
+    }
+
+    /// Apply snippet to `fullText` at `selectedRange` (UTF-16 units).
+    /// Returns the modified string and new selection range (UTF-16 units).
+    func apply(to fullText: String, selectedRange: NSRange) -> (String, NSRange) {
+        guard let swiftRange = Range(selectedRange, in: fullText) else {
+            return (fullText, selectedRange)
+        }
+        let selected = String(fullText[swiftRange])
+        let hasSelection = !selected.isEmpty
+
+        switch self {
+        case .bold:
+            return wrapInline(fullText, swiftRange, prefix: "**", suffix: "**", placeholder: "bold", selected: selected, hasSelection: hasSelection)
+        case .italic:
+            return wrapInline(fullText, swiftRange, prefix: "*", suffix: "*", placeholder: "italic", selected: selected, hasSelection: hasSelection)
+        case .code:
+            return wrapInline(fullText, swiftRange, prefix: "`", suffix: "`", placeholder: "code", selected: selected, hasSelection: hasSelection)
+        case .codeBlock:
+            let inner = hasSelection ? selected : "code"
+            let snippet = "```\n\(inner)\n```"
+            let result = fullText.replacingCharacters(in: swiftRange, with: snippet)
+            let base = utf16Offset(of: swiftRange.lowerBound, in: fullText)
+            return (result, NSRange(location: base + 4, length: inner.utf16.count))
+        case .link:
+            if hasSelection {
+                let snippet = "[\(selected)](URL)"
+                let result = fullText.replacingCharacters(in: swiftRange, with: snippet)
+                let base = utf16Offset(of: swiftRange.lowerBound, in: fullText)
+                // Select "URL"
+                return (result, NSRange(location: base + 1 + selected.utf16.count + 2, length: 3))
+            } else {
+                let snippet = "[text](URL)"
+                let result = fullText.replacingCharacters(in: swiftRange, with: snippet)
+                let base = utf16Offset(of: swiftRange.lowerBound, in: fullText)
+                return (result, NSRange(location: base + 1, length: 4)) // select "text"
             }
+        case .image:
+            if hasSelection {
+                let snippet = "![\(selected)](URL)"
+                let result = fullText.replacingCharacters(in: swiftRange, with: snippet)
+                let base = utf16Offset(of: swiftRange.lowerBound, in: fullText)
+                return (result, NSRange(location: base + 2 + selected.utf16.count + 2, length: 3))
+            } else {
+                let snippet = "![alt](URL)"
+                let result = fullText.replacingCharacters(in: swiftRange, with: snippet)
+                let base = utf16Offset(of: swiftRange.lowerBound, in: fullText)
+                return (result, NSRange(location: base + 2, length: 3)) // select "alt"
+            }
+        case .taskItem:
+            return insertLinePrefix("- [ ] ", fullText: fullText, swiftRange: swiftRange, selectedRange: selectedRange)
+        case .unorderedList:
+            return insertLinePrefix("- ", fullText: fullText, swiftRange: swiftRange, selectedRange: selectedRange)
+        case .orderedList:
+            return insertLinePrefix("1. ", fullText: fullText, swiftRange: swiftRange, selectedRange: selectedRange)
+        case .blockquote:
+            return insertLinePrefix("> ", fullText: fullText, swiftRange: swiftRange, selectedRange: selectedRange)
+        case .heading(let level):
+            return insertLinePrefix(String(repeating: "#", count: level) + " ", fullText: fullText, swiftRange: swiftRange, selectedRange: selectedRange)
         }
-        
-        toolbar.items = finalItems
-        textView.inputAccessoryView = toolbar
-        
-        context.coordinator.textView = textView
-
-        return textView
     }
 
-    func updateUIView(_ uiView: UITextView, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
+    private func wrapInline(_ fullText: String, _ swiftRange: Range<String.Index>,
+                             prefix: String, suffix: String, placeholder: String,
+                             selected: String, hasSelection: Bool) -> (String, NSRange) {
+        let inner = hasSelection ? selected : placeholder
+        let snippet = "\(prefix)\(inner)\(suffix)"
+        let result = fullText.replacingCharacters(in: swiftRange, with: snippet)
+        let base = utf16Offset(of: swiftRange.lowerBound, in: fullText)
+        return (result, NSRange(location: base + prefix.utf16.count, length: inner.utf16.count))
     }
 
-    class Coordinator: NSObject, UITextViewDelegate {
-        var parent: CustomTextEditor
-        weak var textView: UITextView?
+    private func insertLinePrefix(_ prefix: String, fullText: String,
+                                  swiftRange: Range<String.Index>,
+                                  selectedRange: NSRange) -> (String, NSRange) {
+        var lineStart = swiftRange.lowerBound
+        while lineStart > fullText.startIndex {
+            let prev = fullText.index(before: lineStart)
+            if fullText[prev] == "\n" { break }
+            lineStart = prev
+        }
+        let result = fullText.replacingCharacters(in: lineStart..<lineStart, with: prefix)
+        let newLocation = selectedRange.location + prefix.utf16.count
+        return (result, NSRange(location: newLocation, length: selectedRange.length))
+    }
 
-        init(_ parent: CustomTextEditor) {
-            self.parent = parent
-        }
-
-        func textViewDidChange(_ textView: UITextView) {
-            parent.text = textView.text
-        }
-        
-        @objc func insertSnippet(_ sender: UIBarButtonItem) {
-            guard let textView = textView,
-                  let snippet = sender.accessibilityLabel,
-                  let range = textView.selectedTextRange else { return }
-            
-            textView.replace(range, withText: snippet)
-        }
+    private func utf16Offset(of index: String.Index, in str: String) -> Int {
+        return str.utf16.distance(from: str.utf16.startIndex, to: index.samePosition(in: str.utf16) ?? str.utf16.startIndex)
     }
 }
+
+// (CustomTextEditor, MarkdownTextView, and MarkdownSnippetToolbar removed —
+//  the editor now uses SwiftUI TextEditor with ToolbarItemGroup(placement: .keyboard))
