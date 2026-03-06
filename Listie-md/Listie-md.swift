@@ -85,6 +85,7 @@ struct ShoppingListApp: App {
     @FocusedBinding(\.shareLink) private var shareLink: Bool?
     @FocusedValue(\.isReadOnly) private var isReadOnly: Bool?
     @FocusedBinding(\.settingsSheet) private var settingsSheet: Bool?
+    @FocusedBinding(\.nextcloudBrowser) private var nextcloudBrowser: Bool?
 
     var body: some Scene {
         WindowGroup(id: "main") {
@@ -139,7 +140,15 @@ struct ShoppingListApp: App {
                 }
                 .keyboardShortcut("O", modifiers: .command)
                 .disabled(fileImporter == nil)
-                
+
+                Button {
+                    nextcloudBrowser = true
+                } label: {
+                    Label("Browse Nextcloud...", systemImage: "cloud")
+                }
+                .keyboardShortcut("O", modifiers: [.command, .shift])
+                .disabled(nextcloudBrowser == nil)
+
                 Divider()
             }
             

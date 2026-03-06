@@ -30,6 +30,9 @@ enum AppLogger {
     static let deeplinks = Logger(subsystem: subsystem, category: "DeepLinks")
     static let background = Logger(subsystem: subsystem, category: "Background")
 
+    // Nextcloud
+    static let nextcloud = Logger(subsystem: subsystem, category: "Nextcloud")
+
     // UI / general
     static let ui        = Logger(subsystem: subsystem, category: "UI")
     static let general   = Logger(subsystem: subsystem, category: "General")

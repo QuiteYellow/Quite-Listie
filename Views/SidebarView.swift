@@ -30,6 +30,7 @@ struct SidebarView: View {
     @State private var showingDeleteConfirmation = false
     @State private var showFavouritesWarning: Bool = !UserDefaults.standard.bool(forKey: "hideFavouritesWarning")
     @State private var iCloudSyncEnabled: Bool = true
+    var onOpenNextcloud: () -> Void
     
     // Favorites stored in UserDefaults
     @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
@@ -57,10 +58,78 @@ struct SidebarView: View {
     }
     
     private func folderName(for list: UnifiedList) -> String {
-        if case .external(let url) = list.source {
+        switch list.source {
+        case .external(let url):
             return url.deletingLastPathComponent().lastPathComponent
+        case .nextcloud(let accountId, _):
+            // Use the server hostname as section header
+            if let host = URL(string: accountId.components(separatedBy: "@").last ?? "")?.host {
+                return host
+            }
+            return accountId.components(separatedBy: "@").last ?? "Nextcloud"
+        default:
+            return ""
         }
-        return ""
+    }
+
+    /// For Nextcloud lists: returns the name of the remote parent folder, or "Nextcloud" for root.
+    private func nextcloudFolderName(for list: UnifiedList) -> String {
+        guard case .nextcloud(_, let remotePath) = list.source else { return "Nextcloud" }
+        let components = remotePath.split(separator: "/").dropLast()
+        return components.last.map(String.init) ?? "Nextcloud"
+    }
+
+    /// Returns the SF Symbol name representing where an external file is stored.
+    private func externalIcon(for list: UnifiedList) -> String {
+        guard case .external(let url) = list.source else { return "internaldrive.fill" }
+        return url.path.contains("Mobile Documents") ? "icloud.fill" : "internaldrive.fill"
+    }
+
+    private struct FolderSection: Identifiable {
+        let id: String           // unique key, e.g. "ext_Documents", "nc_lists", "__private"
+        let displayName: String
+        let systemImage: String
+        var lists: [UnifiedList]
+    }
+
+    /// All non-favourite, non-special lists grouped by folder and sorted alphabetically by display name.
+    private var folderSections: [FolderSection] {
+        let regularLists = unifiedProvider.allLists.filter {
+            !favouriteListIDs.contains($0.summary.id) &&
+            !$0.isReadOnly &&
+            !$0.isUnavailable &&
+            $0.id != "example-welcome-list"
+        }
+
+        var dict: [String: FolderSection] = [:]
+        for list in regularLists {
+            let key: String; let name: String; let icon: String
+            if list.isPrivate {
+                key = "__private"
+                name = "Private"
+                icon = iCloudSyncEnabled ? "lock.icloud.fill" : "iphone"
+            } else if list.isExternal {
+                let folder = folderName(for: list)
+                key = "ext_\(folder)"
+                name = folder.isEmpty ? "Documents" : folder
+                icon = externalIcon(for: list)
+            } else if list.isNextcloud {
+                let folder = nextcloudFolderName(for: list)
+                key = "nc_\(folder)"
+                name = folder
+                icon = "externaldrive.fill.badge.icloud"
+            } else {
+                continue
+            }
+            if dict[key] == nil {
+                dict[key] = FolderSection(id: key, displayName: name, systemImage: icon, lists: [])
+            }
+            dict[key]!.lists.append(list)
+        }
+
+        return dict.values.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
     }
     
     var body: some View {
@@ -132,35 +201,17 @@ struct SidebarView: View {
                 }
             }
             
-            // MARK: - Private Lists (in iCloud container)
-            let privateLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isPrivate && !$0.isReadOnly }
-            if !privateLists.isEmpty {
-                Section(header: Label("Private", systemImage: iCloudSyncEnabled ? "lock.icloud.fill" : "icloud.slash.fill")) {
-                    ForEach(privateLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
+            // MARK: - All Lists (alphabetical by folder, all sources mixed)
+            ForEach(folderSections) { section in
+                Section {
+                    ForEach(section.lists.sorted { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }, id: \.id) { list in
                         listRow(for: list)
                     }
+                } header: {
+                    Label(section.displayName, systemImage: section.systemImage)
                 }
             }
-            
-            // MARK: - External / Linked Lists (Grouped by Folder)
-            let externalLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isExternal && !$0.isReadOnly && !$0.isUnavailable }
-            if !externalLists.isEmpty {
-                // Group by folder
-                let grouped = Dictionary(grouping: externalLists) { list in
-                    folderName(for: list)
-                }
-                
-                let sortedFolders = grouped.keys.sorted()
-                
-                ForEach(sortedFolders, id: \.self) { folder in
-                    Section(header: Text(folder.isEmpty ? "Connected" : folder)) {
-                        ForEach(grouped[folder]!.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
-                            listRow(for: list)
-                        }
-                    }
-                }
-            }
-            
+
             // MARK: - Temporary Read-Only Lists
             let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && !$0.isUnavailable && $0.id != "example-welcome-list" }
             if !readOnlyLists.isEmpty {
@@ -225,7 +276,9 @@ struct SidebarView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { list in
-            if list.isExternal {
+            if list.isNextcloud {
+                Text("This will remove the list from Listie. The file will remain on your Nextcloud server.")
+            } else if list.isExternal {
                 Text("This will remove the file from Listie. The actual file will not be deleted.")
             } else {
                 Text("Are you sure you want to delete the list \"\(list.summary.name)\"?")
@@ -234,7 +287,6 @@ struct SidebarView: View {
         .task {
             // Load initial iCloud sync state
             iCloudSyncEnabled = await iCloudContainerManager.shared.isICloudSyncEnabled()
-            // Also check if iCloud is actually available
             let available = await iCloudContainerManager.shared.checkICloudAvailability()
             iCloudSyncEnabled = available
         }
@@ -261,9 +313,9 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.summary.name)
                 
-                // Show folder name as caption for favorited external lists
-                if isFavourited && list.isExternal {
-                    Text(folderName(for: list))
+                // Show folder name as caption for favorited external/Nextcloud lists
+                if isFavourited && (list.isExternal || list.isNextcloud) {
+                    Text(list.isNextcloud ? nextcloudFolderName(for: list) : folderName(for: list))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -273,15 +325,15 @@ struct SidebarView: View {
             
             // Save status indicator (like writie.md)
             
-            // Show link icon for favorited external lists
-            if isFavourited && list.isExternal {
+            // Show link icon for favorited external/Nextcloud lists
+            if isFavourited && (list.isExternal || list.isNextcloud) {
                 Image(systemName: "link")
                     .foregroundStyle(.secondary)
                     .imageScale(.small)
             }
 
             // Show sync status icons
-            if list.isExternal {
+            if list.isExternal || list.isNextcloud {
                 saveStatusView(for: saveStatus)
             }
             // Unchecked count
@@ -302,14 +354,14 @@ struct SidebarView: View {
                 }
                 Divider()
                 
-                if list.isExternal {
-                    Button("Close File") {
+                if list.isExternal || list.isNextcloud {
+                    Button(list.isNextcloud ? "Remove from Sidebar" : "Close File") {
                         listToDelete = list
                         showingDeleteConfirmation = true
                     }
                 } else {
                     Divider()
-                    
+
                     Button("Delete List", role: .destructive) {
                         listToDelete = list
                         showingDeleteConfirmation = true
@@ -335,7 +387,8 @@ struct SidebarView: View {
                     listToDelete = list
                     showingDeleteConfirmation = true
                 } label: {
-                    Label(list.isExternal ? "Close" : "Delete", systemImage: list.isExternal ? "xmark.circle" : "trash")
+                    let isLinked = list.isExternal || list.isNextcloud
+                    Label(isLinked ? "Close" : "Delete", systemImage: isLinked ? "xmark.circle" : "trash")
                 }
                 .tint(.red)
             }

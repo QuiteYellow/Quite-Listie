@@ -25,6 +25,11 @@ struct SettingsView: View {
 
     @Bindable private var ekManager = EventKitManager.shared
 
+    // Nextcloud
+    @State private var nextcloudCredentials: NextcloudCredentials? = nil
+    @State private var showNextcloudSetup = false
+    @State private var showNextcloudDisconnectConfirm = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -75,6 +80,34 @@ struct SettingsView: View {
                     Text("Your private lists are stored in your iCloud account and sync automatically across all your Apple devices. Disabling this will store lists only on this device.")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                // MARK: - Nextcloud Section
+                Section {
+                    if let creds = nextcloudCredentials {
+                        LabeledContent("Account") {
+                            Text(creds.accountId)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+
+                        Button("Disconnect", role: .destructive) {
+                            showNextcloudDisconnectConfirm = true
+                        }
+                    } else {
+                        Button("Connect to Nextcloud") {
+                            showNextcloudSetup = true
+                        }
+                    }
+                } header: {
+                    Label("Nextcloud", systemImage: "cloud")
+                } footer: {
+                    if nextcloudCredentials != nil {
+                        Text("Connected. Open files from Nextcloud using the button in the sidebar.")
+                    } else {
+                        Text("Connect to a Nextcloud server to open and sync lists stored there.")
+                    }
+                }
 
                 // MARK: - System Calendar Section
                 Section {
@@ -244,6 +277,12 @@ struct SettingsView: View {
                             url: "https://github.com/xnth97/SymbolPicker",
                             license: "MIT"
                         )
+                        libraryRow(
+                            name: "NextcloudKit",
+                            description: "Nextcloud API client for Swift",
+                            url: "https://github.com/nextcloud/NextcloudKit",
+                            license: "LGPL-3.0"
+                        )
                     }
                 } header: {
                     Label("Acknowledgements", systemImage: "heart")
@@ -264,6 +303,25 @@ struct SettingsView: View {
                 // Load iCloud sync state
                 iCloudSyncEnabled = await iCloudContainerManager.shared.isICloudSyncEnabled()
                 await updateStorageLocation()
+                // Load Nextcloud credentials
+                nextcloudCredentials = NextcloudCredentials.load()
+            }
+            .sheet(isPresented: $showNextcloudSetup) {
+                NextcloudSetupView { newCreds in
+                    nextcloudCredentials = newCreds
+                }
+            }
+            .confirmationDialog("Disconnect from Nextcloud?", isPresented: $showNextcloudDisconnectConfirm, titleVisibility: .visible) {
+                Button("Disconnect", role: .destructive) {
+                    Task {
+                        NextcloudCredentials.delete()
+                        await NextcloudManager.shared.disconnect()
+                        nextcloudCredentials = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your Nextcloud credentials will be removed. Lists opened from Nextcloud will be removed from the sidebar, but files on the server will not be deleted.")
             }
         }
     }

@@ -317,6 +317,8 @@ struct ListSettingsView: View {
                             Text("Private List")
                         case .external(let url):
                             Text("\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)")
+                        case .nextcloud(_, let remotePath):
+                            Text(remotePath)
                         }
                     } icon: {
                         switch unifiedList.source {
@@ -324,6 +326,8 @@ struct ListSettingsView: View {
                             Image(systemName: "icloud.fill")
                         case .external:
                             Image(systemName: "link")
+                        case .nextcloud:
+                            Image(systemName: "cloud")
                         }
                     }
                 }
