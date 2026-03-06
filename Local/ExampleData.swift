@@ -82,8 +82,8 @@ Listie is a powerful list app that works **your way** — keep lists private on 
 ### Your First List
 
 Tap the **+** button in the sidebar to get started:
-1. **New Private List** — a quick personal list
-2. **New List As File...** — a shareable file you choose where to save
+1. **New Private List...** — a quick personal list
+2. **New List File...** — a shareable file you choose where to save
 3. **Open File** — open an existing `.listie` or `.json` file
 
 > Tip: You can hide this welcome list at any time by swiping it in the sidebar, or toggling it off in Settings.
@@ -637,7 +637,7 @@ listie://import?list=LIST_ID&markdown=ENCODED&enc=zlib&preview=true
 Connected lists enable multiple people to work on the same list simultaneously.
 
 ### Setting Up a Shared List
-1. Create a **New List As File** (`⌘⇧N`)
+1. Create a **New List File** (`⌘⇧N`)
 2. Save the file to a **shared location** (e.g. a shared iCloud Drive folder, Dropbox, Google Drive)
 3. Have collaborators open the same file in their copy of Listie (`⌘O`)
 
