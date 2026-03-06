@@ -21,24 +21,24 @@ struct SectionHeaderView: View {
         Button(action: onToggle) {
             HStack {
                 Image(systemName: "tag.fill")
-                    .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
+                    .foregroundStyle((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
                 
                 Text(labelName)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 HStack {
                     let displayCount = labelName == "Completed" ? checkedCount : uncheckedCount
 
                     Text("\(displayCount)")
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .contentTransition(.numericText())
                         .animation(.easeInOut(duration: 0.25), value: displayCount)
                     
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                         .animation(.easeInOut, value: isExpanded)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
                 .padding(.horizontal, 0)
             }
@@ -68,7 +68,7 @@ struct ItemRowView: View {
                             .font(.subheadline)
                             .strikethrough(item.checked && item.quantity >= 2,
                                            color: (item.checked ? .gray : .primary))
-                            .foregroundColor(
+                            .foregroundStyle(
                                 item.quantity < 2 ? Color.clear :
                                     (item.checked ? .gray : .primary)
                             )
@@ -78,7 +78,7 @@ struct ItemRowView: View {
                     Text(item.note)
                         .font(.subheadline)
                         .strikethrough(item.checked, color: .gray)
-                        .foregroundColor(item.checked ? .gray : .primary)
+                        .foregroundStyle(item.checked ? .gray : .primary)
                         .onTapGesture {
                             onTextTap()
                         }
@@ -99,7 +99,7 @@ struct ItemRowView: View {
                     onTap()
                 }) {
                     Image(systemName: item.checked ? "inset.filled.circle" : "circle")
-                        .foregroundColor(item.checked ? .gray : .accentColor)
+                        .foregroundStyle(item.checked ? .gray : .accentColor)
                         .imageScale(.large)
                 }
                 .buttonStyle(.plain)
@@ -199,7 +199,7 @@ struct ReminderChipView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(reminderStatus.color.opacity(0.15))
-        .foregroundColor(reminderStatus.color)
+        .foregroundStyle(reminderStatus.color)
         .clipShape(Capsule())
     }
 }
@@ -255,10 +255,10 @@ struct ShoppingListView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    @ObservedObject var welcomeViewModel: WelcomeViewModel
+    var welcomeViewModel: WelcomeViewModel
     var onExportJSON: (() -> Void)?
     
-    @StateObject private var viewModel: ShoppingListViewModel
+    @State private var viewModel: ShoppingListViewModel
     @State private var showingAddView = false
     @State private var editingItem: ShoppingItem? = nil
     @State private var showingEditView = false
@@ -286,9 +286,9 @@ struct ShoppingListView: View {
     @State private var inlineAddText: String = ""
     @FocusState private var inlineAddFocused: Bool
     @State private var listWidth: CGFloat = 0
-    @State private var kanbanRefreshState: KanbanRefreshState = .idle
+    @State private var refreshState: RefreshState = .idle
 
-    private enum KanbanRefreshState {
+    private enum RefreshState {
         case idle, refreshing, done
     }
 
@@ -303,7 +303,7 @@ struct ShoppingListView: View {
         self._searchText = searchText
         self._pendingItemID = pendingItemID
         self.onExportJSON = exportJSON
-        self._viewModel = StateObject(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
+        self._viewModel = State(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
     }
     
     private var saveStatus: UnifiedListProvider.SaveStatus {
@@ -477,7 +477,7 @@ struct ShoppingListView: View {
                     inlineAddFocused = false
                 } label: {
                     Image(systemName: "xmark")
-                        .foregroundColor(.red.opacity(0.75))
+                        .foregroundStyle(.red.opacity(0.75))
                     
                     //.imageScale(.medium)
                 }
@@ -489,10 +489,10 @@ struct ShoppingListView: View {
                     addInlineItem(to: labelName)
                 } label: {
                     Image(systemName: "checkmark")
-                        .foregroundColor(
+                        .foregroundStyle(
                             inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? .secondary
-                            : .accentColor
+                            ? Color.secondary
+                            : Color.accentColor
                         )
                     //.imageScale(.medium)
                 }
@@ -509,7 +509,7 @@ struct ShoppingListView: View {
                 } label: {
                     
                     Text("Add Item")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .font(.subheadline)
                 }
                 .buttonStyle(.glass)
@@ -521,7 +521,7 @@ struct ShoppingListView: View {
                     inlineAddFocused = true
                 } label: {
                     Image(systemName: "plus")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.glass)
                 //.padding(.vertical, 4)
@@ -565,20 +565,6 @@ struct ShoppingListView: View {
                 .id(unifiedList.id)
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
-                .refreshable {
-                    do {
-                        try await unifiedProvider.syncIfNeeded(for: unifiedList)
-                    } catch {
-                        AppLogger.sync.warning("Sync failed on refresh: \(error, privacy: .public)")
-                        await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
-                    }
-                    if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
-                        viewModel.updateList(updated)
-                    }
-                    await viewModel.loadLabels()
-                    await viewModel.loadItems()
-                    viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
-                }
                 .environment(\.chipsInline, shouldShowChipsInline(
                     itemTitles: viewModel.items.map(\.note),
                     availableWidth: listWidth
@@ -634,67 +620,63 @@ struct ShoppingListView: View {
                         EmptyView()
                     case .unsaved:
                         Image(systemName: "circle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(.orange)
                     case .failed(let message):
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                             .help(message)
                     }
                 }
                 .padding(.horizontal, 4)
             }
             
-            // Refresh button - only in kanban mode (no pull-to-refresh)
+            // Refresh button
             ToolbarItem(id: "refresh", placement: .navigationBarTrailing) {
-                if viewModel.viewMode == .kanban {
-                    Button {
-                        guard kanbanRefreshState == .idle else { return }
-                        kanbanRefreshState = .refreshing
-                        Task {
-                            let start = Date()
-                            do {
-                                try await unifiedProvider.syncIfNeeded(for: unifiedList)
-                            } catch {
-                                AppLogger.sync.warning("Sync failed on kanban refresh: \(error, privacy: .public)")
-                                await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
-                            }
-                            if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
-                                viewModel.updateList(updated)
-                            }
-                            await viewModel.loadLabels()
-                            await viewModel.loadItems()
-                            // Ensure spinner shows for at least 0.6s
-                            let elapsed = Date().timeIntervalSince(start)
-                            if elapsed < 0.6 {
-                                try? await Task.sleep(nanoseconds: UInt64((0.6 - elapsed) * 1_000_000_000))
-                            }
-                            await MainActor.run {
-                                withAnimation {
-                                    kanbanRefreshState = .done
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                                    withAnimation {
-                                        kanbanRefreshState = .idle
-                                    }
-                                }
-                            }
+                Button {
+                    guard refreshState == .idle else { return }
+                    refreshState = .refreshing
+                    Task {
+                        let start = Date()
+                        do {
+                            try await unifiedProvider.syncIfNeeded(for: unifiedList)
+                        } catch {
+                            AppLogger.sync.warning("Sync failed on refresh: \(error, privacy: .public)")
+                            await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
                         }
-                    } label: {
-                        Group {
-                            switch kanbanRefreshState {
-                            case .idle:
-                                Image(systemName: "arrow.clockwise")
-                            case .refreshing:
-                                ProgressView()
-                                    .controlSize(.small)
-                            case .done:
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.green)
+                        if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
+                            viewModel.updateList(updated)
+                        }
+                        await viewModel.loadLabels()
+                        await viewModel.loadItems()
+                        if viewModel.viewMode == .list {
+                            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
+                        }
+                        let elapsed = Date().timeIntervalSince(start)
+                        if elapsed < 0.6 {
+                            try? await Task.sleep(nanoseconds: UInt64((0.6 - elapsed) * 1_000_000_000))
+                        }
+                        await MainActor.run {
+                            withAnimation { refreshState = .done }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                withAnimation { refreshState = .idle }
                             }
                         }
                     }
-                    .disabled(kanbanRefreshState != .idle)
+                } label: {
+                    Group {
+                        switch refreshState {
+                        case .idle:
+                            Image(systemName: "arrow.clockwise")
+                        case .refreshing:
+                            ProgressView()
+                                .controlSize(.small)
+                        case .done:
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.green)
+                        }
+                    }
                 }
+                .disabled(refreshState != .idle)
             }
 
             // Add button - in bottom bar next to search
@@ -788,10 +770,10 @@ struct ShoppingListView: View {
                 EmptyView()
             case .unsaved:
                 Image(systemName: "circle.fill")
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .help(message)
             }
         }
@@ -959,8 +941,8 @@ private struct ShoppingListSheetsModifier: ViewModifier {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    @ObservedObject var viewModel: ShoppingListViewModel
-    @ObservedObject var welcomeViewModel: WelcomeViewModel
+    var viewModel: ShoppingListViewModel
+    var welcomeViewModel: WelcomeViewModel
 
     @Binding var showingAddView: Bool
     @Binding var editingItem: ShoppingItem?
@@ -1090,7 +1072,7 @@ private struct ShoppingListSheetsModifier: ViewModifier {
 // MARK: - Alerts (extracted from sheets modifier)
 
 private struct ShoppingListAlertsModifier: ViewModifier {
-    @ObservedObject var viewModel: ShoppingListViewModel
+    var viewModel: ShoppingListViewModel
     let unifiedList: UnifiedList
     @Binding var itemToDelete: ShoppingItem?
     @Binding var beatenToItMessage: String?
@@ -1131,7 +1113,7 @@ private struct ShoppingListObserversModifier: ViewModifier {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    @ObservedObject var viewModel: ShoppingListViewModel
+    var viewModel: ShoppingListViewModel
     @Binding var markdownToExport: MarkdownExport?
     @Binding var shareLinkExport: MarkdownExport?
     @Binding var triggerMarkdownExport: Bool

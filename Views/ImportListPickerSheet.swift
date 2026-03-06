@@ -39,12 +39,12 @@ struct ImportListPickerSheet: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section {
                     Text("The link doesn't specify a list, or the original list wasn't found. Choose where to import the items.")
                         .font(.callout)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 // Private lists
@@ -95,7 +95,7 @@ struct ImportListPickerSheet: View {
             dismiss()
         } label: {
             Label(list.summary.name, systemImage: list.summary.icon ?? "checklist")
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
         }
     }
 

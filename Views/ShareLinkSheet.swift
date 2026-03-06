@@ -49,13 +49,13 @@ struct ShareLinkSheet: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // Info
                 Section {
                     Text("Anyone with this link can import these items into their Listie app. They will be importing a copy. To collaborate, share a .listie file directly via icloud (or similar).")
                         .font(.callout)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 // Toggles
@@ -87,7 +87,7 @@ struct ShareLinkSheet: View {
                         Text("\(urlCharacterCount) characters")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(warningColor)
+                            .foregroundStyle(warningColor)
                     }
 
                     if warningLevel != .none {
@@ -163,7 +163,7 @@ struct ShareLinkSheet: View {
             Image(systemName: warningLevel == .error
                   ? "exclamationmark.triangle.fill"
                   : "exclamationmark.triangle")
-                .foregroundColor(warningLevel == .error ? .red : .orange)
+                .foregroundStyle(warningLevel == .error ? .red : .orange)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(warningLevel == .error
@@ -171,13 +171,13 @@ struct ShareLinkSheet: View {
                      : "URL is getting long")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(warningLevel == .error ? .red : .orange)
+                    .foregroundStyle(warningLevel == .error ? .red : .orange)
 
                 Text(warningLevel == .error
                      ? "URLs over 4,000 characters may not work on all platforms and messaging apps. Try enabling compression, removing comments, or switching to active items only."
                      : "URLs over 2,000 characters may be truncated by some apps. Consider enabling compression if it's not already on, or reducing the number of items.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }

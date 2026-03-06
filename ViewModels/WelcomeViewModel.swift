@@ -26,15 +26,16 @@ struct ReminderEntry: Identifiable {
     }
 }
 
+@Observable
 @MainActor
-class WelcomeViewModel: ObservableObject {
-    @Published var lists: [ShoppingListSummary] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var uncheckedCounts: [String: Int] = [:]
+class WelcomeViewModel {
+    var lists: [ShoppingListSummary] = []
+    var isLoading = false
+    var errorMessage: String?
+    var uncheckedCounts: [String: Int] = [:]
 
     /// All unchecked items with reminders across every list
-    @Published var reminderEntries: [ReminderEntry] = []
+    var reminderEntries: [ReminderEntry] = []
 
     /// Count of reminder items due today or overdue
     var todayReminderCount: Int {
@@ -52,8 +53,8 @@ class WelcomeViewModel: ObservableObject {
         }.count
     }
 
-    @Published var selectedListForSettings: ShoppingListSummary? = nil
-    @Published var showingListSettings = false
+    var selectedListForSettings: ShoppingListSummary? = nil
+    var showingListSettings = false
 
     /// Legacy method - kept for backward compatibility but now does nothing
     /// All list loading is now done through UnifiedListProvider
