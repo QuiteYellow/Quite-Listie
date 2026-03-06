@@ -112,8 +112,175 @@ struct ListSettingsView: View {
         }
     }
     
+    @ViewBuilder
+    private var backgroundSection: some View {
+        Section(header: Text("Background")) {
+            DisclosureGroup {
+                // None option
+                Button {
+                    listBackground = nil
+                } label: {
+                    HStack {
+                        Image(systemName: "circle.slash")
+                            .foregroundStyle(.secondary)
+                        Text("None")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if listBackground == nil {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 4)
+
+                // Gradient grid
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 12) {
+                    ForEach(BackgroundGradient.all) { gradient in
+                        let isSelected: Bool = {
+                            if case .gradient(let id) = listBackground { return id == gradient.id }
+                            return false
+                        }()
+                        Button {
+                            listBackground = .gradient(gradient.id)
+                        } label: {
+                            VStack(spacing: 4) {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [gradient.fromColor, gradient.toColor],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(height: 52)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2.5)
+                                    )
+                                Text(gradient.name)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(gradient.name)
+                    }
+                }
+                .padding(.vertical, 4)
+            } label: {
+                HStack {
+                    Label("Choose Background", systemImage: "paintbrush")
+                    Spacer()
+                    if let gradient = listBackground?.resolved() {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(
+                                LinearGradient(
+                                    colors: [gradient.fromColor, gradient.toColor],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 40, height: 24)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var labelsSection: some View {
+        Section(header:
+            HStack {
+                Text("Labels")
+                Spacer()
+                Button {
+                    editingLabel = nil
+                    showingLabelEditor = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .imageScale(.medium)
+                }
+            }
+        ) {
+            if allLabels.isEmpty {
+                Text("No labels yet. Tap + to add one.")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+            } else {
+                ForEach($allLabels, id: \.id) { $label in
+                    HStack {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.secondary)
+                            .font(.footnote)
+
+                        Image(systemName: "tag.fill")
+                            .foregroundStyle(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
+
+                        Text(label.name)
+
+                        Spacer()
+
+                        // Show/hide toggle
+                        let isShown = !hiddenLabelIDs.contains(label.id)
+                        Toggle("", isOn: Binding(
+                            get: { isShown },
+                            set: { newValue in
+                                if newValue {
+                                    hiddenLabelIDs.remove(label.id)
+                                } else {
+                                    hiddenLabelIDs.insert(label.id)
+                                }
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                    .opacity(hiddenLabelIDs.contains(label.id) ? 0.5 : 1.0)
+                    .swipeActions(edge: .trailing) {
+                        Button() {
+                            labelToDelete = label
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingLabel = label
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.accentColor)
+                    }
+                    .contextMenu {
+                        Button {
+                            editingLabel = label
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+
+                        Button(role: .destructive) {
+                            labelToDelete = label
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+                .onMove { from, to in
+                    allLabels.move(fromOffsets: from, toOffset: to)
+                }
+            }
+        }
+        .headerProminence(.increased)
+    }
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Details")) {
                     HStack {
@@ -168,167 +335,9 @@ struct ListSettingsView: View {
                     .toggleStyle(.switch)
                 }
 
-                Section(header: Text("Background")) {
-                    DisclosureGroup {
-                        // None option
-                        Button {
-                            listBackground = nil
-                        } label: {
-                            HStack {
-                                Image(systemName: "circle.slash")
-                                    .foregroundColor(.secondary)
-                                Text("None")
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                if listBackground == nil {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.accentColor)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.vertical, 4)
+                backgroundSection
 
-                        // Gradient grid
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 12) {
-                            ForEach(BackgroundGradient.all) { gradient in
-                                let isSelected: Bool = {
-                                    if case .gradient(let id) = listBackground { return id == gradient.id }
-                                    return false
-                                }()
-                                Button {
-                                    listBackground = .gradient(gradient.id)
-                                } label: {
-                                    VStack(spacing: 4) {
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [gradient.fromColor, gradient.toColor],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                )
-                                            )
-                                            .frame(height: 52)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 10)
-                                                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2.5)
-                                            )
-                                        Text(gradient.name)
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(gradient.name)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    } label: {
-                        HStack {
-                            Label("Choose Background", systemImage: "paintbrush")
-                            Spacer()
-                            if let gradient = listBackground?.resolved() {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [gradient.fromColor, gradient.toColor],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 40, height: 24)
-                            }
-                        }
-                    }
-                }
-
-                // Label Management Section
-                Section(header:
-                    HStack {
-                        Text("Labels")
-                        Spacer()
-                        Button {
-                            editingLabel = nil
-                            showingLabelEditor = true
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .imageScale(.medium)
-                        }
-                    }
-                ) {
-                    if allLabels.isEmpty {
-                        Text("No labels yet. Tap + to add one.")
-                            .foregroundColor(.secondary)
-                            .font(.callout)
-                    } else {
-                        ForEach($allLabels, id: \.id) { $label in
-                            HStack {
-                                Image(systemName: "line.3.horizontal")
-                                    .foregroundColor(.secondary)
-                                    .font(.footnote)
-
-                                Image(systemName: "tag.fill")
-                                    .foregroundColor(Color(hex: label.color).adjusted(forBackground: Color(.systemBackground)))
-
-                                Text(label.name)
-
-                                Spacer()
-
-                                // Show/hide toggle
-                                let isShown = !hiddenLabelIDs.contains(label.id)
-                                Toggle("", isOn: Binding(
-                                    get: { isShown },
-                                    set: { newValue in
-                                        if newValue {
-                                            hiddenLabelIDs.remove(label.id)
-                                        } else {
-                                            hiddenLabelIDs.insert(label.id)
-                                        }
-                                    }
-                                ))
-                                .labelsHidden()
-                                .toggleStyle(.switch)
-                            }
-                            .opacity(hiddenLabelIDs.contains(label.id) ? 0.5 : 1.0)
-                            .swipeActions(edge: .trailing) {
-                                Button() {
-                                    labelToDelete = label
-                                    showingDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                .tint(.red)
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    editingLabel = label
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.accentColor)
-                            }
-                            .contextMenu {
-                                Button {
-                                    editingLabel = label
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-
-                                Button(role: .destructive) {
-                                    labelToDelete = label
-                                    showingDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        }
-                        .onMove { from, to in
-                            allLabels.move(fromOffsets: from, toOffset: to)
-                        }
-                    }
-                }
-                .headerProminence(.increased)
+                labelsSection
             }
             .navigationTitle("List Settings")
             .toolbar {

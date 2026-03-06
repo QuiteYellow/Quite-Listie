@@ -76,19 +76,20 @@ struct UnifiedList: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
+@Observable
 @MainActor
-class UnifiedListProvider: ObservableObject {
-    
-    @Published var allLists: [UnifiedList] = []
-    @Published var saveStatus: [String: SaveStatus] = [:]
-    
+class UnifiedListProvider {
+
+    var allLists: [UnifiedList] = []
+    var saveStatus: [String: SaveStatus] = [:]
+
     // REACTIVE cache for external labels
-    @Published var externalLabels: [URL: [ShoppingLabel]] = [:]
-    
-    @Published var isDownloadingFile = false
-    @Published var currentlyLoadingFile: String? = nil
-    @Published var loadingProgress: (current: Int, total: Int) = (0, 0)
-    @Published var isInitialLoad: Bool = true  // Only show loading UI on first load
+    var externalLabels: [URL: [ShoppingLabel]] = [:]
+
+    var isDownloadingFile = false
+    var currentlyLoadingFile: String? = nil
+    var loadingProgress: (current: Int, total: Int) = (0, 0)
+    var isInitialLoad: Bool = true  // Only show loading UI on first load
 
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
 
@@ -263,9 +264,73 @@ class UnifiedListProvider: ObservableObject {
     
     // MARK: - External File Opening
 
+    /// Returns true if the URL is from a stable, Apple-managed location on iOS:
+    /// iCloud Drive, "On My iPhone/iPad", or any Apple system file provider.
+    /// Third-party file providers (Nextcloud, Dropbox, etc.) are unreliable on iOS because
+    /// the OS can suspend their file provider process, breaking persistent bookmark access.
+    /// On macOS Catalyst this restriction does not apply.
+    #if !targetEnvironment(macCatalyst)
+    static func isURLFromSupportedIOSSource(_ url: URL) -> Bool {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+        let path = url.path
+        let isUbiquitous = (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem ?? false
+
+        AppLogger.fileStore.debug("[SourceCheck] path=\(path, privacy: .public)")
+        AppLogger.fileStore.debug("[SourceCheck] isUbiquitousItem=\(isUbiquitous, privacy: .public)")
+        AppLogger.fileStore.debug("[SourceCheck] containsCloudDocs=\(path.contains("com~apple~CloudDocs"), privacy: .public)")
+        AppLogger.fileStore.debug("[SourceCheck] containsAppleProvider=\(path.contains("File Provider Storage/com.apple."), privacy: .public)")
+        AppLogger.fileStore.debug("[SourceCheck] containsFileProviderStorage=\(path.contains("File Provider Storage"), privacy: .public)")
+
+        // Check the file provider path FIRST — Nextcloud (and other third-party providers)
+        // mark their files as isUbiquitousItem=true, so we can't rely on that attribute alone.
+        if path.contains("File Provider Storage") {
+            // Apple system providers (iCloud Drive, On My iPhone, etc.) use com.apple.* identifiers.
+            // Dots may appear as-is or converted to hyphens depending on iOS version/provider.
+            if path.contains("File Provider Storage/com.apple.") ||
+               path.contains("File Provider Storage/com-apple-") {
+                AppLogger.fileStore.info("[SourceCheck] ALLOWED — Apple system file provider")
+                return true
+            }
+            // Third-party provider (Nextcloud, Dropbox, etc.) — block on iOS.
+            AppLogger.fileStore.warning("[SourceCheck] BLOCKED — third-party file provider")
+            return false
+        }
+
+        // Not in a file provider container — iCloud Drive ubiquity check applies here.
+        if isUbiquitous {
+            AppLogger.fileStore.info("[SourceCheck] ALLOWED — iCloud ubiquitous item")
+            return true
+        }
+
+        // iCloud Drive path-based fallback
+        if path.contains("com~apple~CloudDocs") {
+            AppLogger.fileStore.info("[SourceCheck] ALLOWED — iCloud Drive path")
+            return true
+        }
+
+        // Direct filesystem path (app sandbox, etc.) — safe.
+        AppLogger.fileStore.info("[SourceCheck] ALLOWED — no file provider in path")
+        return true
+    }
+    #endif
+
     /// Opens an external file, handling conflicts and selection
     /// Returns the ID of the list to select, or nil if there was a conflict
     func openExternalFile(at url: URL) async throws -> String? {
+        // On iOS, only iCloud Drive files are supported. Third-party providers
+        // (Nextcloud, Dropbox, etc.) lose access when their process is suspended.
+        #if !targetEnvironment(macCatalyst)
+        if !Self.isURLFromSupportedIOSSource(url) {
+            throw NSError(
+                domain: "UnifiedListProvider",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Unsupported file source on iOS"]
+            )
+        }
+        #endif
+
         // Check if already open
         if let existing = allLists.first(where: {
             if case .external(let existingURL) = $0.source {
@@ -389,8 +454,6 @@ class UnifiedListProvider: ObservableObject {
                 listName: list.summary.name,
                 listId: list.id
             )
-
-            objectWillChange.send()
         }
     }
 
@@ -741,7 +804,6 @@ class UnifiedListProvider: ObservableObject {
 
                         // Post notification to refresh views
                         NotificationCenter.default.post(name: .externalListChanged, object: list.id)
-                        objectWillChange.send()
 
                         AppLogger.fileStore.info("Successfully reverted to clean version")
                     } catch {
@@ -778,7 +840,6 @@ class UnifiedListProvider: ObservableObject {
                     externalLabels[url] = document.labels
                 }
             }
-            objectWillChange.send()
         } catch {
             AppLogger.fileStore.error("Failed to reload list: \(error, privacy: .public)")
         }
