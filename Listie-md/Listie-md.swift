@@ -76,6 +76,7 @@ extension Notification.Name {
 @main
 struct ShoppingListApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
     @FocusedBinding(\.newListSheet) private var newListSheet: Bool?
     @FocusedBinding(\.fileImporter) private var fileImporter: Bool?
     @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?
@@ -86,7 +87,7 @@ struct ShoppingListApp: App {
     @FocusedBinding(\.settingsSheet) private var settingsSheet: Bool?
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             WelcomeView()
                 .onAppear {
 #if targetEnvironment(macCatalyst)
@@ -104,22 +105,37 @@ struct ShoppingListApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
-                Button("New Private List...") {
+                Button {
+                    openWindow(id: "main")
+                } label: {
+                    Label("New Window", systemImage: "macwindow.badge.plus")
+                }
+                .keyboardShortcut("N", modifiers: [.command, .option])
+
+                Divider()
+
+                Button {
                     newListSheet = true
+                } label: {
+                    Label("New Private List...", systemImage: "doc.badge.plus")
                 }
                 .keyboardShortcut("N", modifiers: .command)
                 .disabled(newListSheet == nil)
-                
-                Button("New List As File...") {
+               
+                Button {
                     newConnectedExporter = true
+                } label: {
+                    Label("New List File...", systemImage: "doc.badge.plus")
                 }
                 .keyboardShortcut("N", modifiers: [.command, .shift])
                 .disabled(newConnectedExporter == nil)
                 
                 Divider()
                 
-                Button("Open File...") {
+                Button {
                     fileImporter = true
+                } label: {
+                    Label("Open File...", systemImage: "folder.badge.plus")
                 }
                 .keyboardShortcut("O", modifiers: .command)
                 .disabled(fileImporter == nil)

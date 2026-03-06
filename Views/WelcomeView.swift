@@ -40,6 +40,9 @@ struct WelcomeView: View {
 
     @State private var isRefreshing = false
 
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     private var searchPrompt: String {selectedListID != nil ? "Search items" : "Select a list to search"}
 
     enum ExportType {
@@ -70,7 +73,7 @@ struct WelcomeView: View {
                             pendingExportType = .newConnectedList
                             showNewConnectedExporter = true
                         } label: {
-                            Label("New List As File...", systemImage: "doc.badge.plus")
+                            Label("New List File...", systemImage: "doc.badge.plus")
                         }
 
                         Divider()
@@ -81,7 +84,7 @@ struct WelcomeView: View {
                             Label("Open File...", systemImage: "folder.badge.plus")
                         }
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: "text.pad.header.badge.plus")
                     }
                 }
 
@@ -111,6 +114,16 @@ struct WelcomeView: View {
                             )
                         }
                         .disabled(isRefreshing)
+
+                        if horizontalSizeClass == .regular {
+                            Divider()
+
+                            Button {
+                                openWindow(id: "main")
+                            } label: {
+                                Label("New Window", systemImage: "macwindow.badge.plus")
+                            }
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
