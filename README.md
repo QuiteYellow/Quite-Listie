@@ -7,7 +7,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 
 ### Three Ways to Store Lists
 - **Private Lists** — Local device storage synced via iCloud, completely offline-first
-- **File-Based Lists** — Shareable `.listie` files on iCloud Drive, Dropbox, or any file provider
+- **File-Based Lists** — Shareable `.listie` files on iCloud Drive or local files (Dropbox, or any file provider on macOS)
 - **Nextcloud** — Native Nextcloud integration with Login Flow v2 (supports 2FA and SSO), offline-first with background sync and automatic conflict resolution
 
 ### List Management
