@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		379DF6462F01885B00475782 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6452F01885B00475782 /* MarkdownView */; };
+		37DE9A5A2F5B1B460067D1AB /* NextcloudKit in Frameworks */ = {isa = PBXBuildFile; productRef = 37DE9A592F5B1B460067D1AB /* NextcloudKit */; };
 		CB001A012F100000002F4B13 /* ListieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A002F100000002F4B13 /* ListieTests.swift */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
@@ -92,6 +93,7 @@
 			files = (
 				CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */,
 				379DF6462F01885B00475782 /* MarkdownView in Frameworks */,
+				37DE9A5A2F5B1B460067D1AB /* NextcloudKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -181,6 +183,7 @@
 			packageProductDependencies = (
 				CB3015E32DE9D43700CCFCC8 /* SymbolPicker */,
 				379DF6452F01885B00475782 /* MarkdownView */,
+				37DE9A592F5B1B460067D1AB /* NextcloudKit */,
 			);
 			productName = ListsForMealie;
 			productReference = CBEFA7AB2DE31318002F4B13 /* Listie.md.app */;
@@ -261,6 +264,7 @@
 			packageReferences = (
 				CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */,
 				379DF6442F01885B00475782 /* XCRemoteSwiftPackageReference "MarkdownView" */,
+				37DE9A582F5B1B460067D1AB /* XCRemoteSwiftPackageReference "NextcloudKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CBEFA7AC2DE31318002F4B13 /* Products */;
@@ -466,7 +470,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 164;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -531,7 +535,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Listie-md/Listie-md.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 164;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -593,7 +597,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 164;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -615,7 +619,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 164;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -636,7 +640,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 164;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -659,7 +663,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 164;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -728,6 +732,14 @@
 				minimumVersion = 2.5.2;
 			};
 		};
+		37DE9A582F5B1B460067D1AB /* XCRemoteSwiftPackageReference "NextcloudKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nextcloud/NextcloudKit";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 		CBBA05502DE9D34000A52C25 /* XCRemoteSwiftPackageReference "SymbolPicker" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/xnth97/SymbolPicker";
@@ -743,6 +755,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 379DF6442F01885B00475782 /* XCRemoteSwiftPackageReference "MarkdownView" */;
 			productName = MarkdownView;
+		};
+		37DE9A592F5B1B460067D1AB /* NextcloudKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 37DE9A582F5B1B460067D1AB /* XCRemoteSwiftPackageReference "NextcloudKit" */;
+			productName = NextcloudKit;
 		};
 		CB3015E32DE9D43700CCFCC8 /* SymbolPicker */ = {
 			isa = XCSwiftPackageProductDependency;

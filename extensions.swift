@@ -56,6 +56,10 @@ struct SettingsSheetKey: FocusedValueKey {
     typealias Value = Binding<Bool>
 }
 
+struct NextcloudBrowserKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 extension FocusedValues {
     var newListSheet: Binding<Bool>? {
         get { self[NewListSheetKey.self] }
@@ -95,6 +99,11 @@ extension FocusedValues {
     var settingsSheet: Binding<Bool>? {
         get { self[SettingsSheetKey.self] }
         set { self[SettingsSheetKey.self] = newValue }
+    }
+
+    var nextcloudBrowser: Binding<Bool>? {
+        get { self[NextcloudBrowserKey.self] }
+        set { self[NextcloudBrowserKey.self] = newValue }
     }
 }
 
