@@ -39,6 +39,8 @@ struct WelcomeView: View {
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
 
     @State private var isRefreshing = false
+    @State private var showNextcloudBrowser = false
+    @AppStorage(NextcloudCredentials.isConnectedDefaultsKey) private var isNextcloudConnected = false
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -52,83 +54,7 @@ struct WelcomeView: View {
     
     var body: some View {
         NavigationSplitView {
-            SidebarView(
-                welcomeViewModel: welcomeViewModel,
-                unifiedProvider: unifiedProvider,
-                selectedListID: $selectedListID,
-                editingUnifiedList: $editingUnifiedList,
-                onImportFile: { showFileImporter = true },
-                hideWelcomeList: $hideWelcomeList
-            )
-            .toolbar {
-                ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            isPresentingNewList = true
-                        } label: {
-                            Label("New Private List...", systemImage: "doc.badge.plus")
-                        }
-
-                        Button {
-                            pendingExportType = .newConnectedList
-                            showNewConnectedExporter = true
-                        } label: {
-                            Label("New List File...", systemImage: "doc.badge.plus")
-                        }
-
-                        Divider()
-
-                        Button {
-                            showFileImporter = true
-                        } label: {
-                            Label("Open File...", systemImage: "folder.badge.plus")
-                        }
-                    } label: {
-                        Image(systemName: "text.pad.header.badge.plus")
-                    }
-                }
-
-                ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
-
-                ToolbarItem(id: "setings", placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label("Settings...", systemImage: "gear")
-                        }
-
-                        Divider()
-
-                        Button {
-                            guard !isRefreshing else { return }
-                            isRefreshing = true
-                            Task {
-                                await refreshLists()
-                                isRefreshing = false
-                            }
-                        } label: {
-                            Label(
-                                isRefreshing ? "Refreshing..." : "Refresh",
-                                systemImage: "arrow.clockwise"
-                            )
-                        }
-                        .disabled(isRefreshing)
-
-                        if horizontalSizeClass == .regular {
-                            Divider()
-
-                            Button {
-                                openWindow(id: "main")
-                            } label: {
-                                Label("New Window", systemImage: "macwindow.badge.plus")
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                }
-            }
+            sidebarPane
         } detail: {
             detailPane
         }
@@ -162,6 +88,19 @@ struct WelcomeView: View {
                     deeplinkCoordinator.completePendingImport(with: listId)
                 }
             )
+        }
+        .sheet(isPresented: $showNextcloudBrowser) {
+            NextcloudFileBrowserView { remotePath in
+                showNextcloudBrowser = false
+                Task {
+                    do {
+                        let listId = try await unifiedProvider.openNextcloudFile(remotePath: remotePath)
+                        selectedListID = listId
+                    } catch {
+                        AppLogger.nextcloud.error("Failed to open Nextcloud file: \(error, privacy: .public)")
+                    }
+                }
+            }
         }
         .fileImporter(
             isPresented: $showFileImporter,
@@ -207,6 +146,10 @@ struct WelcomeView: View {
             Text(deeplinkCoordinator.errorMessage ?? "Unknown error")
         }
         .task {
+            // Sync Nextcloud connection state from Keychain (handles users who connected
+            // before isConnectedDefaultsKey was introduced)
+            isNextcloudConnected = NextcloudCredentials.load() != nil
+
             // Run migrations first (one-time migration from old local storage to iCloud)
             do {
                 try await MigrationManager.shared.runMigrationsIfNeeded()
@@ -225,6 +168,7 @@ struct WelcomeView: View {
         .focusedSceneValue(\.fileImporter, $showFileImporter)
         .focusedSceneValue(\.newConnectedExporter, $showNewConnectedExporter)
         .focusedSceneValue(\.settingsSheet, $showSettings)
+        .focusedSceneValue(\.nextcloudBrowser, $showNextcloudBrowser)
         .modifier(WelcomeNotificationObservers(
             selectedListID: $selectedListID,
             syncAndReconcile: syncAndReconcileReminders,
@@ -234,6 +178,9 @@ struct WelcomeView: View {
             refreshAll: {
                 await unifiedProvider.loadAllLists()
                 await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+            },
+            onNextcloudFileNotFound: { remotePath in
+                unifiedProvider.handleNextcloudFileNotFound(remotePath: remotePath)
             }
         ))
         .overlay {
@@ -303,6 +250,97 @@ struct WelcomeView: View {
         }
     }
     
+    // MARK: - Sidebar Pane (Extracted to Fix Type-Checker)
+
+    @ViewBuilder
+    private var sidebarPane: some View {
+        SidebarView(
+            welcomeViewModel: welcomeViewModel,
+            unifiedProvider: unifiedProvider,
+            selectedListID: $selectedListID,
+            editingUnifiedList: $editingUnifiedList,
+            onImportFile: { showFileImporter = true },
+            hideWelcomeList: $hideWelcomeList,
+            onOpenNextcloud: { showNextcloudBrowser = true }
+        )
+        .toolbar {
+            ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        isPresentingNewList = true
+                    } label: {
+                        Label("New Private List...", systemImage: "doc.badge.plus")
+                    }
+
+                    Button {
+                        pendingExportType = .newConnectedList
+                        showNewConnectedExporter = true
+                    } label: {
+                        Label("New List File...", systemImage: "doc.badge.plus")
+                    }
+
+                    Divider()
+
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        Label("Open File...", systemImage: "folder.badge.plus")
+                    }
+
+                    Button {
+                        showNextcloudBrowser = true
+                    } label: {
+                        Label("Browse Nextcloud...", systemImage: "cloud")
+                    }
+                    .disabled(!isNextcloudConnected)
+                } label: {
+                    Image(systemName: "text.pad.header.badge.plus")
+                }
+            }
+
+            ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
+
+            ToolbarItem(id: "setings", placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Label("Settings...", systemImage: "gear")
+                    }
+
+                    Divider()
+
+                    Button {
+                        guard !isRefreshing else { return }
+                        isRefreshing = true
+                        Task {
+                            await refreshLists()
+                            isRefreshing = false
+                        }
+                    } label: {
+                        Label(
+                            isRefreshing ? "Refreshing..." : "Refresh",
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
+                    .disabled(isRefreshing)
+
+                    if horizontalSizeClass == .regular {
+                        Divider()
+
+                        Button {
+                            openWindow(id: "main")
+                        } label: {
+                            Label("New Window", systemImage: "macwindow.badge.plus")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+            }
+        }
+    }
+
     // MARK: - Detail Pane (Extracted to Fix Type-Checker)
 
     @ViewBuilder
@@ -626,6 +664,7 @@ private struct WelcomeNotificationObservers: ViewModifier {
     let syncAndReconcile: () async -> Void
     let refreshCounts: () async -> Void
     let refreshAll: () async -> Void
+    let onNextcloudFileNotFound: (String) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -645,6 +684,11 @@ private struct WelcomeNotificationObservers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
                 Task { await refreshAll() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .nextcloudFileNotFound)) { notification in
+                if let remotePath = notification.userInfo?["remotePath"] as? String {
+                    onNextcloudFileNotFound(remotePath)
+                }
             }
     }
 }
