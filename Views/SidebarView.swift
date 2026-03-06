@@ -17,8 +17,8 @@ import os
 import SwiftUI
 
 struct SidebarView: View {
-    @ObservedObject var welcomeViewModel: WelcomeViewModel
-    @ObservedObject var unifiedProvider: UnifiedListProvider
+    var welcomeViewModel: WelcomeViewModel
+    var unifiedProvider: UnifiedListProvider
     @Binding var selectedListID: String?
     @Binding var editingUnifiedList: UnifiedList?
     
@@ -106,7 +106,7 @@ struct SidebarView: View {
             if !hideWelcomeList {
                 let welcomeList = unifiedProvider.allLists.first(where: { $0.id == "example-welcome-list" })
                 if let welcome = welcomeList {
-                    Section(header: Text("Getting Started").foregroundColor(.purple)) {
+                    Section(header: Text("Getting Started").foregroundStyle(.purple)) {
                         listRow(for: welcome)
                             .swipeActions(edge: .trailing) {
                                 Button {
@@ -125,7 +125,7 @@ struct SidebarView: View {
                 favouriteListIDs.contains($0.summary.id) && $0.id != "example-welcome-list"
             }
             if !favourites.isEmpty {
-                Section(header: Label("Favourites", systemImage: "star.fill").foregroundColor(.yellow)) {
+                Section(header: Label("Favourites", systemImage: "star.fill").foregroundStyle(.yellow)) {
                     ForEach(favourites.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                         listRow(for: list)
                     }
@@ -174,7 +174,7 @@ struct SidebarView: View {
             // MARK: - Unavailable Lists
             let unavailableLists = unifiedProvider.allLists.filter { $0.isUnavailable }
             if !unavailableLists.isEmpty {
-                Section(header: Label("Unavailable", systemImage: "exclamationmark.triangle.fill").foregroundColor(.orange)) {
+                Section(header: Label("Unavailable", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)) {
                     ForEach(unavailableLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
                         unavailableListRow(for: list)
                     }
@@ -194,11 +194,11 @@ struct SidebarView: View {
                     if unifiedProvider.loadingProgress.total > 0 {
                         Text("Loading \(loadingFile)... \(unifiedProvider.loadingProgress.current)/\(unifiedProvider.loadingProgress.total)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     } else {
                         Text("Loading \(loadingFile)...")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -256,7 +256,7 @@ struct SidebarView: View {
             Image(systemName: list.summary.icon ?? "list.bullet")
                 .frame(minWidth: 30)
                 .symbolRenderingMode(.hierarchical)
-                //.foregroundColor(.secondary)
+                //.foregroundStyle(.secondary)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.summary.name)
@@ -265,7 +265,7 @@ struct SidebarView: View {
                 if isFavourited && list.isExternal {
                     Text(folderName(for: list))
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             
@@ -276,7 +276,7 @@ struct SidebarView: View {
             // Show link icon for favorited external lists
             if isFavourited && list.isExternal {
                 Image(systemName: "link")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .imageScale(.small)
             }
 
@@ -286,7 +286,7 @@ struct SidebarView: View {
             }
             // Unchecked count
             Text("\(welcomeViewModel.uncheckedCounts[list.summary.id] ?? 0)")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.25), value: welcomeViewModel.uncheckedCounts[list.summary.id])
         }
@@ -316,7 +316,7 @@ struct SidebarView: View {
                     }
                 }
             } else {
-                Text("Read-only list").foregroundColor(.gray)
+                Text("Read-only list").foregroundStyle(.gray)
             }
         }
         .swipeActions(edge: .leading) {
@@ -351,11 +351,11 @@ struct SidebarView: View {
             EmptyView()
         case .unsaved:
             Image(systemName: "circle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
                 .imageScale(.small)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.red)
+                .foregroundStyle(.red)
                 .imageScale(.small)
         }
     }
@@ -367,23 +367,23 @@ struct SidebarView: View {
                 // Warning icon
                 Image(systemName: "exclamationmark.triangle.fill")
                     .frame(minWidth: 30)
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(list.summary.name)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     // Show folder and error reason
                     Text("\(bookmark.folderName) • \(bookmark.reason.localizedDescription)")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
                 // Show the specific issue icon
                 Image(systemName: bookmark.reason.icon)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .imageScale(.small)
             }
             .tag(list.id)
@@ -421,18 +421,18 @@ struct ReminderSmartBox: View {
                 HStack {
                     Image(systemName: icon)
                         .font(.title2)
-                        .foregroundColor(color)
+                        .foregroundStyle(color)
                     Spacer()
                     Text("\(count)")
                         .font(.title2.bold())
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .contentTransition(.numericText())
                         .animation(.easeInOut(duration: 0.25), value: count)
                 }
 
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .padding(12)
             .background(

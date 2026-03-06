@@ -9,9 +9,9 @@ import os
 import SwiftUI
 
 struct WelcomeView: View {
-    @StateObject private var welcomeViewModel = WelcomeViewModel()
-    @StateObject private var unifiedProvider = UnifiedListProvider()
-    @StateObject private var deeplinkCoordinator = DeeplinkCoordinator()
+    @State private var welcomeViewModel = WelcomeViewModel()
+    @State private var unifiedProvider = UnifiedListProvider()
+    @State private var deeplinkCoordinator = DeeplinkCoordinator()
     
     @State private var selectedListID: String? = nil
     /// Item ID to open in the editor once the target ShoppingListView appears.
@@ -25,6 +25,7 @@ struct WelcomeView: View {
     @State private var conflictingFileURL: URL? = nil
     @State private var conflictingDocument: ListDocument? = nil
     @State private var showIDConflictAlert = false
+    @State private var showUnsupportedSourceAlert = false
     
     @State private var showNewConnectedExporter = false
     @State private var pendingExportType: ExportType? = nil
@@ -36,10 +37,11 @@ struct WelcomeView: View {
     @AppStorage("hideWelcomeList") private var hideWelcomeList = false
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
-    
-    
+
+    @State private var isRefreshing = false
+
     private var searchPrompt: String {selectedListID != nil ? "Search items" : "Select a list to search"}
-    
+
     enum ExportType {
         case newConnectedList
         case exportExisting
@@ -55,9 +57,6 @@ struct WelcomeView: View {
                 onImportFile: { showFileImporter = true },
                 hideWelcomeList: $hideWelcomeList
             )
-            .refreshable {
-                await refreshLists()
-            }
             .toolbar {
                 ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
                     Menu {
@@ -66,16 +65,16 @@ struct WelcomeView: View {
                         } label: {
                             Label("New Private List...", systemImage: "doc.badge.plus")
                         }
-                        
+
                         Button {
                             pendingExportType = .newConnectedList
                             showNewConnectedExporter = true
                         } label: {
                             Label("New List As File...", systemImage: "doc.badge.plus")
                         }
-                        
+
                         Divider()
-                        
+
                         Button {
                             showFileImporter = true
                         } label: {
@@ -85,9 +84,9 @@ struct WelcomeView: View {
                         Image(systemName: "plus")
                     }
                 }
-                
+
                 ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
-                
+
                 ToolbarItem(id: "setings", placement: .navigationBarTrailing) {
                     Menu {
                         Button {
@@ -95,6 +94,23 @@ struct WelcomeView: View {
                         } label: {
                             Label("Settings...", systemImage: "gear")
                         }
+
+                        Divider()
+
+                        Button {
+                            guard !isRefreshing else { return }
+                            isRefreshing = true
+                            Task {
+                                await refreshLists()
+                                isRefreshing = false
+                            }
+                        } label: {
+                            Label(
+                                isRefreshing ? "Refreshing..." : "Refresh",
+                                systemImage: "arrow.clockwise"
+                            )
+                        }
+                        .disabled(isRefreshing)
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -156,6 +172,11 @@ struct WelcomeView: View {
             defaultFilename: exportingDocument?.document.list.name ?? "new-list"
         ) { result in
             handleFileExport(result)
+        }
+        .alert("Move File to iCloud", isPresented: $showUnsupportedSourceAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("On iPhone and iPad, files must be stored in iCloud Drive. Please move the file to iCloud Drive in the Files app, then open it again.")
         }
         .alert("ID Conflict", isPresented: $showIDConflictAlert) {
             Button("Generate New ID") {
@@ -444,6 +465,8 @@ struct WelcomeView: View {
                             conflictingFileURL = nsError.userInfo["url"] as? URL
                             conflictingDocument = nsError.userInfo["document"] as? ListDocument
                             showIDConflictAlert = true
+                        } else if nsError.domain == "UnifiedListProvider" && nsError.code == 2 {
+                            showUnsupportedSourceAlert = true
                         } else {
                             AppLogger.fileStore.error("Failed to open file: \(error, privacy: .public)")
                         }
@@ -479,6 +502,16 @@ struct WelcomeView: View {
     }
     
     private func createNewConnectedList(at url: URL) async {
+        #if !targetEnvironment(macCatalyst)
+        guard UnifiedListProvider.isURLFromSupportedIOSSource(url) else {
+            // fileExporter already wrote the file — remove it so we don't leave an orphan.
+            let accessed = url.startAccessingSecurityScopedResource()
+            try? FileManager.default.removeItem(at: url)
+            if accessed { url.stopAccessingSecurityScopedResource() }
+            showUnsupportedSourceAlert = true
+            return
+        }
+        #endif
         do {
             let filename = url.deletingPathExtension().lastPathComponent
             let newList = ModelHelpers.createNewList(name: filename, icon: "checklist")
@@ -542,14 +575,19 @@ struct WelcomeView: View {
     
     private func handleFileToOpen(_ url: URL?) {
         guard let url = url else { return }
-        
+
         Task {
             do {
                 if let listId = try await unifiedProvider.openExternalFile(at: url) {
                     selectedListID = listId
                 }
             } catch {
-                AppLogger.deeplinks.error("Failed to open file from deeplink: \(error, privacy: .public)")
+                let nsError = error as NSError
+                if nsError.domain == "UnifiedListProvider" && nsError.code == 2 {
+                    showUnsupportedSourceAlert = true
+                } else {
+                    AppLogger.deeplinks.error("Failed to open file from deeplink: \(error, privacy: .public)")
+                }
             }
         }
     }

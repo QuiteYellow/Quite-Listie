@@ -1,8 +1,9 @@
 import SwiftUI
 
-class LabelEditorViewModel: ObservableObject {
-    @Published var name: String
-    @Published var color: Color
+@Observable
+class LabelEditorViewModel {
+    var name: String
+    var color: Color
     
     let label: ShoppingLabel?
     

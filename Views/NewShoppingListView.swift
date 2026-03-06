@@ -20,7 +20,7 @@ struct NewShoppingListView: View {
     var onCreate: () -> Void
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Details")) {
                     HStack {
@@ -39,7 +39,7 @@ struct NewShoppingListView: View {
                         } label: {
                             Image(systemName: icon)
                                 .imageScale(.large)
-                                .foregroundColor(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                         }
                         .sheet(isPresented: $iconPickerPresented) {
                             SymbolPicker(symbol: $icon)

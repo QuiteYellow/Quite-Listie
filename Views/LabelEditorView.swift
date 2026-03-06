@@ -9,7 +9,7 @@ import SwiftUI
 
 struct LabelEditorView: View {
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var viewModel: LabelEditorViewModel
+    @Bindable var viewModel: LabelEditorViewModel
     
     var onSave: (_ name: String, _ colorHex: String) -> Void
     var onCancel: () -> Void
@@ -25,7 +25,7 @@ struct LabelEditorView: View {
                     header: Text("Color"),
                     footer: Text("For better visibility, colors adapt automatically to the background.")
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 ) {
                     HStack {

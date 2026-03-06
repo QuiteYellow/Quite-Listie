@@ -55,7 +55,7 @@ struct MarkdownListImportView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if showPreview, let parsed = parsedList {
                     previewView(parsed)
@@ -157,7 +157,7 @@ struct MarkdownListImportView: View {
                 Section {
                     HStack {
                         Image(systemName: list.summary.icon ?? "list.bullet")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(list.summary.name)
                             .font(.headline)
                         Spacer()
@@ -192,7 +192,7 @@ struct MarkdownListImportView: View {
                     **Sub-items** become markdown notes
                     """)
                     .font(.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
@@ -206,7 +206,7 @@ struct MarkdownListImportView: View {
             Section {
                 HStack {
                     Image(systemName: list.summary.icon ?? "list.bullet")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text(list.summary.name)
                         .font(.headline)
                     Spacer()
@@ -236,27 +236,27 @@ struct MarkdownListImportView: View {
                 
                 if stats.newItems > 0 {
                     Label("\(stats.newItems) new items", systemImage: "plus.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundStyle(.green)
                 }
                 
                 if stats.updatedItems > 0 {
                     Label("\(stats.updatedItems) existing items will be updated", systemImage: "arrow.triangle.2.circlepath")
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.blue)
                 }
                 
                 if stats.newLabels > 0 {
                     Label("\(stats.newLabels) new labels will be created", systemImage: "tag.fill")
-                        .foregroundColor(.purple)
+                        .foregroundStyle(.purple)
                 }
                 
                 if stats.matchedLabels > 0 {
                     Label("\(stats.matchedLabels) labels matched to existing", systemImage: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundStyle(.green)
                 }
                 
                 if stats.unmatchedLabels > 0 && !createUnmatchedLabels {
                     Label("\(stats.unmatchedLabels) items will have no label", systemImage: "tag.slash")
-                        .foregroundColor(.orange)
+                        .foregroundStyle(.orange)
                 }
             } header: {
                 Text("Summary")
@@ -362,25 +362,25 @@ struct MarkdownListImportView: View {
     private func importSectionHeader(labelName: String, totalCount: Int, selectedCount: Int) -> some View {
         HStack {
             Image(systemName: "tag.fill")
-                .foregroundColor(labelColor(for: labelName).adjusted(forBackground: Color(.systemBackground)))
+                .foregroundStyle(labelColor(for: labelName).adjusted(forBackground: Color(.systemBackground)))
             
             Text(labelName)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
             
             // Show label status indicator
             if labelName != "No Label" {
                 let existingLabel = existingLabels.first(where: { $0.name.lowercased() == labelName.lowercased() })
                 if existingLabel != nil {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundStyle(.green)
                         .imageScale(.small)
                 } else if createUnmatchedLabels {
                     Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.purple)
+                        .foregroundStyle(.purple)
                         .imageScale(.small)
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundStyle(.orange)
                         .imageScale(.small)
                 }
             }
@@ -389,7 +389,7 @@ struct MarkdownListImportView: View {
             
             // Show selection count
             Text("\(selectedCount)/\(totalCount)")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .font(.subheadline)
         }
         .background(Color(.systemGroupedBackground))
@@ -404,21 +404,21 @@ struct MarkdownListImportView: View {
             if item.quantity > 1 {
                 Text(Int(item.quantity).formatted(.number.precision(.fractionLength(0))))
                     .font(.subheadline)
-                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
                     .frame(minWidth: 12, alignment: .leading)
             }
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.note)
                     .font(.body)
-                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
                     .strikethrough(!isSelected, color: .gray)
                 
                 // Show if this will update an existing item
                 if let existing = existingItems.first(where: { $0.note.lowercased() == item.note.lowercased() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                             .imageScale(.small)
                         
                         if existing.checked {
@@ -429,14 +429,14 @@ struct MarkdownListImportView: View {
                                 }
                     }
                     .font(.caption2)
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
                 }
                 
                 // Show markdown notes if present
                 if let notes = item.markdownNotes, !notes.isEmpty {
                     Text(notes)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .padding(.leading, 16)
                 }
             }
@@ -452,7 +452,7 @@ struct MarkdownListImportView: View {
                 }
             }) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .accentColor : .gray)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.gray)
                     .imageScale(.large)
             }
             .buttonStyle(.plain)

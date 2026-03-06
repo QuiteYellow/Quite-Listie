@@ -11,17 +11,18 @@ import os
 import SwiftUI
 import Compression
 
+@Observable
 @MainActor
-class DeeplinkCoordinator: ObservableObject {
-    @Published var fileToOpen: URL?
-    @Published var markdownImport: MarkdownImportRequest?
-    @Published var pendingImport: PendingImport?
-    @Published var errorMessage: String?
-    @Published var showError = false
+class DeeplinkCoordinator {
+    var fileToOpen: URL?
+    var markdownImport: MarkdownImportRequest?
+    var pendingImport: PendingImport?
+    var errorMessage: String?
+    var showError = false
 
     /// Set when a `listie://item?id=<itemUUID>` deeplink is received.
     /// WelcomeView navigates to the resolved list and ShoppingListView opens the editor.
-    @Published var pendingItemNavigation: ItemNavigation?
+    var pendingItemNavigation: ItemNavigation?
 
     struct ItemNavigation: Equatable {
         let listId: String  // runtime list.id resolved during handling

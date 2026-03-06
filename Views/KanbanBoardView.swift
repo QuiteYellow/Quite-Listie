@@ -10,7 +10,7 @@ import SwiftUI
 struct KanbanBoardView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
-    @ObservedObject var viewModel: ShoppingListViewModel
+    var viewModel: ShoppingListViewModel
 
     @Binding var editingItem: ShoppingItem?
     @Binding var showingEditView: Bool
@@ -156,13 +156,13 @@ struct KanbanBoardView: View {
                         } label: {
                             HStack {
                                 Image(systemName: "checkmark.circle")
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 Text("Completed (\(checkedItems.count))")
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 Spacer()
                                 Image(systemName: "chevron.down")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                     .rotationEffect(.degrees(viewModel.isKanbanCompletedVisible(labelName) ? 0 : -90))
                             }
                         }
@@ -186,16 +186,16 @@ struct KanbanBoardView: View {
 
         return HStack {
             Image(systemName: "tag.fill")
-                .foregroundColor((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
+                .foregroundStyle((color ?? .secondary).adjusted(forBackground: Color(.systemBackground)))
 
             Text(labelName)
                 .font(.headline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
 
             Spacer()
 
             Text("\(displayCount)")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.25), value: displayCount)
         }
@@ -279,7 +279,7 @@ struct KanbanBoardView: View {
                     inlineAddFocused = false
                 } label: {
                     Image(systemName: "xmark")
-                        .foregroundColor(.red.opacity(0.75))
+                        .foregroundStyle(.red.opacity(0.75))
                 }
                 .buttonStyle(.glass)
                 .keyboardShortcut(.cancelAction)
@@ -288,10 +288,10 @@ struct KanbanBoardView: View {
                     addInlineItem(to: labelName)
                 } label: {
                     Image(systemName: "checkmark")
-                        .foregroundColor(
+                        .foregroundStyle(
                             inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? .secondary
-                            : .accentColor
+                            ? Color.secondary
+                            : Color.accentColor
                         )
                 }
                 .buttonStyle(.glass)
@@ -304,7 +304,7 @@ struct KanbanBoardView: View {
                     inlineAddFocused = true
                 } label: {
                     Text("Add Item")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .font(.subheadline)
                 }
                 .buttonStyle(.glass)
@@ -316,7 +316,7 @@ struct KanbanBoardView: View {
                     inlineAddFocused = true
                 } label: {
                     Image(systemName: "plus")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.glass)
             }

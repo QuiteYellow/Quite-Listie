@@ -58,7 +58,7 @@ struct ItemFormView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Markdown Notes")
                             .font(.headline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .padding(.bottom, 8)
                         
                         Divider()
@@ -140,7 +140,7 @@ struct ItemFormView: View {
                     Text(itemName.isEmpty ? "Item name" : itemName)
                         .multilineTextAlignment(.trailing)
                         .strikethrough(true, color: .secondary)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: 200, alignment: .trailing)
                 } else {
                     TextField("Item name", text: $itemName)
@@ -347,7 +347,7 @@ struct AddItemView: View {
     let list: ShoppingListSummary
 
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var viewModel: ShoppingListViewModel
+    var viewModel: ShoppingListViewModel
     
     @State private var itemName = ""
     @State private var selectedLabel: ShoppingLabel? = nil
@@ -364,7 +364,7 @@ struct AddItemView: View {
     @State private var repeatMode: ReminderRepeatMode = .fixed
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ItemFormView(
                 itemName: $itemName,
                 quantity: $quantity,
@@ -445,7 +445,7 @@ struct AddItemView: View {
 
 struct EditItemView: View {
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var viewModel: ShoppingListViewModel
+    var viewModel: ShoppingListViewModel
 
     let item: ShoppingItem
     let list: ShoppingListSummary
@@ -474,7 +474,7 @@ struct EditItemView: View {
     @State private var repeatMode: ReminderRepeatMode = .fixed
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ItemFormView(
                 itemName: $itemName,
                 quantity: $quantity,
@@ -619,12 +619,12 @@ struct CheckableMarkdownView: View {
                         } label: {
                             Image(systemName: state == .checked ? "inset.filled.circle" : "circle")
                                 .imageScale(.large)
-                                .foregroundColor(state == .checked ? .gray : .accentColor)
+                                .foregroundStyle(state == .checked ? .gray : .accentColor)
                         }
                         .buttonStyle(.borderless)
 
                         MarkdownView(labelText(from: line))
-                            .foregroundColor(state == .checked ? .gray : .primary)
+                            .foregroundStyle(state == .checked ? .gray : .primary)
                             .strikethrough(state == .checked, color: .gray)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -673,7 +673,7 @@ struct ItemPreviewView: View {
     @State private var notes: String = ""
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if notes.isEmpty {
@@ -952,7 +952,7 @@ private struct ItemFormChip: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(color.opacity(0.1))
-        .foregroundColor(color)
+        .foregroundStyle(color)
         .clipShape(Capsule())
     }
 }

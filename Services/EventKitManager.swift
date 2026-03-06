@@ -14,8 +14,9 @@
 import EventKit
 import SwiftUI
 
+@Observable
 @MainActor
-class EventKitManager: ObservableObject {
+class EventKitManager {
 
     // MARK: - Singleton
 
@@ -23,13 +24,13 @@ class EventKitManager: ObservableObject {
 
     // MARK: - State
 
-    @Published var isEnabled: Bool = false
-    @Published var authStatus: EKAuthorizationStatus = .notDetermined
-    @Published var calendarExists: Bool = false
+    var isEnabled: Bool = false
+    var authStatus: EKAuthorizationStatus = .notDetermined
+    var calendarExists: Bool = false
     /// Accounts available for calendar creation, sorted best-first.
-    @Published var availableSources: [EKSource] = []
+    var availableSources: [EKSource] = []
     /// The source identifier the user has chosen (or the auto-selected default).
-    @Published var selectedSourceId: String? = nil
+    var selectedSourceId: String? = nil
 
     /// True when the app has been granted sufficient calendar access.
     var isCalendarAccessGranted: Bool { Self.isAuthorized(authStatus) }
@@ -49,7 +50,18 @@ class EventKitManager: ObservableObject {
     /// Debounce task for coalescing rapid sync calls.
     private var syncTask: Task<Void, Never>?
 
-    private init() {}
+    private var storeChangedObserver: NSObjectProtocol?
+
+    private init() {
+        storeChangedObserver = NotificationCenter.default.addObserver(
+            forName: .EKEventStoreChanged, object: store, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isEnabled else { return }
+            // Clear the persisted mapping so stale external identifiers
+            // (for events deleted externally) are not re-queried on next sync.
+            self.eventMapping = [:]
+        }
+    }
 
     // MARK: - Event Mapping (UserDefaults-persisted)
 

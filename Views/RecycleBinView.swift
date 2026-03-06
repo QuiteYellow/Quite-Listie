@@ -23,7 +23,7 @@ struct RecycleBinView: View {
     @State private var showBulkError = false
     
     var body: some View {
-            NavigationView {
+            NavigationStack {
                 List {
                     if deletedItems.isEmpty {
                         ContentUnavailableView(
@@ -35,7 +35,7 @@ struct RecycleBinView: View {
                         Section {
                             Text("Items are automatically deleted after 30 days")
                                 .font(.footnote)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         
                         ForEach(deletedItems) { item in
@@ -52,11 +52,11 @@ struct RecycleBinView: View {
                                     if daysRemaining > 0 {
                                         Text("Deleted \(daysAgo) day\(daysAgo == 1 ? "" : "s") ago • Auto-deletes in \(daysRemaining) day\(daysRemaining == 1 ? "" : "s")")
                                             .font(.caption)
-                                            .foregroundColor(daysRemaining <= 7 ? .orange : .secondary)
+                                            .foregroundStyle(daysRemaining <= 7 ? .orange : .secondary)
                                     } else {
                                         Text("Deleted \(daysAgo) day\(daysAgo == 1 ? "" : "s") ago • Will be auto-deleted soon")
                                             .font(.caption)
-                                            .foregroundColor(.red)
+                                            .foregroundStyle(.red)
                                     }
                                 }
                             }

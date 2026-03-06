@@ -49,14 +49,14 @@ struct MarkdownExportView: View {
     private var exportWarnings: [String] { exportResult.warnings }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 
                 // Options section
                 HStack {
                     Text("Include:")
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     Spacer()  // Pushes content to the left
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -126,17 +126,17 @@ struct MarkdownExportView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Image(systemName: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             Text("\(exportWarnings.count) item(s) had notes that couldn't be exported")
                                 .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             Spacer()
                         }
                         ForEach(exportWarnings, id: \.self) { warning in
                             Text(warning)
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.horizontal)
@@ -150,16 +150,16 @@ struct MarkdownExportView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Image(systemName: "info.circle")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Copy and export operations will use raw markdown")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     if includeNotes {
                         Text("Notes are converted to sublist items for proper markdown rendering")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .padding(.leading, 24)
                     }
                 }
@@ -228,7 +228,7 @@ struct MarkdownExportView: View {
                             Spacer()
                             HStack {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
                                 Text("Copied to clipboard")
                                     .font(.subheadline)
                             }

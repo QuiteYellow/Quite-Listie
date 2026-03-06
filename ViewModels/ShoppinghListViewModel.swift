@@ -14,21 +14,22 @@ enum ListViewMode: String, Codable {
     case kanban
 }
 
+@Observable
 @MainActor
-class ShoppingListViewModel: ObservableObject {
-    @Published var items: [ShoppingItem] = []
-    @Published var isLoading = false
-    @Published var labels: [ShoppingLabel] = []
-    
-    @Published var expandedSections: [String: Bool] = [:]
-    @Published var kanbanCompletedVisible: [String: Bool] = [:]
-    @Published var showCompletedAtBottom: Bool = false
-    @Published var listBackground: ListBackground? = nil
-    @Published var viewMode: ListViewMode = .list
+class ShoppingListViewModel {
+    var items: [ShoppingItem] = []
+    var isLoading = false
+    var labels: [ShoppingLabel] = []
 
-    @Published var searchText: String = ""
-    
-    @Published var list: UnifiedList
+    var expandedSections: [String: Bool] = [:]
+    var kanbanCompletedVisible: [String: Bool] = [:]
+    var showCompletedAtBottom: Bool = false
+    var listBackground: ListBackground? = nil
+    var viewMode: ListViewMode = .list
+
+    var searchText: String = ""
+
+    var list: UnifiedList
     let provider: UnifiedListProvider
     
     var shoppingListId: String { list.summary.id }

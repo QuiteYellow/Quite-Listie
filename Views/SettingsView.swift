@@ -23,10 +23,10 @@ struct SettingsView: View {
     @State private var storageLocation = "Loading..."
     @State private var showICloudInfo = false
 
-    @ObservedObject private var ekManager = EventKitManager.shared
+    @Bindable private var ekManager = EventKitManager.shared
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // MARK: - Storage Section
                 Section {
@@ -40,7 +40,7 @@ struct SettingsView: View {
                             showICloudInfo = true
                         } label: {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
 
@@ -62,7 +62,7 @@ struct SettingsView: View {
                         Text("Storage Location")
                         Spacer()
                         Text(storageLocation)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 } header: {
                     Label("Storage", systemImage: "icloud")
@@ -91,7 +91,7 @@ struct SettingsView: View {
                     if ekManager.isEnabled {
                         if ekManager.isCalendarAccessGranted {
                             Label("Writing to 'Listie Schedule' calendar", systemImage: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundStyle(.green)
 
                             if ekManager.availableSources.count > 1 {
                                 Picker("Account", selection: Binding(
@@ -113,7 +113,7 @@ struct SettingsView: View {
                             }
                         } else if ekManager.isCalendarAccessDenied {
                             Label("Calendar access denied", systemImage: "xmark.circle.fill")
-                                .foregroundColor(.red)
+                                .foregroundStyle(.red)
                             Button("Open Settings") {
                                 #if targetEnvironment(macCatalyst)
                                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
@@ -152,7 +152,7 @@ struct SettingsView: View {
                             showQuickAddInfo = true
                         } label: {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
 
@@ -175,7 +175,7 @@ struct SettingsView: View {
                             showEmptyLabelsInfo = true
                         } label: {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
 
@@ -199,7 +199,7 @@ struct SettingsView: View {
                             showKanbanWidthInfo = true
                         } label: {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
 
@@ -283,7 +283,7 @@ struct SettingsView: View {
                         Spacer()
                         Text(license)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color(.tertiarySystemFill))
@@ -291,7 +291,7 @@ struct SettingsView: View {
                     }
                     Text(description)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 2)
             }

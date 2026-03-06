@@ -313,34 +313,41 @@ actor FileStore {
             }
         }
 
-        // Ensure file is downloaded from iCloud if needed (BEFORE checking if it exists)
+        // Ensure file is downloaded from iCloud if needed (BEFORE reading)
         try await ensureFileDownloaded(at: url)
 
-        // NOW check if file exists (after download attempt)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw NSError(domain: "ExternalFileStore", code: 404, userInfo: [
-                NSLocalizedDescriptionKey: "File not found at \(url.path)"
-            ])
+        // Note: we intentionally skip a fileExists() guard here.
+        // POSIX-level fileExists() returns false for third-party FileProvider paths (e.g. Nextcloud)
+        // until the FileProvider extension mounts the file, but NSFileCoordinator goes through the
+        // FileProvider and can succeed. Let the coordinator read below be the real gatekeeper.
+
+        // Resolve any iCloud conflicts before opening (skip for non-iCloud files)
+        if isICloudFile(at: url) {
+            try await resolveConflicts(at: url)
         }
 
-        AppLogger.fileStore.debug("File exists: \(FileManager.default.fileExists(atPath: url.path))")
-        AppLogger.fileStore.debug("Is readable: \(FileManager.default.isReadableFile(atPath: url.path))")
+        // Use NSFileCoordinator to read — this is the correct API for FileProvider files.
+        // Unlike Data(contentsOf:), it signals the FileProvider subsystem to wake the extension.
+        var readData: Data?
+        var coordinatorError: NSError?
+        var readError: Error?
 
-        // Resolve any iCloud conflicts before opening
-        try await resolveConflicts(at: url)
-        
-        // Try direct read first (simpler, works for most cases)
-        var content: Data?
-        
-        do {
-            content = try Data(contentsOf: url)
-            AppLogger.fileStore.info("Successfully read \(content?.count ?? 0) bytes")
-        } catch {
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: url, options: [], error: &coordinatorError) { readURL in
+            do {
+                readData = try Data(contentsOf: readURL)
+                AppLogger.fileStore.info("Successfully read \(readData?.count ?? 0) bytes")
+            } catch {
+                readError = error
+            }
+        }
+
+        if let error = coordinatorError ?? readError {
             AppLogger.fileStore.error("Failed to read file: \(error)")
             throw error
         }
-        
-        guard let data = content else {
+
+        guard let data = readData else {
             throw NSError(domain: "ExternalFileStore", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Failed to read file at \(url.path)"
             ])

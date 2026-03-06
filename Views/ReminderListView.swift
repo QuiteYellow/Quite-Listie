@@ -16,8 +16,8 @@ enum ReminderFilter {
 
 struct ReminderListView: View {
     let filter: ReminderFilter
-    @ObservedObject var welcomeViewModel: WelcomeViewModel
-    @ObservedObject var unifiedProvider: UnifiedListProvider
+    var welcomeViewModel: WelcomeViewModel
+    var unifiedProvider: UnifiedListProvider
     @Binding var selectedListID: String?
     @Binding var searchText: String
 
@@ -168,13 +168,13 @@ struct ReminderListView: View {
                 Section {
                     HStack(spacing: 10) {
                         Image(systemName: "bell.slash.fill")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(.orange)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Notifications Disabled")
                                 .font(.subheadline.weight(.medium))
                             Text("Reminders won't alert you. Enable in Settings.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("Settings") {
@@ -237,9 +237,9 @@ struct ReminderListView: View {
                     } header: {
                         HStack(spacing: 6) {
                             Image(systemName: section.group.icon)
-                                .foregroundColor(section.group.color)
+                                .foregroundStyle(section.group.color)
                             Text(section.group.title)
-                                .foregroundColor(section.group.color)
+                                .foregroundStyle(section.group.color)
                         }
                     }
                 }
@@ -372,7 +372,7 @@ private struct ReminderEntryRow: View {
                             .font(.subheadline)
                             .strikethrough(entry.item.checked && entry.item.quantity >= 2,
                                            color: (entry.item.checked ? .gray : .primary))
-                            .foregroundColor(
+                            .foregroundStyle(
                                 entry.item.quantity < 2 ? Color.clear :
                                     (entry.item.checked ? .gray : .primary)
                             )
@@ -382,7 +382,7 @@ private struct ReminderEntryRow: View {
                     Text(entry.item.note)
                         .font(.subheadline)
                         .strikethrough(entry.item.checked, color: .gray)
-                        .foregroundColor(entry.item.checked ? .gray : .primary)
+                        .foregroundStyle(entry.item.checked ? .gray : .primary)
                         .onTapGesture {
                             onEdit()
                         }
@@ -421,7 +421,7 @@ private struct ReminderEntryRow: View {
                     onToggle()
                 }) {
                     Image(systemName: entry.item.checked ? "inset.filled.circle" : "circle")
-                        .foregroundColor(entry.item.checked ? .gray : .accentColor)
+                        .foregroundStyle(entry.item.checked ? .gray : .accentColor)
                         .imageScale(.large)
                 }
                 .buttonStyle(.plain)
@@ -489,7 +489,7 @@ private struct MetadataChip: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(color.opacity(0.1))
-        .foregroundColor(color)
+        .foregroundStyle(color)
         .clipShape(Capsule())
     }
 }
