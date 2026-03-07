@@ -156,7 +156,7 @@ class UnifiedListProvider {
     /// Called when `NextcloudManager`'s background sync detects a file is gone from the server.
     func handleNextcloudFileNotFound(remotePath: String) {
         guard let index = allLists.firstIndex(where: {
-            if case .nextcloud(let accountId, let path) = $0.source, path == remotePath {
+            if case .nextcloud(_, let path) = $0.source, path == remotePath {
                 return true
             }
             return false
@@ -276,7 +276,7 @@ class UnifiedListProvider {
 
         currentlyLoadingFile = nil
         loadingProgress = (0, 0)
-        isInitialLoad = false
+        // isInitialLoad stays true until NC loading completes
 
         // Unavailable external files
         let unavailableBookmarks = await FileStore.shared.getUnavailableBookmarks()
@@ -293,15 +293,20 @@ class UnifiedListProvider {
             ))
         }
 
-        // Nextcloud lists
-        unified.append(contentsOf: await loadNextcloudLists())
+        // Preserve any already-loaded NC lists so the sidebar doesn't flash empty
+        unified.append(contentsOf: allLists.filter { $0.isNextcloud })
 
-        allLists = unified.sorted {
+        // Publish local lists immediately — sidebar renders without waiting for NC
+        let localSorted = unified.sorted {
             $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending
         }
-        for list in unified where saveStatus[list.id] == nil {
+        allLists = localSorted
+        for list in localSorted where saveStatus[list.id] == nil {
             saveStatus[list.id] = .saved
         }
+
+        // Load NC lists progressively — each updates allLists as it arrives
+        await loadNextcloudListsProgressively()
 
         Task { await EventKitManager.shared.syncIfEnabled(provider: self) }
     }
@@ -310,63 +315,87 @@ class UnifiedListProvider {
 
     private static let nextcloudFilesKey = "com.listie.nextcloud-files"
 
-    /// Loads all known Nextcloud files from UserDefaults + fetches their summaries.
-    private func loadNextcloudLists() async -> [UnifiedList] {
+    /// Loads all known Nextcloud files from UserDefaults, updating `allLists` as each arrives.
+    /// Assumes `allLists` already contains preserved NC entries from the previous load.
+    private func loadNextcloudListsProgressively() async {
         let records = loadNextcloudFileRecords()
-        guard !records.isEmpty else { return [] }
+        guard !records.isEmpty else {
+            allLists.removeAll { $0.isNextcloud }
+            isInitialLoad = false
+            return
+        }
 
-        var result: [UnifiedList] = []
+        var loadedIds: Set<String> = []
+        var currentIndex = 0
+        let total = records.count
+
         for record in records {
+            currentIndex += 1
             let accountId  = record["accountId"] ?? ""
             let remotePath = record["remotePath"] ?? ""
             guard !accountId.isEmpty, !remotePath.isEmpty else { continue }
 
             let runtimeId = "nextcloud:\(accountId):\(remotePath)"
+            loadedIds.insert(runtimeId)
+
+            let displayNameForProgress = remotePath.split(separator: "/").last
+                .map { String($0).replacingOccurrences(of: ".listie", with: "") } ?? remotePath
+            currentlyLoadingFile = displayNameForProgress
+            loadingProgress = (currentIndex, total)
+
+            let newEntry: UnifiedList
             do {
                 let doc = try await NextcloudManager.shared.openFile(remotePath: remotePath)
                 var summary = doc.list
                 summary.id = runtimeId
                 nextcloudLabels[remotePath] = doc.labels
-                result.append(UnifiedList(
+                newEntry = UnifiedList(
                     id: runtimeId,
                     source: .nextcloud(accountId: accountId, remotePath: remotePath),
                     summary: summary,
                     originalFileId: doc.list.id,
                     isReadOnly: false
-                ))
+                )
             } catch {
                 AppLogger.nextcloud.warning("[NC] Failed to load \(remotePath, privacy: .public): \(error, privacy: .public)")
+                // For transient network errors, keep the existing cached entry visible
+                if case NCError.notFound = error {} else if allLists.contains(where: { $0.id == runtimeId }) {
+                    continue
+                }
                 let fileName = remotePath.split(separator: "/").last.map(String.init) ?? remotePath
                 let displayName = fileName.replacingOccurrences(of: ".listie", with: "")
                 let serverHost = accountId.components(separatedBy: "@").last ?? accountId
                 let reason: UnavailableBookmark.UnavailabilityReason
-                if case NCError.notFound = error {
-                    reason = .fileNotFound
-                } else {
-                    reason = .bookmarkInvalid(error)
-                }
+                if case NCError.notFound = error { reason = .fileNotFound } else { reason = .bookmarkInvalid(error) }
                 let bookmark = UnavailableBookmark(
-                    id: runtimeId,
-                    originalPath: remotePath,
-                    reason: reason,
-                    fileName: displayName,
-                    folderName: serverHost
+                    id: runtimeId, originalPath: remotePath, reason: reason,
+                    fileName: displayName, folderName: serverHost
                 )
-                let placeholderSummary = ShoppingListSummary(
-                    id: runtimeId, name: displayName,
-                    modifiedAt: Date(), icon: "cloud"
-                )
-                result.append(UnifiedList(
+                newEntry = UnifiedList(
                     id: runtimeId,
                     source: .nextcloud(accountId: accountId, remotePath: remotePath),
-                    summary: placeholderSummary,
+                    summary: ShoppingListSummary(id: runtimeId, name: displayName, modifiedAt: Date(), icon: "cloud"),
                     originalFileId: nil,
                     isReadOnly: true,
                     unavailableBookmark: bookmark
-                ))
+                )
             }
+
+            if let index = allLists.firstIndex(where: { $0.id == runtimeId }) {
+                allLists[index] = newEntry
+            } else {
+                allLists.append(newEntry)
+                allLists.sort { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }
+            }
+            saveStatus[runtimeId] = .saved
         }
-        return result
+
+        // Remove stale NC entries (files removed from UserDefaults while app was running)
+        allLists.removeAll { $0.isNextcloud && !loadedIds.contains($0.id) }
+
+        currentlyLoadingFile = nil
+        loadingProgress = (0, 0)
+        isInitialLoad = false
     }
 
     /// Opens a Nextcloud file and adds it to `allLists`.
@@ -386,6 +415,25 @@ class UnifiedListProvider {
         defer { isDownloadingFile = false }
 
         let doc = try await NextcloudManager.shared.openFile(remotePath: remotePath)
+
+        let privateLists = allLists.filter { $0.isPrivate }
+        if privateLists.contains(where: { $0.summary.id == doc.list.id }) {
+            throw NSError(domain: "UnifiedListProvider", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "ID conflict"
+            ])
+        }
+
+        if let existing = allLists.first(where: {
+            guard !$0.isPrivate, !$0.isUnavailable, let origId = $0.originalFileId else { return false }
+            return origId == doc.list.id
+        }) {
+            throw NSError(domain: "UnifiedListProvider", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Duplicate list ID",
+                "existingListId": existing.id,
+                "existingListName": existing.summary.name
+            ])
+        }
+
         var summary = doc.list
         summary.id = runtimeId
         nextcloudLabels[remotePath] = doc.labels
@@ -502,6 +550,19 @@ class UnifiedListProvider {
             throw NSError(domain: "UnifiedListProvider", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "ID conflict",
                 "url": url, "document": document
+            ])
+        }
+
+        if let existing = allLists.first(where: {
+            guard !$0.isPrivate, !$0.isUnavailable, let origId = $0.originalFileId else { return false }
+            return origId == document.list.id
+        }) {
+            AppLogger.general.warning("Duplicate list ID detected for: \(document.list.name, privacy: .public)")
+            await FileStore.shared.closeFile(at: url)
+            throw NSError(domain: "UnifiedListProvider", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Duplicate list ID",
+                "existingListId": existing.id,
+                "existingListName": existing.summary.name
             ])
         }
 
