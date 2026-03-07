@@ -1,7 +1,15 @@
-# Listie — iOS, iPadOS and macOS
+# Listie.md — iOS, iPadOS and macOS
 A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists and reminders with support for private local storage, file-based collaboration, and Nextcloud sync.
 
 <img width="1136" height="511" alt="Screenshot 2026-03-07 at 13 55 41" src="https://github.com/user-attachments/assets/123d2ea4-9252-48de-bc14-0b0ea8b89ac5" />
+
+## 🧪 Beta Testing
+
+[![TestFlight](https://img.shields.io/badge/TestFlight-Join%20Beta-blue?logo=apple)](https://testflight.apple.com/join/MWhgySGD)
+
+**Listie.md** is currently in beta. Join via TestFlight to try the latest features and help shape the app before release.
+
+Feedback and bug reports are welcome — use the TestFlight app to send them directly.
 
 ## Features
 
