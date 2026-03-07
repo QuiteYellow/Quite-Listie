@@ -50,21 +50,11 @@ class EventKitManager {
     /// Debounce task for coalescing rapid sync calls.
     private var syncTask: Task<Void, Never>?
 
-    private var storeChangedObserver: NSObjectProtocol?
-
     private init() {
-        storeChangedObserver = NotificationCenter.default.addObserver(
-            forName: .EKEventStoreChanged, object: store, queue: .main
-        ) { [weak self] _ in
-            // queue: .main guarantees we're on the main thread; assumeIsolated
-            // makes that visible to the Swift Concurrency actor-isolation checker.
-            MainActor.assumeIsolated {
-                guard let self, self.isEnabled else { return }
-                // Clear the persisted mapping so stale external identifiers
-                // (for events deleted externally) are not re-queried on next sync.
-                self.eventMapping = [:]
-            }
-        }
+        // EKEventStoreChanged fires for our own commits too. Do NOT clear eventMapping here —
+        // doing so races with the mapping we just saved in performSync and causes the next
+        // sync to create duplicate events. rebuildMappingFromCalendar already handles stale
+        // entries by validating each externalId against findEvent(externalId:).
     }
 
     // MARK: - Event Mapping (UserDefaults-persisted)
