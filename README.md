@@ -1,7 +1,7 @@
 # Listie — iOS, iPadOS and macOS
 A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and Nextcloud sync.
 
-<img width="1310" alt="Screenshot 2025-05-31 at 16 20 24" src="https://github.com/user-attachments/assets/c4ea3a65-4db1-4d05-903d-cd8a9708a0f7" />
+<img width="1136" height="511" alt="Screenshot 2026-03-07 at 13 55 41" src="https://github.com/user-attachments/assets/123d2ea4-9252-48de-bc14-0b0ea8b89ac5" />
 
 ## Features
 
