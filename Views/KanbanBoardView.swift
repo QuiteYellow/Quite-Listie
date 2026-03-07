@@ -83,7 +83,6 @@ struct KanbanBoardView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let isWide = geometry.size.width > 600
             // Snapshot grouped data to prevent key/value divergence mid-render
             let columns = labelsToShow
             let groupedItems = viewModel.filteredItemsGroupedByLabel

@@ -40,6 +40,10 @@ actor NextcloudManager {
     /// Remote paths with unsaved local changes.
     private var pendingUploads: Set<String> = []
 
+    /// In-flight download tasks keyed by cacheKey. Prevents duplicate downloads when multiple
+    /// callers request the same file before the first download completes (actor reentrancy).
+    private var inFlightDownloads: [String: Task<ListDocument, Error>] = [:]
+
     private var pathMonitor: NWPathMonitor?
 
     private static let etagDefaultsKey = "com.listie.nextcloud.etags"
@@ -149,7 +153,7 @@ actor NextcloudManager {
             account: creds.accountId
         )
         guard result.error == .success, let files = result.files else {
-            throw NCError.networkError(result.error.errorDescription ?? "Unknown error")
+            throw NCError.networkError(result.error.errorDescription)
         }
         // PROPFIND depth:1 always returns the collection root as the first entry.
         // Drop it so the browser only shows children, not the folder itself.
@@ -164,9 +168,11 @@ actor NextcloudManager {
 
         let cacheKey = cacheKey(creds: creds, remotePath: remotePath)
 
+        let fileName = remotePath.split(separator: "/").last.map(String.init) ?? remotePath
+
         // 1. Return in-memory cache if available and not forcing a reload.
         if !forceReload, let cached = memCache[cacheKey] {
-            // Kick off background ETag check without blocking
+            AppLogger.cache.info("[NC] Using cached document for \(fileName, privacy: .public)")
             Task { try? await backgroundSync(remotePath: remotePath) }
             return cached
         }
@@ -175,14 +181,25 @@ actor NextcloudManager {
         let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
         if !forceReload, FileManager.default.fileExists(atPath: diskURL.path) {
             if let doc = try? loadFromDisk(at: diskURL) {
+                AppLogger.cache.info("[NC] Loaded from disk cache: \(fileName, privacy: .public)")
                 memCache[cacheKey] = doc
                 Task { try? await backgroundSync(remotePath: remotePath) }
                 return doc
             }
         }
 
-        // 3. Download from server
-        return try await downloadFile(creds: creds, remotePath: remotePath)
+        // 3. Deduplicate: reuse an existing in-flight download if one is already running
+        if let existing = inFlightDownloads[cacheKey] {
+            AppLogger.cache.debug("[NC] Joining in-flight download for \(fileName, privacy: .public)")
+            return try await existing.value
+        }
+
+        // 4. Start new download, register it so concurrent callers can share it
+        AppLogger.nextcloud.info("[NC] Downloading \(fileName, privacy: .public) from server")
+        let task = Task<ListDocument, Error> { try await self.downloadFile(creds: creds, remotePath: remotePath) }
+        inFlightDownloads[cacheKey] = task
+        defer { inFlightDownloads.removeValue(forKey: cacheKey) }
+        return try await task.value
     }
 
     /// Writes a document to local cache and uploads it.
@@ -480,7 +497,7 @@ actor NextcloudManager {
             if result.nkError.errorCode == 404 {
                 throw NCError.notFound(remotePath)
             }
-            throw NCError.networkError(result.nkError.errorDescription ?? "Download failed")
+            throw NCError.networkError(result.nkError.errorDescription)
         }
 
         let doc = try loadFromDisk(at: tempURL)
@@ -520,7 +537,7 @@ actor NextcloudManager {
             account: creds.accountId
         )
         guard result.error == .success else {
-            throw NCError.networkError(result.error.errorDescription ?? "Upload failed")
+            throw NCError.networkError(result.error.errorDescription)
         }
 
         // Update ETag from upload response

@@ -702,6 +702,21 @@ struct ShoppingListView: View {
         .animation(nil, value: isPerformingBulkAction)
         
         .task {
+            // Phase 1: Show cached content immediately (optimistic display)
+            await viewModel.loadLabels()
+            guard !Task.isCancelled else { return }
+            await viewModel.loadItems()
+            guard !Task.isCancelled else { return }
+            viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
+
+            // Open item editor if arriving via a calendar deeplink
+            if let itemId = pendingItemID,
+               let item = viewModel.items.first(where: { $0.id.uuidString == itemId }) {
+                pendingItemID = nil
+                editingItem = item
+            }
+
+            // Phase 2: Sync with server in background, then reload with fresh data
             do {
                 try await unifiedProvider.syncIfNeeded(for: unifiedList)
             } catch is CancellationError {
@@ -720,18 +735,9 @@ struct ShoppingListView: View {
 
             await viewModel.loadLabels()
             guard !Task.isCancelled else { return }
-
             await viewModel.loadItems()
             guard !Task.isCancelled else { return }
-
             viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
-
-            // Open item editor if arriving via a calendar deeplink
-            if let itemId = pendingItemID,
-               let item = viewModel.items.first(where: { $0.id.uuidString == itemId }) {
-                pendingItemID = nil
-                editingItem = item
-            }
         }
         
         .modifier(ShoppingListSheetsModifier(
@@ -1202,8 +1208,13 @@ private struct ShoppingListObserversModifier: ViewModifier {
                     triggerShareLink = false
                 }
             }
-            .onChange(of: searchText) { _, newValue in
+            .onChange(of: searchText) { oldValue, newValue in
                 viewModel.searchText = newValue
+                let wasSearching = !oldValue.isEmpty
+                let isSearching  = !newValue.isEmpty
+                if isSearching != wasSearching {
+                    viewModel.handleSearchActive(isSearching)
+                }
             }
     }
 }

@@ -22,6 +22,8 @@ class ShoppingListViewModel {
     var labels: [ShoppingLabel] = []
 
     var expandedSections: [String: Bool] = [:]
+    /// Saved collapse state before a search began; nil when not searching.
+    private var preSearchExpandedSections: [String: Bool]? = nil
     var kanbanCompletedVisible: [String: Bool] = [:]
     var showCompletedAtBottom: Bool = false
     var listBackground: ListBackground? = nil
@@ -434,6 +436,23 @@ class ShoppingListViewModel {
     func toggleSection(_ labelName: String) {
         expandedSections[labelName] = !(expandedSections[labelName] ?? true)
         saveExpandedSections()
+    }
+
+    /// Called when search text transitions between empty and non-empty.
+    /// Expands all sections while searching and restores the previous state when done.
+    func handleSearchActive(_ isActive: Bool) {
+        if isActive {
+            guard preSearchExpandedSections == nil else { return }
+            preSearchExpandedSections = expandedSections
+            for key in expandedSections.keys {
+                expandedSections[key] = true
+            }
+        } else {
+            guard let saved = preSearchExpandedSections else { return }
+            expandedSections = saved
+            preSearchExpandedSections = nil
+        }
+        // Don't persist — this is transient search state
     }
     
     func initializeExpandedSections(for labels: [String]) {
