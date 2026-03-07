@@ -26,6 +26,9 @@ struct WelcomeView: View {
     @State private var conflictingDocument: ListDocument? = nil
     @State private var showIDConflictAlert = false
     @State private var showUnsupportedSourceAlert = false
+    @State private var duplicateListName: String? = nil
+    @State private var duplicateListID: String? = nil
+    @State private var showDuplicateListAlert = false
     
     @State private var showNewConnectedExporter = false
     @State private var pendingExportType: ExportType? = nil
@@ -97,7 +100,16 @@ struct WelcomeView: View {
                         let listId = try await unifiedProvider.openNextcloudFile(remotePath: remotePath)
                         selectedListID = listId
                     } catch {
-                        AppLogger.nextcloud.error("Failed to open Nextcloud file: \(error, privacy: .public)")
+                        let nsError = error as NSError
+                        if nsError.domain == "UnifiedListProvider" && nsError.code == 3 {
+                            duplicateListName = nsError.userInfo["existingListName"] as? String
+                            duplicateListID = nsError.userInfo["existingListId"] as? String
+                            showDuplicateListAlert = true
+                        } else if nsError.domain == "UnifiedListProvider" && nsError.code == 1 {
+                            showIDConflictAlert = true
+                        } else {
+                            AppLogger.nextcloud.error("Failed to open Nextcloud file: \(error, privacy: .public)")
+                        }
                     }
                 }
             }
@@ -139,6 +151,25 @@ struct WelcomeView: View {
             }
         } message: {
             Text("This file's ID matches an existing local list. Generate a new ID to open it, or cancel.")
+        }
+        .alert("List Already Open", isPresented: $showDuplicateListAlert) {
+            if let id = duplicateListID {
+                Button("Show List") {
+                    selectedListID = id
+                    duplicateListName = nil
+                    duplicateListID = nil
+                }
+            }
+            Button("OK", role: .cancel) {
+                duplicateListName = nil
+                duplicateListID = nil
+            }
+        } message: {
+            if let name = duplicateListName {
+                Text("A list with the same ID is already open as \"\(name)\".")
+            } else {
+                Text("A list with the same ID is already open.")
+            }
         }
         .alert("Import Failed", isPresented: $deeplinkCoordinator.showError) {
             Button("OK", role: .cancel) {}
@@ -518,6 +549,10 @@ struct WelcomeView: View {
                             showIDConflictAlert = true
                         } else if nsError.domain == "UnifiedListProvider" && nsError.code == 2 {
                             showUnsupportedSourceAlert = true
+                        } else if nsError.domain == "UnifiedListProvider" && nsError.code == 3 {
+                            duplicateListName = nsError.userInfo["existingListName"] as? String
+                            duplicateListID = nsError.userInfo["existingListId"] as? String
+                            showDuplicateListAlert = true
                         } else {
                             AppLogger.fileStore.error("Failed to open file: \(error, privacy: .public)")
                         }
@@ -636,6 +671,10 @@ struct WelcomeView: View {
                 let nsError = error as NSError
                 if nsError.domain == "UnifiedListProvider" && nsError.code == 2 {
                     showUnsupportedSourceAlert = true
+                } else if nsError.domain == "UnifiedListProvider" && nsError.code == 3 {
+                    duplicateListName = nsError.userInfo["existingListName"] as? String
+                    duplicateListID = nsError.userInfo["existingListId"] as? String
+                    showDuplicateListAlert = true
                 } else {
                     AppLogger.deeplinks.error("Failed to open file from deeplink: \(error, privacy: .public)")
                 }

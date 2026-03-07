@@ -56,10 +56,14 @@ class EventKitManager {
         storeChangedObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged, object: store, queue: .main
         ) { [weak self] _ in
-            guard let self, self.isEnabled else { return }
-            // Clear the persisted mapping so stale external identifiers
-            // (for events deleted externally) are not re-queried on next sync.
-            self.eventMapping = [:]
+            // queue: .main guarantees we're on the main thread; assumeIsolated
+            // makes that visible to the Swift Concurrency actor-isolation checker.
+            MainActor.assumeIsolated {
+                guard let self, self.isEnabled else { return }
+                // Clear the persisted mapping so stale external identifiers
+                // (for events deleted externally) are not re-queried on next sync.
+                self.eventMapping = [:]
+            }
         }
     }
 

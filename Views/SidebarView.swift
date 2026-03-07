@@ -128,7 +128,9 @@ struct SidebarView: View {
         }
 
         return dict.values.sorted {
-            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            let cmp = $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
+            if cmp != .orderedSame { return cmp == .orderedAscending }
+            return $0.id < $1.id  // stable tiebreaker when names are equal
         }
     }
     
