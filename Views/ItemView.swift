@@ -45,7 +45,7 @@ struct ItemFormView: View {
     @AppStorage("navShowTomTomGo") private var navShowTomTomGo: Bool = true
 
     private enum PasteLocationFeedback: Equatable {
-        case idle, loading, success, failed, unsupported
+        case idle, loading, success, failed
     }
     
     var body: some View {
@@ -281,9 +281,6 @@ struct ItemFormView: View {
                                 .foregroundStyle(.green)
                         case .failed:
                             Label("No Location Found", systemImage: "xmark")
-                                .foregroundStyle(.red)
-                        case .unsupported:
-                            Label("Use "Copy Link" in Maps", systemImage: "xmark")
                                 .foregroundStyle(.red)
                         }
                     }
