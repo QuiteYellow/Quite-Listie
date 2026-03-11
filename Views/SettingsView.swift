@@ -15,6 +15,10 @@ struct SettingsView: View {
     @Binding var hideEmptyLabels: Bool
 
     @AppStorage("kanbanColumnWidth") private var kanbanColumnWidth = "normal"
+    @AppStorage("navShowAppleMaps") private var navShowAppleMaps: Bool = true
+    @AppStorage("navShowGoogleMaps") private var navShowGoogleMaps: Bool = true
+    @AppStorage("navShowTomTomGo") private var navShowTomTomGo: Bool = true
+    @AppStorage("mapStyleMuted") private var mapStyleMuted: Bool = true
 
     @State private var showQuickAddInfo = false
     @State private var showEmptyLabelsInfo = false
@@ -177,6 +181,21 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Muted Map Style", isOn: $mapStyleMuted)
+                    DisclosureGroup("Navigation Buttons") {
+                        Toggle("Apple Maps", isOn: $navShowAppleMaps)
+                        Toggle("Google Maps", isOn: $navShowGoogleMaps)
+                        #if !targetEnvironment(macCatalyst)
+                        Toggle("TomTom Go", isOn: $navShowTomTomGo)
+                        #endif
+                    }
+                } header: {
+                    Label("Navigation", systemImage: "map")
+                } footer: {
+                    Text("Muted style de-emphasises the map background so your pins stand out. Choose which navigation apps appear on items with a pinned location.")
+                }
+
+                Section {
                     HStack {
                         Text("Quick Add Items")
                         Spacer()
@@ -287,7 +306,7 @@ struct SettingsView: View {
                 } header: {
                     Label("Acknowledgements", systemImage: "heart")
                 } footer: {
-                    Text("Listie is built with these open source libraries. Thank you to their authors.")
+                    Text("Quite Listie is built with these open source libraries. Thank you to their authors.")
                 }
             }
             .navigationTitle("Settings")

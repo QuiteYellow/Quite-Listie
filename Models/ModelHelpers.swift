@@ -44,7 +44,8 @@ enum ModelHelpers {
         isDeleted: Bool = false,
         reminderDate: Date? = nil,
         reminderRepeatRule: ReminderRepeatRule? = nil,
-        reminderRepeatMode: ReminderRepeatMode? = nil
+        reminderRepeatMode: ReminderRepeatMode? = nil,
+        location: Coordinate? = nil
     ) -> ShoppingItem {
         return ShoppingItem(
             id: UUID(),
@@ -57,7 +58,8 @@ enum ModelHelpers {
             isDeleted: isDeleted,
             reminderDate: reminderDate,
             reminderRepeatRule: reminderRepeatRule,
-            reminderRepeatMode: reminderRepeatMode
+            reminderRepeatMode: reminderRepeatMode,
+            location: location
         )
     }
     

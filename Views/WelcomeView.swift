@@ -48,7 +48,10 @@ struct WelcomeView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    private var searchPrompt: String {selectedListID != nil ? "Search items" : "Select a list to search"}
+    private var searchPrompt: String {
+        if selectedListID == "__map" { return "Search locations" }
+        return selectedListID != nil ? "Search items" : "Select a list to search"
+    }
 
     enum ExportType {
         case newConnectedList
@@ -258,8 +261,16 @@ struct WelcomeView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: unifiedProvider.isDownloadingFile)
             }
         }
-        .onChange(of: selectedListID) { _, _ in
+        .onChange(of: selectedListID) { old, _ in
             detailSearchText = ""
+            // Refresh location/reminder counts when navigating away from a regular list
+            // so the sidebar cards stay up-to-date without needing an app restart.
+            let specialIDs: Set<String> = ["__map", "__reminders_today", "__reminders_scheduled"]
+            if let oldID = old, !specialIDs.contains(oldID) {
+                Task {
+                    await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
+                }
+            }
         }
         .onOpenURL { url in
             Task {
@@ -295,7 +306,7 @@ struct WelcomeView: View {
             onOpenNextcloud: { showNextcloudBrowser = true }
         )
         .toolbar {
-            ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
+            ToolbarItem(id: "new", placement: .navigationBarTrailing) {
                 Menu {
                     Button {
                         isPresentingNewList = true
@@ -307,25 +318,36 @@ struct WelcomeView: View {
                         pendingExportType = .newConnectedList
                         showNewConnectedExporter = true
                     } label: {
-                        Label("New List File...", systemImage: "doc.badge.plus")
-                    }
-
-                    Divider()
-
-                    Button {
-                        showFileImporter = true
-                    } label: {
-                        Label("Open File...", systemImage: "folder.badge.plus")
+                        Label("New List in Files...", systemImage: "doc.badge.plus")
                     }
 
                     Button {
                         showNextcloudBrowser = true
                     } label: {
-                        Label("Browse Nextcloud...", systemImage: "cloud")
+                        Label("New List in Nextcloud...", systemImage: "cloud")
                     }
                     .disabled(!isNextcloudConnected)
                 } label: {
-                    Image(systemName: "text.pad.header.badge.plus")
+                    Image(systemName: "square.and.pencil")
+                }
+            }
+
+            ToolbarItem(id: "open", placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        Label("Open from Files...", systemImage: "folder.badge.plus")
+                    }
+
+                    Button {
+                        showNextcloudBrowser = true
+                    } label: {
+                        Label("Open from Nextcloud...", systemImage: "cloud")
+                    }
+                    .disabled(!isNextcloudConnected)
+                } label: {
+                    Image(systemName: "folder.badge.plus")
                 }
             }
 
@@ -396,6 +418,15 @@ struct WelcomeView: View {
                     selectedListID: $selectedListID,
                     searchText: $detailSearchText
                 )
+            } else if selectedListID == "__map" {
+                GlobalMapView(
+                    welcomeViewModel: welcomeViewModel,
+                    searchText: detailSearchText,
+                    onTapItem: { item, list in
+                        selectedListID = list.id
+                        pendingItemID = item.id.uuidString
+                    }
+                )
             } else if let listID = selectedListID,
                let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
                 ShoppingListView(
@@ -435,7 +466,7 @@ struct WelcomeView: View {
             list: unifiedList.summary,
             unifiedList: unifiedList,
             unifiedProvider: unifiedProvider
-        ) { updatedName, icon, hiddenLabels, labelOrder in
+        ) { updatedName, icon, hiddenLabels, labelOrder, enableMapData in
             Task {
                 do {
                     let _ = try await unifiedProvider.fetchItems(for: unifiedList)
@@ -444,7 +475,8 @@ struct WelcomeView: View {
                         name: updatedName,
                         icon: icon,
                         hiddenLabels: hiddenLabels,
-                        labelOrder: labelOrder
+                        labelOrder: labelOrder,
+                        enableMapData: enableMapData
                     )
                 } catch {
                     AppLogger.fileStore.warning("Failed to save list settings: \(error, privacy: .public)")

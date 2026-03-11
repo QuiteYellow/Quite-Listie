@@ -139,6 +139,20 @@ class UnifiedListProvider {
         }
     }
 
+    /// Updates the document cache for the appropriate backend without triggering autosave.
+    /// Use before an immediate `saveFile` call so merge logic sees the latest document.
+    private func updateDocumentCache(_ doc: ListDocument, for list: UnifiedList) async {
+        switch list.source {
+        case .privateICloud(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            await FileStore.shared.updateCache(doc, at: url)
+        case .external(let url):
+            await FileStore.shared.updateCache(doc, at: url)
+        case .nextcloud(_, let remotePath):
+            await NextcloudManager.shared.updateCache(doc, remotePath: remotePath)
+        }
+    }
+
     /// Caches label array into the per-backend reactive dictionary.
     private func cacheLabels(_ labels: [ShoppingLabel], for list: UnifiedList) {
         switch list.source {
@@ -766,6 +780,9 @@ class UnifiedListProvider {
             document.labels[index] = label
             document.list.modifiedAt = Date()
             cacheLabels(document.labels, for: list)
+            // Update document cache before saving so any merge logic sees the new label,
+            // not the stale pre-edit version (fixes Nextcloud Stage-1 merge discarding edits).
+            await updateDocumentCache(document, for: list)
             try await saveFile(document, for: list)
             AppLogger.labels.info("[updateLabel] Label saved successfully")
         } else {
@@ -782,6 +799,9 @@ class UnifiedListProvider {
         document.labels.removeAll { $0.id == label.id }
         document.list.modifiedAt = Date()
         cacheLabels(document.labels, for: list)
+        // Update document cache before saving so any merge logic sees the deletion,
+        // not the stale pre-delete version (fixes Nextcloud Stage-1 merge restoring deleted labels).
+        await updateDocumentCache(document, for: list)
         try await saveFile(document, for: list)
         AppLogger.labels.info("[deleteLabel] Label deleted successfully")
     }
@@ -795,7 +815,7 @@ class UnifiedListProvider {
 
     // MARK: - List Management
 
-    func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?, labelOrder: [String]? = nil) async throws {
+    func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?, labelOrder: [String]? = nil, enableMapData: Bool? = nil) async throws {
         AppLogger.general.debug("[updateList] Loading document...")
         var document = try await openDocument(for: list)
         AppLogger.general.debug("[updateList] Document has \(document.labels.count, privacy: .public) labels, \(document.items.count, privacy: .public) items")
@@ -804,6 +824,12 @@ class UnifiedListProvider {
         document.list.icon = icon
         document.list.hiddenLabels = hiddenLabels
         document.list.labelOrder = labelOrder
+        // Only update enableMapData when explicitly passed by the caller.
+        // nil (the default) means "this caller doesn't manage this field — leave it unchanged."
+        // ListSettingsView always passes true or false; other callers (WelcomeView, etc.) pass nil.
+        if let enableMapData {
+            document.list.enableMapData = enableMapData ? true : nil  // store false as nil for JSON compactness
+        }
         document.list.modifiedAt = Date()
 
         if case .privateICloud = list.source {

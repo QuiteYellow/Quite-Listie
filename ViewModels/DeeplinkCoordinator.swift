@@ -20,7 +20,7 @@ class DeeplinkCoordinator {
     var errorMessage: String?
     var showError = false
 
-    /// Set when a `listie://item?id=<itemUUID>` deeplink is received.
+    /// Set when a `quitelistie://item?id=<itemUUID>` deeplink is received.
     /// WelcomeView navigates to the resolved list and ShoppingListView opens the editor.
     var pendingItemNavigation: ItemNavigation?
 
@@ -54,8 +54,8 @@ class DeeplinkCoordinator {
             return
         }
 
-        // Handle listie:// scheme
-        guard url.scheme == "listie" else {
+        // Handle quitelistie:// scheme (also accept legacy listie:// for backward compatibility)
+        guard url.scheme == "quitelistie" || url.scheme == "listie" else {
             AppLogger.deeplinks.warning("[Deeplink] Unhandled URL scheme: \(url.scheme ?? "nil", privacy: .public)")
             return
         }

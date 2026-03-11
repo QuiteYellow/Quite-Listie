@@ -10,7 +10,7 @@ import Foundation
 import os
 
 enum AppLogger {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.quiteyellow.listiemd"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.quiteyellow.quitelistie"
 
     // Storage & file I/O
     static let iCloud    = Logger(subsystem: subsystem, category: "iCloud")
@@ -36,4 +36,5 @@ enum AppLogger {
     // UI / general
     static let ui        = Logger(subsystem: subsystem, category: "UI")
     static let general   = Logger(subsystem: subsystem, category: "General")
+    static let location  = Logger(subsystem: subsystem, category: "Location")
 }

@@ -1,4 +1,4 @@
-# Listie — iOS, iPadOS and macOS
+# Quite Listie — iOS, iPadOS and macOS
 A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and Nextcloud sync.
 
 <img width="1310" alt="Screenshot 2025-05-31 at 16 20 24" src="https://github.com/user-attachments/assets/c4ea3a65-4db1-4d05-903d-cd8a9708a0f7" />
@@ -34,7 +34,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 ### Import & Export
 - **Markdown import** — paste any markdown checklist, intelligently merges with existing items
 - **Markdown export** — share lists as readable text
-- **Listie file export** — full backup with all data
+- **Quite Listie file export** — full backup with all data
 - Deeplink support for sharing lists via URLs
 
 ### Collaboration & Sync
