@@ -15,7 +15,7 @@ struct ListSettingsView: View {
     let list: ShoppingListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    let onSave: (String, String?, [String]?, [String]?) -> Void  // (name, icon, hiddenLabels, labelOrder)
+    let onSave: (String, String?, [String]?, [String]?, Bool?) -> Void  // (name, icon, hiddenLabels, labelOrder, enableMapData)
 
     
     @Environment(\.dismiss) var dismiss
@@ -32,6 +32,7 @@ struct ListSettingsView: View {
     
     @State private var showCompletedAtBottom: Bool = false
     @State private var listBackground: ListBackground? = nil
+    @State private var enableMapData: Bool = false
 
     // Favorites stored in UserDefaults
     @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
@@ -337,6 +338,11 @@ struct ListSettingsView: View {
                         Label("Show Completed as Separate Label", systemImage: "checkmark.circle.badge.questionmark")
                     }
                     .toggleStyle(.switch)
+
+                    Toggle(isOn: $enableMapData) {
+                        Label("Map Data", systemImage: "mappin.and.ellipse")
+                    }
+                    .toggleStyle(.switch)
                 }
 
                 backgroundSection
@@ -377,7 +383,7 @@ struct ListSettingsView: View {
                         // Call with direct values (convert Set to Array)
                         let hiddenArray = hiddenLabelIDs.isEmpty ? nil : Array(hiddenLabelIDs)
                         let labelOrderArray = allLabels.map { $0.id }
-                        onSave(name, icon, hiddenArray, labelOrderArray)
+                        onSave(name, icon, hiddenArray, labelOrderArray, enableMapData ? true : false)
                         
                         NotificationCenter.default.post(name: .listSettingsChanged, object: nil)
 
@@ -441,11 +447,12 @@ struct ListSettingsView: View {
         }
         .onAppear {
             Task {
-                // Force reload from storage to get latest data
+                // Force reload from storage to get latest data, then read the
+                // refreshed entry from allLists (reloadList updates allLists in place;
+                // the local `unifiedList` constant is a stale snapshot and must not be used).
                 await unifiedProvider.reloadList(unifiedList)
-                
-                // Now read fresh data
-                let currentList = unifiedList.summary
+                let currentList = unifiedProvider.allLists
+                    .first(where: { $0.id == unifiedList.id })?.summary ?? unifiedList.summary
                 
                 name = currentList.name
                 icon = currentList.icon ?? "checklist"
@@ -462,6 +469,8 @@ struct ListSettingsView: View {
                 // Load background preference
                 let bgDict = (try? JSONDecoder().decode([String: ListBackground].self, from: listBackgroundsData)) ?? [:]
                 listBackground = bgDict[currentList.id]
+
+                enableMapData = currentList.enableMapData ?? false
             }
         }
     }

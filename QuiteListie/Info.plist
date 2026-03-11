@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
+	<string>Quite Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
+	<string>Quite Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.quiteyellow.listiemd.reminderRefresh</string>
+		<string>com.quiteyellow.quitelistie.reminderRefresh</string>
 	</array>
 	<key>UIApplicationSupportsMultipleScenes</key>
 		<true/>
@@ -26,9 +26,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.listie.import</string>
+			<string>com.quitelistie.import</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>quitelistie</string>
 				<string>listie</string>
 			</array>
 		</dict>
@@ -42,7 +43,7 @@
 				<string>public.content</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Listie Document</string>
+			<string>Quite Listie Document</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.listie.list</string>
 			<key>UTTypeTagSpecification</key>
@@ -58,11 +59,16 @@
 			</dict>
 		</dict>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>tomtomgo</string>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Listie Document</string>
+			<string>Quite Listie Document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>

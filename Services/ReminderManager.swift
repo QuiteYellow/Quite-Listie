@@ -88,7 +88,8 @@ enum ReminderManager {
         content.categoryIdentifier = categoryIdentifier
         content.userInfo = [
             "itemId": item.id.uuidString,
-            "listId": listId
+            "listId": listId,
+            "scheduledDate": reminderDate.timeIntervalSince1970
         ]
 
         let components = Calendar.current.dateComponents(
@@ -211,11 +212,19 @@ enum ReminderManager {
             center.removePendingNotificationRequests(withIdentifiers: Array(idsToCancel))
         }
 
-        // 2. Schedule items that are in the budget but not yet pending (and in the future)
+        // 2. Schedule items that are in the budget but not yet pending (and in the future),
+        //    or already pending but missing scheduledDate (migrate legacy notifications).
         var scheduledCount = 0
         for entry in itemsToSchedule {
             let nId = notificationId(for: entry.item)
-            if pendingById[nId] == nil, let date = entry.item.reminderDate, date > now {
+            guard let date = entry.item.reminderDate, date > now else { continue }
+            let existing = pendingById[nId]
+            let needsSchedule = existing == nil
+            let needsMigration = existing?.content.userInfo["scheduledDate"] == nil
+            if needsSchedule || needsMigration {
+                if needsMigration && !needsSchedule {
+                    AppLogger.reminders.info("[Reconcile] Migrating legacy notification for '\(entry.item.note, privacy: .public)' to embed scheduledDate")
+                }
                 scheduleReminder(for: entry.item, listName: entry.listName, listId: entry.listId)
                 scheduledCount += 1
             }
@@ -301,7 +310,7 @@ enum ReminderManager {
     /// Completes an item directly from a notification action.
     /// Handles repeating reminders (advance to next date) and one-off reminders (check off + clear).
     @MainActor
-    static func completeItemFromNotification(itemId: String, listId: String) async {
+    static func completeItemFromNotification(itemId: String, listId: String, scheduledDate: TimeInterval? = nil) async {
         AppLogger.reminders.info("[Notification] Complete action for item \(itemId, privacy: .public) in list \(listId, privacy: .public)")
 
         let provider = UnifiedListProvider()
@@ -318,6 +327,19 @@ enum ReminderManager {
                   var item = items.first(where: { $0.id == itemUUID }) else {
                 AppLogger.reminders.error("[Notification] Item not found: \(itemId, privacy: .public)")
                 return
+            }
+
+            // Guard against double-advance on shared/recurring items:
+            // If another device already completed this occurrence, the item's reminderDate
+            // will have advanced. Bail out so we don't skip an occurrence.
+            if let scheduledDate {
+                let notificationWasFor = Date(timeIntervalSince1970: scheduledDate)
+                guard let currentDate = item.reminderDate,
+                      abs(currentDate.timeIntervalSince(notificationWasFor)) <= 60 else {
+                    AppLogger.reminders.info("[Notification] Skipping stale notification for '\(item.note, privacy: .public)' — item already advanced by another device")
+                    return
+                }
+                AppLogger.reminders.info("[Notification] Proceeding — notification date matches current reminder date for '\(item.note, privacy: .public)'")
             }
 
             item.modifiedAt = Date()

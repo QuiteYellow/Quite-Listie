@@ -40,52 +40,61 @@ struct ListDocument: Codable {
     }
 }
 
+// MARK: - Coordinate
+struct Coordinate: Codable, Equatable {
+    var latitude: Double
+    var longitude: Double
+}
+
 // MARK: - Shopping List
 struct ShoppingListSummary: Codable, Identifiable, Hashable {
     var id: String  // Clean UUID without "local-" prefix
     var name: String
     var modifiedAt: Date
-    
+
     // Optional fields for compatibility and features
     var icon: String?
     var hiddenLabels: [String]?  // Array of label IDs to hide
     var labelOrder: [String]?    // Array of label IDs defining custom display order
+    var enableMapData: Bool?     // Opt-in per-list map/location support
 
 
 
     enum CodingKeys: String, CodingKey {
-            case id, name, modifiedAt, icon, hiddenLabels, labelOrder
+            case id, name, modifiedAt, icon, hiddenLabels, labelOrder, enableMapData
         }
-        
+
         // Custom decoder for defensive parsing
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            
+
             // Required fields
             self.id = try container.decode(String.self, forKey: .id)
             self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unnamed List"
-            
+
             // Handle modification date with fallback
             if let modDate = try? container.decode(Date.self, forKey: .modifiedAt) {
                 self.modifiedAt = modDate
             } else {
                 self.modifiedAt = Date() // Fallback to current date
             }
-            
+
             // Optional fields
             self.icon = try container.decodeIfPresent(String.self, forKey: .icon)
             self.hiddenLabels = try container.decodeIfPresent([String].self, forKey: .hiddenLabels)
             self.labelOrder = try container.decodeIfPresent([String].self, forKey: .labelOrder)
+            self.enableMapData = try container.decodeIfPresent(Bool.self, forKey: .enableMapData)
 
         }
 
-        init(id: String, name: String, modifiedAt: Date = Date(), icon: String? = nil, hiddenLabels: [String]? = nil, labelOrder: [String]? = nil) {
+        init(id: String, name: String, modifiedAt: Date = Date(), icon: String? = nil, hiddenLabels: [String]? = nil, labelOrder: [String]? = nil, enableMapData: Bool? = nil) {
             self.id = id
             self.name = name
             self.modifiedAt = modifiedAt
             self.icon = icon
             self.hiddenLabels = hiddenLabels
             self.labelOrder = labelOrder
+            self.enableMapData = enableMapData
         }
     
     // Helper to get clean ID (remove "local-" prefix if present)
@@ -192,16 +201,18 @@ struct ShoppingItem: Identifiable, Codable {
     var reminderDate: Date?  // when to send a reminder notification
     var reminderRepeatRule: ReminderRepeatRule?  // repeat rule (unit + interval)
     var reminderRepeatMode: ReminderRepeatMode?  // fixed or after-completion
+    var location: Coordinate?  // optional pinned map coordinate
 
 
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode, location
         }
 
     init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
              labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(),
              isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil,
-             reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) {
+             reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil,
+             location: Coordinate? = nil) {
             self.id = id
             self.note = note
             self.quantity = quantity
@@ -214,6 +225,7 @@ struct ShoppingItem: Identifiable, Codable {
             self.reminderDate = reminderDate
             self.reminderRepeatRule = reminderRepeatRule
             self.reminderRepeatMode = reminderRepeatMode
+            self.location = location
         }
     }
 
