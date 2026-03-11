@@ -17,7 +17,7 @@ import UserNotifications
 
 enum BackgroundRefreshManager {
 
-    static let taskIdentifier = "com.quiteyellow.listiemd.reminderRefresh"
+    static let taskIdentifier = "com.quiteyellow.quitelistie.reminderRefresh"
 
     // MARK: - Registration
 

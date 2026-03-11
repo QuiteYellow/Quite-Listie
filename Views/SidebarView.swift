@@ -137,38 +137,56 @@ struct SidebarView: View {
     var body: some View {
         List(selection: $selectedListID) {
 
-            // MARK: - Reminder Smart Boxes
+            // MARK: - Smart Boxes (Reminders + Locations)
             let todayCount = welcomeViewModel.todayReminderCount
             let scheduledCount = welcomeViewModel.scheduledReminderCount
+            let locationCount = welcomeViewModel.activeLocationCount
 
-            if todayCount > 0 || scheduledCount > 0 {
+            if todayCount > 0 || scheduledCount > 0 || locationCount > 0 {
                 Section {
-                    HStack(spacing: 12) {
-                        // Today box
-                        ReminderSmartBox(
-                            title: "Today",
-                            count: todayCount,
-                            icon: "calendar.circle.fill",
-                            color: .orange,
-                            isSelected: selectedListID == "__reminders_today"
-                        ) {
-                            selectedListID = "__reminders_today"
-                        }
+                    // Today + Scheduled row (shown when either has items)
+                    if todayCount > 0 || scheduledCount > 0 {
+                        HStack(spacing: 12) {
+                            ReminderSmartBox(
+                                title: "Today",
+                                count: todayCount,
+                                icon: "calendar.circle.fill",
+                                color: .orange,
+                                isSelected: selectedListID == "__reminders_today"
+                            ) {
+                                selectedListID = "__reminders_today"
+                            }
 
-                        // Scheduled box
-                        ReminderSmartBox(
-                            title: "Scheduled",
-                            count: scheduledCount,
-                            icon: "calendar.badge.clock",
-                            color: .blue,
-                            isSelected: selectedListID == "__reminders_scheduled"
-                        ) {
-                            selectedListID = "__reminders_scheduled"
+                            ReminderSmartBox(
+                                title: "Scheduled",
+                                count: scheduledCount,
+                                icon: "calendar.badge.clock",
+                                color: .blue,
+                                isSelected: selectedListID == "__reminders_scheduled"
+                            ) {
+                                selectedListID = "__reminders_scheduled"
+                            }
                         }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+
+                    // Locations card (shown when any list has pinned items)
+                    if locationCount > 0 {
+                        ReminderSmartBox(
+                            title: "Locations",
+                            count: locationCount,
+                            icon: "mappin.circle.fill",
+                            color: .green,
+                            isSelected: selectedListID == "__map"
+                        ) {
+                            selectedListID = "__map"
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 4, trailing: 0))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
                 }
             }
                 
@@ -234,7 +252,7 @@ struct SidebarView: View {
                 }
             }
         }
-        .navigationTitle("Listie.md")
+        .navigationTitle("Quite Listie")
         .navigationBarTitleDisplayMode(.large)
         //.animation(.none, value: welcomeViewModel.uncheckedCounts)
         //.animation(.none, value: unifiedProvider.allLists)

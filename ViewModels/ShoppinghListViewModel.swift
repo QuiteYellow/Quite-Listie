@@ -12,6 +12,7 @@ import SwiftUI
 enum ListViewMode: String, Codable {
     case list
     case kanban
+    case map
 }
 
 @Observable
@@ -161,7 +162,7 @@ class ShoppingListViewModel {
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         var newItem = ModelHelpers.createNewItem(
             note: note,
@@ -171,7 +172,8 @@ class ShoppingListViewModel {
             markdownNotes: markdownNotes,
             reminderDate: reminderDate,
             reminderRepeatRule: reminderRepeatRule,
-            reminderRepeatMode: reminderRepeatMode
+            reminderRepeatMode: reminderRepeatMode,
+            location: location
         )
 
         // Handle recurrence when adding a checked item with a repeat rule
@@ -332,7 +334,7 @@ class ShoppingListViewModel {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil) async -> Bool {
+    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
@@ -342,6 +344,7 @@ class ShoppingListViewModel {
         updatedItem.reminderDate = reminderDate
         updatedItem.reminderRepeatRule = reminderRepeatRule
         updatedItem.reminderRepeatMode = reminderRepeatMode
+        updatedItem.location = location
         updatedItem.modifiedAt = Date()  // Update timestamp
 
         // Handle recurrence when checking off an item with a repeat rule

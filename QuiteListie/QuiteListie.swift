@@ -38,8 +38,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         if response.actionIdentifier == ReminderManager.completeActionIdentifier,
            let listId, let itemId {
             // "Complete" action — mark the item done in the background
+            let scheduledDate = userInfo["scheduledDate"] as? TimeInterval
             Task {
-                await ReminderManager.completeItemFromNotification(itemId: itemId, listId: listId)
+                await ReminderManager.completeItemFromNotification(itemId: itemId, listId: listId, scheduledDate: scheduledDate)
                 // Post so UI refreshes if visible
                 NotificationCenter.default.post(
                     name: .reminderCompleted,
@@ -115,39 +116,50 @@ struct ShoppingListApp: App {
 
                 Divider()
 
-                Button {
-                    newListSheet = true
-                } label: {
-                    Label("New Private List...", systemImage: "doc.badge.plus")
-                }
-                .keyboardShortcut("N", modifiers: .command)
-                .disabled(newListSheet == nil)
-               
-                Button {
-                    newConnectedExporter = true
-                } label: {
-                    Label("New List File...", systemImage: "doc.badge.plus")
-                }
-                .keyboardShortcut("N", modifiers: [.command, .shift])
-                .disabled(newConnectedExporter == nil)
-                
-                Divider()
-                
-                Button {
-                    fileImporter = true
-                } label: {
-                    Label("Open File...", systemImage: "folder.badge.plus")
-                }
-                .keyboardShortcut("O", modifiers: .command)
-                .disabled(fileImporter == nil)
+                Menu("New List...") {
+                    Button {
+                        newListSheet = true
+                    } label: {
+                        Label("New Private List...", systemImage: "doc.badge.plus")
+                    }
+                    .keyboardShortcut("N", modifiers: .command)
+                    .disabled(newListSheet == nil)
 
-                Button {
-                    nextcloudBrowser = true
-                } label: {
-                    Label("Browse Nextcloud...", systemImage: "cloud")
+                    Button {
+                        newConnectedExporter = true
+                    } label: {
+                        Label("New List in Files...", systemImage: "doc.badge.plus")
+                    }
+                    .keyboardShortcut("N", modifiers: [.command, .shift])
+                    .disabled(newConnectedExporter == nil)
+
+                    Button {
+                        nextcloudBrowser = true
+                    } label: {
+                        Label("New List in Nextcloud...", systemImage: "cloud")
+                    }
+                    .disabled(nextcloudBrowser == nil)
                 }
-                .keyboardShortcut("O", modifiers: [.command, .shift])
-                .disabled(nextcloudBrowser == nil)
+
+                Divider()
+
+                Menu("Open List...") {
+                    Button {
+                        fileImporter = true
+                    } label: {
+                        Label("Open from Files...", systemImage: "folder.badge.plus")
+                    }
+                    .keyboardShortcut("O", modifiers: .command)
+                    .disabled(fileImporter == nil)
+
+                    Button {
+                        nextcloudBrowser = true
+                    } label: {
+                        Label("Open from Nextcloud...", systemImage: "cloud")
+                    }
+                    .keyboardShortcut("O", modifiers: [.command, .shift])
+                    .disabled(nextcloudBrowser == nil)
+                }
 
                 Divider()
             }
@@ -171,7 +183,7 @@ struct ShoppingListApp: App {
 
                     Divider()
 
-                    Button("Listie File...") {
+                    Button("Quite Listie File...") {
                         exportJSON = true
                     }
                     .keyboardShortcut("E", modifiers: [.command, .shift])

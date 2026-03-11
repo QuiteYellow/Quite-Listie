@@ -1,6 +1,6 @@
 # Privacy Policy
 
-This privacy policy applies to the Lists for Mealie app (hereby referred to as "Application") for mobile devices that was created by Jack Weekes (hereby referred to as "Service Provider") as an Open Source service. This service is intended for use "AS IS".
+This privacy policy applies to the Quite Listie app (hereby referred to as "Application") for mobile devices that was created by Jack Weekes (hereby referred to as "Service Provider") as an Open Source service. This service is intended for use "AS IS".
 
 **What information does the Application obtain and how is it used?**
 

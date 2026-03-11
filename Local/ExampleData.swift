@@ -555,7 +555,7 @@ From any list, tap the **menu** → **Export As...** to choose a format.
 | Format | Description |
 |---|---|
 | **Markdown** | A readable `.md` file. Great for pasting into messages, email, or notes apps. |
-| **Share Link** | A `listie://` URL that another Listie user can tap to import your items. |
+| **Share Link** | A `quitelistie://` URL that another Quite Listie user can tap to import your items. |
 | **Listie File** | A full `.listie` JSON backup with all data, labels, reminders, and metadata. |
 
 ### Markdown Export Options
@@ -566,11 +566,11 @@ From any list, tap the **menu** → **Export As...** to choose a format.
 - Copy to clipboard or save as a file
 
 ### Share Links
-- Generate a `listie://import` URL
+- Generate a `quitelistie://import` URL
 - Enable **compression** to reduce URL length (recommended)
 - Links under 2,000 characters work everywhere
 - Links over 4,000 characters may be truncated by some messaging apps
-- The recipient taps the link → Listie opens → items are imported
+- The recipient taps the link → Quite Listie opens → items are imported
 """,
             modifiedAt: Date()
         ),
@@ -585,11 +585,11 @@ From any list, tap the **menu** → **Export As...** to choose a format.
 ## Deep Links & Apple Shortcuts
 
 ### URL Scheme
-Listie supports the `listie://` URL scheme for automation and sharing.
+Quite Listie supports the `quitelistie://` URL scheme for automation and sharing.
 
 **URL format:**
 ```
-listie://import?list=LIST_ID&markdown=ENCODED&enc=zlib&preview=true
+quitelistie://import?list=LIST_ID&markdown=ENCODED&enc=zlib&preview=true
 ```
 
 ### Parameters
@@ -615,7 +615,7 @@ listie://import?list=LIST_ID&markdown=ENCODED&enc=zlib&preview=true
 4. Set `enc=zlib`
 
 ### Apple Shortcuts Integration
-- Use **Get Contents of URL** to open `listie://` links
+- Use **Get Contents of URL** to open `quitelistie://` links
 - Use **Base64 Encode** for the markdown parameter
 - Build the URL with **Combine Text**
 - Generate lists from Reminders, Notes, or any text source

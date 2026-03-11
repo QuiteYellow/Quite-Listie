@@ -6,7 +6,7 @@
 //
 
 import XCTest
-@testable import Listie_md
+@testable import QuiteListie
 
 final class MarkdownListParserTests: XCTestCase {
 

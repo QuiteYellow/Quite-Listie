@@ -53,7 +53,7 @@ struct ShareLinkSheet: View {
             Form {
                 // Info
                 Section {
-                    Text("Anyone with this link can import these items into their Listie app. They will be importing a copy. To collaborate, share a .listie file directly via icloud (or similar).")
+                    Text("Anyone with this link can import these items into their Quite Listie app. They will be importing a copy. To collaborate, share a .listie file directly via icloud (or similar).")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -216,6 +216,6 @@ struct ShareLinkSheet: View {
             encParam = "b64"
         }
 
-        return "listie://import?list=\(id)&markdown=\(encodedMarkdown)&enc=\(encParam)&preview=true"
+        return "quitelistie://import?list=\(id)&markdown=\(encodedMarkdown)&enc=\(encParam)&preview=true"
     }
 }

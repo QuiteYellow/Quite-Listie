@@ -6,7 +6,7 @@
 //  The user can then share that calendar from Calendar.app to get a real webcal:// URL
 //  hosted by Apple's iCloud infrastructure — works on iOS, Mac, Google Calendar, etc.
 //
-//  Events are identified via the event's URL field (listie://item?id=<UUID>), which syncs
+//  Events are identified via the event's URL field (quitelistie://item?id=<UUID>), which syncs
 //  via iCloud and is readable on every device. A local [UUID → eventIdentifier] cache in
 //  UserDefaults is rebuilt from this URL each sync, preventing cross-device duplication.
 //
@@ -41,11 +41,12 @@ class EventKitManager {
     // MARK: - Private
 
     private let store = EKEventStore()
-    private let calendarName = "Listie Schedule"
+    private let calendarName = "Quite Listie Schedule"
     private let enabledKey = "com.listie.eventkit-enabled"
     private let calendarIdKey = "com.listie.eventkit-calendar-id"
     private let sourceIdKey = "com.listie.eventkit-source-id"
     private let eventMappingKey = "com.listie.eventkit-event-mapping"
+    private let calendarMigratedKey = "com.listie.eventkit-calendar-renamed-v1"
 
     /// Debounce task for coalescing rapid sync calls.
     private var syncTask: Task<Void, Never>?
@@ -94,8 +95,25 @@ class EventKitManager {
         authStatus = EKEventStore.authorizationStatus(for: .event)
         if Self.isAuthorized(authStatus) {
             loadAvailableSources()
+            migrateCalendarNameIfNeeded()
             if isEnabled { calendarExists = findCalendar() != nil }
         }
+    }
+
+    /// One-time migration: renames a legacy "Listie Schedule" calendar to "Quite Listie Schedule".
+    private func migrateCalendarNameIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: calendarMigratedKey) else { return }
+        defer { UserDefaults.standard.set(true, forKey: calendarMigratedKey) }
+
+        let oldName = "Listie Schedule"
+        guard let calendar = store.calendars(for: .event).first(where: { $0.title == oldName }),
+              calendar.allowsContentModifications else { return }
+
+        calendar.title = calendarName
+        try? store.saveCalendar(calendar, commit: true)
+
+        // Re-persist the identifier in case it changed after save
+        UserDefaults.standard.set(calendar.calendarIdentifier, forKey: calendarIdKey)
     }
 
     /// Populates `availableSources` with usable EKSource accounts, sorted best-first.
@@ -374,7 +392,7 @@ class EventKitManager {
             resolvedEvent = event  // newly created EKEvent
         }
 
-        let deeplink = URL(string: "listie://item?id=\(item.id.uuidString)")
+        let deeplink = URL(string: "quitelistie://item?id=\(item.id.uuidString)")
 
         // Dirty check — skip save if the resolved event already matches all fields.
         // url is intentionally excluded so existing events without one get it added silently.

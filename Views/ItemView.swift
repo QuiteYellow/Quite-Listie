@@ -31,8 +31,22 @@ struct ItemFormView: View {
     var folderName: String? = nil
     /// When set, a "Copy Item Link" button appears next to "Edit Notes".
     var itemID: UUID? = nil
+    /// Whether map/location features are enabled for this list.
+    var enableMapData: Bool = false
+    /// The item's current pinned coordinate (read/write).
+    @Binding var location: Coordinate?
 
     @State private var linkCopied = false
+    @State private var pasteLocationFeedback: PasteLocationFeedback = .idle
+    @State private var showRemoveLocationConfirm = false
+
+    @AppStorage("navShowAppleMaps") private var navShowAppleMaps: Bool = true
+    @AppStorage("navShowGoogleMaps") private var navShowGoogleMaps: Bool = true
+    @AppStorage("navShowTomTomGo") private var navShowTomTomGo: Bool = true
+
+    private enum PasteLocationFeedback: Equatable {
+        case idle, loading, success, failed, unsupported
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -83,7 +97,7 @@ struct ItemFormView: View {
         HStack(spacing: 10) {
             if let itemID {
                 Button {
-                    UIPasteboard.general.string = "listie://item?id=\(itemID.uuidString)"
+                    UIPasteboard.general.string = "quitelistie://item?id=\(itemID.uuidString)"
                     withAnimation(.easeInOut(duration: 0.15)) { linkCopied = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         withAnimation(.easeInOut(duration: 0.3)) { linkCopied = false }
@@ -212,9 +226,74 @@ struct ItemFormView: View {
                 }
             }
 
+            // Location — shown just below Reminder when map data is enabled
+            if enableMapData {
+                if let coord = location {
+                    HStack {
+                        Label("Location", systemImage: "mappin.and.ellipse")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(String(format: "%.4f°, %.4f°", coord.latitude, coord.longitude))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            showRemoveLocationConfirm = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .confirmationDialog("Remove Location?", isPresented: $showRemoveLocationConfirm, titleVisibility: .visible) {
+                        Button("Remove", role: .destructive) { location = nil }
+                        Button("Cancel", role: .cancel) {}
+                    }
+
+                    if navShowAppleMaps {
+                        Button { openInAppleMaps(coord) } label: {
+                            Label("Navigate with Apple Maps", systemImage: "map")
+                        }
+                    }
+                    if navShowGoogleMaps {
+                        Button { openInGoogleMaps(coord) } label: {
+                            Label("Navigate with Google Maps", systemImage: "globe")
+                        }
+                    }
+                    #if !targetEnvironment(macCatalyst)
+                    if navShowTomTomGo {
+                        Button { navigateInTomTomGo(coord) } label: {
+                            Label("Navigate with TomTom Go", systemImage: "car.fill")
+                        }
+                    }
+                    #endif
+                } else {
+                    Button {
+                        Task { await pasteLocation() }
+                    } label: {
+                        switch pasteLocationFeedback {
+                        case .idle:
+                            Label("Paste Location", systemImage: "mappin.and.ellipse")
+                        case .loading:
+                            Label("Reading…", systemImage: "mappin.and.ellipse")
+                                .foregroundStyle(.secondary)
+                        case .success:
+                            Label("Location Added", systemImage: "checkmark")
+                                .foregroundStyle(.green)
+                        case .failed:
+                            Label("No Location Found", systemImage: "xmark")
+                                .foregroundStyle(.red)
+                        case .unsupported:
+                            Label("Use "Copy Link" in Maps", systemImage: "xmark")
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .disabled(pasteLocationFeedback == .loading)
+                }
+            }
+
             if let name = listName {
                 HStack(spacing: 6) {
-                    
+
                     Spacer()
                     ItemFormChip(
                         icon: listIcon ?? "list.bullet",
@@ -232,7 +311,62 @@ struct ItemFormView: View {
             }
         }
     }
-    
+
+    private func pasteLocation() async {
+        guard let text = UIPasteboard.general.string else {
+            pasteLocationFeedback = .failed
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            pasteLocationFeedback = .idle
+            return
+        }
+        pasteLocationFeedback = .loading
+        AppLogger.location.debug("pasteLocation clipboard: \(text, privacy: .public)")
+        if let coord = await LocationParser.parseCoordinate(from: text) {
+            AppLogger.location.debug("pasteLocation parsed: \(coord.latitude, privacy: .public), \(coord.longitude, privacy: .public)")
+            location = coord
+            // Append the source link to markdown notes
+            let trimmedURL = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let link = "\n[Location](\(trimmedURL))"
+            if !mdNotes.contains(link) {
+                mdNotes += link
+            }
+            pasteLocationFeedback = .success
+        } else {
+            AppLogger.location.warning("pasteLocation failed to parse: \(text, privacy: .public)")
+            pasteLocationFeedback = .failed
+        }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        pasteLocationFeedback = .idle
+    }
+
+    private func openInAppleMaps(_ coord: Coordinate) {
+        var components = URLComponents(string: "maps://")!
+        components.queryItems = [
+            URLQueryItem(name: "daddr", value: "\(coord.latitude),\(coord.longitude)")
+        ]
+        if let url = components.url {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func openInGoogleMaps(_ coord: Coordinate) {
+        let destination = "\(coord.latitude),\(coord.longitude)"
+        // Try the native app first, fall back to the web URL
+        if let appURL = URL(string: "comgooglemaps://?daddr=\(destination)&directionsmode=driving"),
+           UIApplication.shared.canOpenURL(appURL) {
+            UIApplication.shared.open(appURL)
+        } else if let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(destination)") {
+            UIApplication.shared.open(webURL)
+        }
+    }
+
+    private func navigateInTomTomGo(_ coord: Coordinate) {
+        let destination = "\(coord.latitude),\(coord.longitude)"
+        if let url = URL(string: "tomtomgo://x-callback-url/navigate?destination=\(destination)") {
+            UIApplication.shared.open(url)
+        }
+    }
+
     private var formRightContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -362,6 +496,7 @@ struct AddItemView: View {
     @State private var reminderDate = Date().addingTimeInterval(3600) // Default: 1 hour from now
     @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
+    @State private var location: Coordinate? = nil
 
     var body: some View {
         NavigationStack {
@@ -377,7 +512,9 @@ struct AddItemView: View {
                 repeatRule: $repeatRule,
                 repeatMode: $repeatMode,
                 availableLabels: availableLabels,
-                isLoading: isLoading
+                isLoading: isLoading,
+                enableMapData: list.enableMapData == true,
+                location: $location
             )
             .navigationTitle("Add Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -393,7 +530,8 @@ struct AddItemView: View {
                                 markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
                                 reminderDate: reminderEnabled ? reminderDate : nil,
                                 reminderRepeatRule: reminderEnabled ? repeatRule : nil,
-                                reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil
+                                reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil,
+                                location: location
                             )
                             if success {
                                 dismiss()
@@ -472,6 +610,7 @@ struct EditItemView: View {
     @State private var reminderDate = Date().addingTimeInterval(3600)
     @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
+    @State private var location: Coordinate? = nil
 
     var body: some View {
         NavigationStack {
@@ -491,7 +630,9 @@ struct EditItemView: View {
                 listIcon: list.icon,
                 listName: list.name,
                 folderName: editFolderName,
-                itemID: item.id
+                itemID: item.id,
+                enableMapData: list.enableMapData == true,
+                location: $location
             )
             .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
@@ -517,7 +658,8 @@ struct EditItemView: View {
                                     markdownNotes: mdNotes.isEmpty ? nil : mdNotes,
                                     reminderDate: reminderEnabled ? reminderDate : nil,
                                     reminderRepeatRule: reminderEnabled ? repeatRule : nil,
-                                    reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil
+                                    reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil,
+                                    location: location
                                 )
                                 if success {
                                     dismiss()
@@ -594,6 +736,7 @@ struct EditItemView: View {
             }
             repeatRule = item.reminderRepeatRule
             repeatMode = item.reminderRepeatMode ?? .fixed
+            location = item.location
         }
     }
 }

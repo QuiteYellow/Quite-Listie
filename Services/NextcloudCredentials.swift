@@ -111,7 +111,7 @@ extension NextcloudCredentials {
             user:         username,
             userId:       username,
             password:     appPassword,
-            userAgent:    "Listie.md/1.0",
+            userAgent:    "QuiteListie/1.0",
             groupIdentifier: ""
         )
     }

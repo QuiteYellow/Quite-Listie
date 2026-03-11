@@ -126,7 +126,7 @@ struct ItemRowView: View {
         }
 
         Button {
-            UIPasteboard.general.string = "listie://item?id=\(item.id.uuidString)"
+            UIPasteboard.general.string = "quitelistie://item?id=\(item.id.uuidString)"
         } label: {
             Label("Copy Item Link", systemImage: "link")
         }
@@ -278,6 +278,8 @@ struct ShoppingListView: View {
     @State private var showingRecycleBin = false
     @State private var showingListSettings = false
     @State private var beatenToItMessage: String? = nil
+    @State private var mapLabelFilter: Set<String> = []
+    @State private var mapShowCompleted: Bool = false
     
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
@@ -543,6 +545,15 @@ struct ShoppingListView: View {
                         await updateUncheckedCount(for: listID, with: count)
                     }
                 )
+            } else if viewModel.viewMode == .map {
+                MapListView(
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    selectedLabelIDs: $mapLabelFilter,
+                    showCompleted: mapShowCompleted,
+                    searchText: viewModel.searchText,
+                    onEdit: { editingItem = $0 }
+                )
             } else {
                 // Snapshot grouped data in a single pass to prevent key/value
                 // divergence if @Published arrays update between SwiftUI render passes.
@@ -552,6 +563,44 @@ struct ShoppingListView: View {
                 let showCompleted = viewModel.showCompletedAtBottom
 
                 List {
+                    // Map card — shown when map data is enabled and items have locations
+                    if list.enableMapData == true {
+                        let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
+                        if !locationItems.isEmpty {
+                            Section {
+                                Button {
+                                    withAnimation(.easeInOut) {
+                                        viewModel.setViewMode(.map)
+                                    }
+                                } label: {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "mappin.and.ellipse")
+                                            .font(.title2)
+                                            .foregroundStyle(.tint)
+                                            .frame(width: 36)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Pinned Locations")
+                                                .font(.headline)
+                                                .foregroundStyle(.primary)
+                                            Text("\(locationItems.count) item\(locationItems.count == 1 ? "" : "s") with location")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     ForEach(sectionKeys, id: \.self) { labelName in
                         let items = groupedItems[labelName] ?? []
                         let color = viewModel.colorForLabel(name: labelName)
@@ -589,8 +638,14 @@ struct ShoppingListView: View {
             }
         )
         .onPreferenceChange(ListWidthPreferenceKey.self) { listWidth = $0 }
+        .onChange(of: viewModel.viewMode) { _, newMode in
+            if newMode != .map {
+                mapLabelFilter.removeAll()
+                mapShowCompleted = false
+            }
+        }
         .navigationTitle(list.name)
-        .navigationBarTitleDisplayMode(viewModel.viewMode == .kanban ? .inline : .large)
+        .navigationBarTitleDisplayMode(viewModel.viewMode == .list ? .large : .inline)
         .toolbar(id: "LIST_ACTIONS") {
             // Add button - always present, just hidden/disabled
             ToolbarItem(id: "icon", placement: .largeTitle) {
@@ -679,7 +734,75 @@ struct ShoppingListView: View {
                 .disabled(refreshState != .idle)
             }
 
-            // Add button - in bottom bar next to search
+            // Flexible spacer pushes all bottom-bar items to the right
+            //ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+            // Filter menu — visible in map mode when there is something to filter
+            ToolbarItem(id: "map-filter", placement: .bottomBar) {
+                if viewModel.viewMode == .map {
+                    let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
+                    let labelsWithPins: [ShoppingLabel] = {
+                        let usedIDs = Set(locationItems.compactMap { $0.labelId })
+                        return viewModel.labels.filter { usedIDs.contains($0.id) }
+                    }()
+                    let hasCompletedPins = locationItems.contains { $0.checked }
+                    let isFiltering = mapShowCompleted || !mapLabelFilter.isEmpty
+                    if hasCompletedPins || !labelsWithPins.isEmpty {
+                        Menu {
+                            if hasCompletedPins {
+                                Button {
+                                    mapShowCompleted.toggle()
+                                } label: {
+                                    Label("Show Completed", systemImage: mapShowCompleted ? "checkmark.circle.fill" : "circle")
+                                }
+                            }
+                            if !labelsWithPins.isEmpty {
+                                if hasCompletedPins { Divider() }
+                                ForEach(labelsWithPins) { label in
+                                    Button {
+                                        if mapLabelFilter.contains(label.id) {
+                                            mapLabelFilter.remove(label.id)
+                                        } else {
+                                            mapLabelFilter.insert(label.id)
+                                        }
+                                    } label: {
+                                        Label(label.name, systemImage: mapLabelFilter.contains(label.id) ? "checkmark" : "tag.fill")
+                                    }
+                                }
+                            }
+                            if isFiltering {
+                                Divider()
+                                Button("Clear All Filters", role: .destructive) {
+                                    mapLabelFilter.removeAll()
+                                    mapShowCompleted = false
+                                }
+                            }
+                        } label: {
+                            Image(systemName: isFiltering
+                                  ? "line.3.horizontal.decrease.circle.fill"
+                                  : "line.3.horizontal.decrease.circle")
+                        }
+                    }
+                }
+            }
+
+            // Map/List toggle
+            ToolbarItem(id: "map", placement: .bottomBar) {
+                let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
+                if list.enableMapData == true && (!locationItems.isEmpty || viewModel.viewMode == .map) {
+                    Button {
+                        withAnimation(.easeInOut) {
+                            viewModel.setViewMode(viewModel.viewMode == .map ? .list : .map)
+                        }
+                    } label: {
+                        Image(systemName: viewModel.viewMode == .map ? "list.bullet" : "map")
+                    }
+                }
+            }
+
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+
+            // Add button
             ToolbarItem(id: "add", placement: .bottomBar) {
                 Button {
                     showingAddView = true
@@ -708,6 +831,13 @@ struct ShoppingListView: View {
             await viewModel.loadItems()
             guard !Task.isCancelled else { return }
             viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
+
+            // Auto-fallback: revert to list mode if map mode was saved but there's nothing to show
+            if viewModel.viewMode == .map &&
+               (list.enableMapData != true ||
+                !viewModel.items.contains(where: { $0.location != nil && !$0.isDeleted })) {
+                viewModel.setViewMode(.list)
+            }
 
             // Open item editor if arriving via a calendar deeplink
             if let itemId = pendingItemID,
@@ -738,8 +868,15 @@ struct ShoppingListView: View {
             await viewModel.loadItems()
             guard !Task.isCancelled else { return }
             viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
+
+            // Re-check fallback after fresh data in case sync changed the list
+            if viewModel.viewMode == .map &&
+               (list.enableMapData != true ||
+                !viewModel.items.contains(where: { $0.location != nil && !$0.isDeleted })) {
+                viewModel.setViewMode(.list)
+            }
         }
-        
+
         .modifier(ShoppingListSheetsModifier(
             list: list,
             unifiedList: unifiedList,
@@ -825,27 +962,29 @@ struct ShoppingListView: View {
             .disabled(unifiedList.isReadOnly)
         }
 
-        Button {
-            withAnimation(.easeInOut) {
-                viewModel.setShowCompletedAtBottom(!viewModel.showCompletedAtBottom)
+        if viewModel.viewMode != .map {
+            Button {
+                withAnimation(.easeInOut) {
+                    viewModel.setShowCompletedAtBottom(!viewModel.showCompletedAtBottom)
+                }
+            } label: {
+                Label(
+                    viewModel.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
+                    systemImage: viewModel.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
+                )
             }
-        } label: {
-            Label(
-                viewModel.showCompletedAtBottom ? "Show Completed Inline" : "Show Completed as Label",
-                systemImage: viewModel.showCompletedAtBottom ? "circle.badge.xmark" : "circle.badge.checkmark.fill"
-            )
-        }
-        .disabled(unifiedList.isReadOnly)
+            .disabled(unifiedList.isReadOnly)
 
-        Button {
-            withAnimation(.easeInOut) {
-                viewModel.setViewMode(viewModel.viewMode == .list ? .kanban : .list)
+            Button {
+                withAnimation(.easeInOut) {
+                    viewModel.setViewMode(viewModel.viewMode == .list ? .kanban : .list)
+                }
+            } label: {
+                Label(
+                    viewModel.viewMode == .list ? "Kanban View" : "List View",
+                    systemImage: viewModel.viewMode == .list ? "rectangle.split.3x1" : "list.bullet"
+                )
             }
-        } label: {
-            Label(
-                viewModel.viewMode == .list ? "Kanban View" : "List View",
-                systemImage: viewModel.viewMode == .list ? "rectangle.split.3x1" : "list.bullet"
-            )
         }
 
         Divider()
@@ -884,7 +1023,7 @@ struct ShoppingListView: View {
             Button {
                 onExportJSON?()
             } label: {
-                Label("Listie File...", systemImage: "doc.badge.gearshape")
+                Label("Quite Listie File...", systemImage: "doc.badge.gearshape")
             }
             .disabled(unifiedList.isReadOnly)
         }
@@ -1025,7 +1164,7 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                     list: list,
                     unifiedList: unifiedList,
                     unifiedProvider: unifiedProvider
-                ) { updatedName, icon, hiddenLabels, labelOrder in
+                ) { updatedName, icon, hiddenLabels, labelOrder, enableMapData in
                     Task {
                         do {
                             let _ = try await unifiedProvider.fetchItems(for: unifiedList)
@@ -1034,7 +1173,8 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                                 name: updatedName,
                                 icon: icon,
                                 hiddenLabels: hiddenLabels,
-                                labelOrder: labelOrder
+                                labelOrder: labelOrder,
+                                enableMapData: enableMapData
                             )
                         } catch {
                             AppLogger.fileStore.warning("Failed to save list settings: \(error, privacy: .public)")
