@@ -7,6 +7,7 @@
 
 import os
 import SwiftUI
+import MapKit
 import MarkdownView
 
 // MARK: - Shared Item Form View
@@ -39,6 +40,7 @@ struct ItemFormView: View {
     @State private var linkCopied = false
     @State private var pasteLocationFeedback: PasteLocationFeedback = .idle
     @State private var showRemoveLocationConfirm = false
+    @State private var showLocationPicker = false
 
     @AppStorage("navShowAppleMaps") private var navShowAppleMaps: Bool = true
     @AppStorage("navShowGoogleMaps") private var navShowGoogleMaps: Bool = true
@@ -51,16 +53,16 @@ struct ItemFormView: View {
     var body: some View {
         GeometryReader { geometry in
             let isWide = geometry.size.width > 700
-            
+
             if isWide {
                 HStack(spacing: 0) {
                     formLeft
                         .frame(width: geometry.size.width * 0.4)
-                    
+
                     Divider()
-                    
+
                     VStack(alignment: .leading, spacing: 0) {
-                        
+
                         formRight
                     }
                     .frame(width: geometry.size.width * 0.6)
@@ -68,27 +70,31 @@ struct ItemFormView: View {
             } else {
                 Form {
                     formLeftContent
-                    
+
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Markdown Notes")
                             .font(.headline)
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 8)
-                        
+
                         Divider()
                             .padding(.top, 8)
                             .padding(.bottom, 8)
-                        
+
                         formRightContent
                     }
                     .frame(minHeight: 200)
                     .listRowBackground(Color.clear)
+                    .padding(.bottom, 80)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     notesButtonRow
                         .padding(20)
                 }
             }
+        }
+        .sheet(isPresented: $showLocationPicker) {
+            LocationPickerSheet(location: $location)
         }
     }
     
@@ -230,8 +236,13 @@ struct ItemFormView: View {
             if enableMapData {
                 if let coord = location {
                     HStack {
-                        Label("Location", systemImage: "mappin.and.ellipse")
-                            .foregroundStyle(.primary)
+                        Button {
+                            showLocationPicker = true
+                        } label: {
+                            Label("View Location", systemImage: "mappin.and.ellipse")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
                         Spacer()
                         Text(String(format: "%.4f°, %.4f°", coord.latitude, coord.longitude))
                             .font(.caption)
@@ -267,24 +278,37 @@ struct ItemFormView: View {
                     }
                     #endif
                 } else {
-                    Button {
-                        Task { await pasteLocation() }
-                    } label: {
-                        switch pasteLocationFeedback {
-                        case .idle:
-                            Label("Paste Location", systemImage: "mappin.and.ellipse")
-                        case .loading:
-                            Label("Reading…", systemImage: "mappin.and.ellipse")
-                                .foregroundStyle(.secondary)
-                        case .success:
-                            Label("Location Added", systemImage: "checkmark")
-                                .foregroundStyle(.green)
-                        case .failed:
-                            Label("No Location Found", systemImage: "xmark")
-                                .foregroundStyle(.red)
+                    HStack {
+                        Button {
+                            showLocationPicker = true
+                        } label: {
+                            Label("Choose Location", systemImage: "mappin.and.ellipse")
                         }
+                        .foregroundStyle(Color.accentColor)
+                        Spacer()
+                        Button {
+                            Task { await pasteLocation() }
+                        } label: {
+                            switch pasteLocationFeedback {
+                            case .idle:
+                                Image(systemName: "doc.on.clipboard")
+                                    .foregroundStyle(.secondary)
+                            case .loading:
+                                ProgressView().controlSize(.small)
+                            case .success:
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.green)
+                            case .failed:
+                                Image(systemName: "xmark")
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(pasteLocationFeedback == .loading)
                     }
-                    .disabled(pasteLocationFeedback == .loading)
+                    Text("Search by address or tap \(Image(systemName: "doc.on.clipboard")) to paste an Apple or Google Maps link.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -479,7 +503,7 @@ struct AddItemView: View {
 
     @Environment(\.dismiss) var dismiss
     var viewModel: ShoppingListViewModel
-    
+
     @State private var itemName = ""
     @State private var selectedLabel: ShoppingLabel? = nil
     @State private var availableLabels: [ShoppingLabel] = []
@@ -493,7 +517,13 @@ struct AddItemView: View {
     @State private var reminderDate = Date().addingTimeInterval(3600) // Default: 1 hour from now
     @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
-    @State private var location: Coordinate? = nil
+    @State private var location: Coordinate?
+
+    init(list: ShoppingListSummary, viewModel: ShoppingListViewModel, initialLocation: Coordinate? = nil) {
+        self.list = list
+        self.viewModel = viewModel
+        self._location = State(initialValue: initialLocation)
+    }
 
     var body: some View {
         NavigationStack {
@@ -1094,6 +1124,197 @@ private struct ItemFormChip: View {
         .background(color.opacity(0.1))
         .foregroundStyle(color)
         .clipShape(Capsule())
+    }
+}
+
+// MARK: - Location Picker Sheet
+
+struct LocationPickerSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var location: Coordinate?
+
+    @State private var position: MapCameraPosition
+    @State private var centerCoord: CLLocationCoordinate2D
+    @State private var isEditing: Bool
+    @State private var addressQuery = ""
+    @State private var geocodeState: GeocodeState = .idle
+    @FocusState private var searchFocused: Bool
+
+    private enum GeocodeState { case idle, loading, failed }
+
+    init(location: Binding<Coordinate?>) {
+        self._location = location
+        if let existing = location.wrappedValue {
+            let cl = CLLocationCoordinate2D(latitude: existing.latitude, longitude: existing.longitude)
+            self._centerCoord = State(initialValue: cl)
+            self._position = State(initialValue: .region(MKCoordinateRegion(
+                center: cl,
+                span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
+            )))
+            self._isEditing = State(initialValue: false)
+        } else {
+            self._centerCoord = State(initialValue: CLLocationCoordinate2D(latitude: 0, longitude: 0))
+            self._position = State(initialValue: .automatic)
+            self._isEditing = State(initialValue: true)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                if isEditing {
+                    Map(position: $position)
+                        .onMapCameraChange(frequency: .continuous) { context in
+                            centerCoord = context.camera.centerCoordinate
+                        }
+                        .mapStyle(.standard(emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: true))
+                        .mapControls {
+                            MapUserLocationButton()
+                            MapCompass()
+                        }
+                        .ignoresSafeArea(edges: .bottom)
+                        .onTapGesture { searchFocused = false }
+                        .onAppear { LocationPermissionManager.shared.requestIfNeeded() }
+
+                    // Fixed centre crosshair
+                    Image(systemName: "dot.crosshair")
+                        .font(.system(size: 36))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.accentColor.opacity(0.3), Color.accentColor)
+                        .allowsHitTesting(false)
+                } else {
+                    Map(position: $position) {
+                        Marker("", coordinate: CLLocationCoordinate2D(
+                            latitude: centerCoord.latitude,
+                            longitude: centerCoord.longitude
+                        ))
+                        .tint(Color.accentColor)
+                    }
+                    .mapStyle(.standard(emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: true))
+                    .mapControls {
+                        MapCompass()
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                }
+
+                // Coordinate readout (both modes)
+                VStack {
+                    Spacer()
+                    Text(String(format: "%.4f°, %.4f°", centerCoord.latitude, centerCoord.longitude))
+                        .font(.caption.monospacedDigit())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.bottom, 24)
+                }
+                .allowsHitTesting(false)
+            }
+            .navigationTitle(isEditing ? "Update Location" : "View Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if isEditing {
+                    addressSearchBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    if isEditing {
+                        Button {
+                            location = Coordinate(latitude: centerCoord.latitude, longitude: centerCoord.longitude)
+                            dismiss()
+                        } label: {
+                            Image(systemName: "checkmark")
+                        }
+                    } else {
+                        Button("Edit") {
+                            position = .region(MKCoordinateRegion(
+                                center: centerCoord,
+                                span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
+                            ))
+                            withAnimation { isEditing = true }
+                        }
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        if location != nil { isEditing = false }
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark").symbolRenderingMode(.hierarchical)
+                    }
+                }
+            }
+        }
+    }
+
+    private var addressSearchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .imageScale(.small)
+            TextField("Search address", text: $addressQuery)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .onSubmit { Task { await geocodeAddress() } }
+                .autocorrectionDisabled()
+            if geocodeState == .loading {
+                ProgressView().controlSize(.small)
+            } else if geocodeState == .failed {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.red)
+                    .transition(.scale.combined(with: .opacity))
+            } else if !addressQuery.isEmpty {
+            
+                Button {
+                    Task { await geocodeAddress() }
+                } label: {
+                    Text("Search")
+                        .font(.subheadline)
+                        .frame(height: 20)
+                }
+                .buttonStyle(.glassProminent)
+                .transition(.scale.combined(with: .opacity))
+
+                Button { addressQuery = "" } label: {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.glass)
+                .transition(.scale.combined(with: .opacity))
+
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .animation(.easeInOut(duration: 0.15), value: geocodeState)
+        .animation(.easeInOut(duration: 0.15), value: addressQuery.isEmpty)
+    }
+
+    private func geocodeAddress() async {
+        let query = addressQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        searchFocused = false
+        geocodeState = .loading
+        guard let request = MKGeocodingRequest(addressString: query),
+              let item = try? await request.mapItems.first else {
+            geocodeState = .failed
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            geocodeState = .idle
+            return
+        }
+        let coord = item.location.coordinate
+        position = .region(MKCoordinateRegion(
+            center: coord,
+            span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
+        ))
+        centerCoord = coord
+        geocodeState = .idle
     }
 }
 

@@ -386,11 +386,12 @@ actor NextcloudManager {
             }
         }
 
-        // Labels: no modifiedAt — server wins on conflict, local adds new labels only
+        // Labels: no modifiedAt — local wins on conflict (preserves edits just made),
+        // server adds any labels created on other devices that don't exist locally.
         var labelsById: [String: ShoppingLabel] = Dictionary(
-            uniqueKeysWithValues: server.labels.map { ($0.id, $0) }
+            uniqueKeysWithValues: local.labels.map { ($0.id, $0) }
         )
-        for label in local.labels where labelsById[label.id] == nil {
+        for label in server.labels where labelsById[label.id] == nil {
             labelsById[label.id] = label
         }
 

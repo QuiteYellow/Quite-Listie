@@ -65,11 +65,12 @@ enum ModelHelpers {
     
     // MARK: - Label Creation
     
-    static func createNewLabel(name: String, color: String, existingLabels: [ShoppingLabel] = []) -> ShoppingLabel {
+    static func createNewLabel(name: String, color: String, symbol: String? = nil, existingLabels: [ShoppingLabel] = []) -> ShoppingLabel {
         return ShoppingLabel(
             id: UUID().uuidString,
             name: name,
-            color: color
+            color: color,
+            symbol: symbol
         )
     }
     
