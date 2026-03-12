@@ -78,11 +78,12 @@ struct ListSettingsView: View {
         }
     }
 
-    private func createLabel(name: String, color: String) async {
+    private func createLabel(name: String, color: String, symbol: String? = nil) async {
         // Use ModelHelpers to create a label with a simple, unique ID
         let newLabel = ModelHelpers.createNewLabel(
             name: name,
             color: color,
+            symbol: symbol,
             existingLabels: allLabels
         )
         
@@ -404,10 +405,11 @@ struct ListSettingsView: View {
                 // Edit existing label
                 LabelEditorView(
                     viewModel: LabelEditorViewModel(from: label),
-                    onSave: { name, colorHex in
+                    onSave: { name, colorHex, symbol in
                         var updated = label
                         updated.name = name
                         updated.color = colorHex
+                        updated.symbol = symbol
                         Task {
                             await updateLabel(updated)
                         }
@@ -421,9 +423,9 @@ struct ListSettingsView: View {
                 // Create new label
                 LabelEditorView(
                     viewModel: LabelEditorViewModel(),
-                    onSave: { name, colorHex in
+                    onSave: { name, colorHex, symbol in
                         Task {
-                            await createLabel(name: name, color: colorHex)
+                            await createLabel(name: name, color: colorHex, symbol: symbol)
                         }
                     },
                     onCancel: {

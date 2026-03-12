@@ -6,8 +6,12 @@
 //  Tapping a pin navigates to the item's source list and opens its editor.
 //
 
+import CoreLocation
 import SwiftUI
 import MapKit
+#if canImport(AppKit)
+import AppKit
+#endif
 
 struct GlobalMapView: View {
     var welcomeViewModel: WelcomeViewModel
@@ -15,11 +19,14 @@ struct GlobalMapView: View {
     /// Called when the user taps a map pin — navigate to the source list and open the item.
     var onTapItem: ((ShoppingItem, UnifiedList) -> Void)?
 
+    @Namespace private var mapScope
+
     @AppStorage("mapStyleMuted") private var mapStyleMuted: Bool = true
 
     @State private var selectedItemID: UUID?
     @State private var selectedLabelIDs: Set<String> = []
     @State private var showCompleted: Bool = false
+    @State private var cameraPosition: MapCameraPosition = .automatic
 
     // MARK: - Derived Data
 
@@ -69,7 +76,16 @@ struct GlobalMapView: View {
         .navigationTitle("Locations")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                Button {
+                    LocationPermissionManager.shared.requestIfNeeded()
+                    cameraPosition = .userLocation(fallback: .automatic)
+                } label: {
+                    Image(systemName: "location.fill")
+                }
+            }
+            ToolbarSpacer(.fixed, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 filterMenu
             }
@@ -79,18 +95,19 @@ struct GlobalMapView: View {
     // MARK: - Map
 
     private var mapContent: some View {
-        Map(selection: $selectedItemID) {
+        Map(position: $cameraPosition, selection: $selectedItemID, scope: mapScope) {
             ForEach(visibleEntries) { entry in
                 if let loc = entry.item.location {
-                    Marker(
-                        entry.item.note,
-                        coordinate: CLLocationCoordinate2D(
-                            latitude: loc.latitude,
-                            longitude: loc.longitude
-                        )
-                    )
-                    .tint(markerTint(for: entry))
-                    .tag(entry.item.id)
+                    let coord = CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
+                    if let symbol = entry.labelSymbol {
+                        Marker(entry.item.note, systemImage: symbol, coordinate: coord)
+                            .tint(markerTint(for: entry))
+                            .tag(entry.item.id)
+                    } else {
+                        Marker(entry.item.note, coordinate: coord)
+                            .tint(markerTint(for: entry))
+                            .tag(entry.item.id)
+                    }
                 }
             }
         }
@@ -100,6 +117,17 @@ struct GlobalMapView: View {
             showsTraffic: true
         ))
         .mapControls { }
+        .overlay(alignment: .bottomLeading) {
+            MapCompass(scope: mapScope)
+                .onContinuousHover { phase in
+                    #if canImport(AppKit)
+                    if case .ended = phase { NSCursor.arrow.set() }
+                    #endif
+                }
+                .padding(.bottom, 62)
+                .padding(.leading, 8)
+        }
+        .mapScope(mapScope)
         .ignoresSafeArea(edges: .bottom)
         .onChange(of: selectedItemID) { _, newID in
             guard let newID,
@@ -127,7 +155,7 @@ struct GlobalMapView: View {
                             else { selectedLabelIDs.remove(label.id) }
                         }
                     )) {
-                        Label(label.name, systemImage: "circle.fill")
+                        Label(label.name, systemImage: label.symbol ?? "circle.fill")
                     }
                 }
 

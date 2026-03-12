@@ -41,9 +41,10 @@ struct ListDocument: Codable {
 }
 
 // MARK: - Coordinate
-struct Coordinate: Codable, Equatable {
+struct Coordinate: Codable, Equatable, Identifiable {
     var latitude: Double
     var longitude: Double
+    var id: String { "\(latitude),\(longitude)" }
 }
 
 // MARK: - Shopping List
@@ -235,18 +236,18 @@ struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
     var id: String  // Simple string like "need", "want", "groceries"
     var name: String
     var color: String  // Hex color
-    
+    var symbol: String?  // Optional SF Symbol name shown on map pin instead of the default icon
 
-    
     enum CodingKeys: String, CodingKey {
-        case id, name, color
+        case id, name, color, symbol
     }
-    
-    init(id: String, name: String, color: String) {
-            self.id = id
-            self.name = name
-            self.color = color
-        }
+
+    init(id: String, name: String, color: String, symbol: String? = nil) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.symbol = symbol
+    }
         
         var cleanId: String {
             if id.hasPrefix("local-") {

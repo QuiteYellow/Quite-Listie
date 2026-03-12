@@ -5,10 +5,28 @@
 //  Now supports opening .json shopping list files directly and export commands
 //
 
+import CoreLocation
 import os
 import SwiftUI
 import UserNotifications
 
+
+// MARK: - Location Permission
+
+final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
+    static let shared = LocationPermissionManager()
+    private let manager = CLLocationManager()
+
+    private override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    func requestIfNeeded() {
+        guard manager.authorizationStatus == .notDetermined else { return }
+        manager.requestWhenInUseAuthorization()
+    }
+}
 
 // MARK: - App Delegate for Notification Handling
 

@@ -6,19 +6,55 @@
 //
 
 import SwiftUI
+import SymbolPicker
 
 struct LabelEditorView: View {
     @Environment(\.dismiss) var dismiss
     @Bindable var viewModel: LabelEditorViewModel
-    
-    var onSave: (_ name: String, _ colorHex: String) -> Void
+
+    var onSave: (_ name: String, _ colorHex: String, _ symbol: String?) -> Void
     var onCancel: () -> Void
+
+    @State private var showingSymbolPicker = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Name") {
                     TextField("Label name", text: $viewModel.name)
+                }
+
+                Section(
+                    header: Text("Map Icon"),
+                    footer: Text("Shown on the map pin instead of the default icon.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                ) {
+                    Button {
+                        showingSymbolPicker = true
+                    } label: {
+                        HStack {
+                            Text("Icon")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if let symbol = viewModel.symbol {
+                                Image(systemName: symbol)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("None")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .sheet(isPresented: $showingSymbolPicker) {
+                        SymbolPicker(symbol: $viewModel.symbol)
+                    }
+
+                    if viewModel.symbol != nil {
+                        Button("Remove Icon", role: .destructive) {
+                            viewModel.symbol = nil
+                        }
+                    }
                 }
 
                 Section(
@@ -44,7 +80,6 @@ struct LabelEditorView: View {
             .navigationTitle(viewModel.isEditing ? "Edit Label" : "New Label")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-
                     Button {
                         onCancel()
                         dismiss()
@@ -57,9 +92,7 @@ struct LabelEditorView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let name = viewModel.name
-                        let colorHex = viewModel.color.toHex()
-                        onSave(name, colorHex)
+                        onSave(viewModel.name, viewModel.color.toHex(), viewModel.symbol)
                         dismiss()
                     }
                     .disabled(!viewModel.isNameValid)
