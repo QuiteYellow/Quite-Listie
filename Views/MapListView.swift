@@ -7,32 +7,41 @@
 //  Label filtering is driven by the bottom-bar Menu in ShoppingListView via selectedLabelIDs.
 //
 
+import CoreLocation
 import SwiftUI
 import MapKit
+#if canImport(AppKit)
+import AppKit
+#endif
+
 
 struct MapListView: View {
     let items: [ShoppingItem]
     let labels: [ShoppingLabel]
     @Binding var selectedLabelIDs: Set<String>
+    @Binding var cameraPosition: MapCameraPosition
     var showCompleted: Bool = false
     var searchText: String = ""
     var onEdit: ((ShoppingItem) -> Void)?
+    var onAddAtLocation: ((Coordinate) -> Void)? = nil
+
+    @Namespace private var mapScope
 
     @AppStorage("mapStyleMuted") private var mapStyleMuted: Bool = true
 
     @State private var selectedItemID: UUID?
+    @GestureState private var pressLocation: CGPoint? = nil
 
-    /// Keyed by label ID for O(1) colour lookup per marker.
-    private var labelColorByID: [String: Color] {
-        Dictionary(uniqueKeysWithValues: labels.map { ($0.id, Color(hex: $0.color)) })
+    /// Keyed by label ID for O(1) lookup per marker.
+    private var labelByID: [String: ShoppingLabel] {
+        Dictionary(uniqueKeysWithValues: labels.map { ($0.id, $0) })
     }
 
     private func markerTint(for item: ShoppingItem) -> Color {
-        guard let labelId = item.labelId,
-              let color = labelColorByID[labelId] else {
+        guard let labelId = item.labelId, let label = labelByID[labelId] else {
             return .accentColor
         }
-        return color
+        return Color(hex: label.color)
     }
 
     // Active location items — excludes deleted items and, by default, completed ones.
@@ -69,29 +78,59 @@ struct MapListView: View {
     // MARK: - Map
 
     private var mapContent: some View {
-        Map(selection: $selectedItemID) {
-            ForEach(visibleItems) { item in
-                if let loc = item.location {
-                    Marker(
-                        item.note,
-                        coordinate: CLLocationCoordinate2D(
-                            latitude: loc.latitude,
-                            longitude: loc.longitude
-                        )
-                    )
-                    .tint(markerTint(for: item))
-                    .tag(item.id)
+        MapReader { proxy in
+            Map(position: $cameraPosition, selection: $selectedItemID, scope: mapScope) {
+                ForEach(visibleItems) { item in
+                    if let loc = item.location {
+                        let coord = CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
+                        if let symbol = labelByID[item.labelId ?? ""]?.symbol {
+                            Marker(item.note, systemImage: symbol, coordinate: coord)
+                                .tint(markerTint(for: item))
+                                .tag(item.id)
+                        } else {
+                            Marker(item.note, coordinate: coord)
+                                .tint(markerTint(for: item))
+                                .tag(item.id)
+                        }
+                    }
                 }
             }
-        }
-        .mapStyle(.standard(emphasis: mapStyleMuted ? .muted : .automatic, pointsOfInterest: .excludingAll, showsTraffic: true))
-        .mapControls { }
-        .ignoresSafeArea(edges: .bottom)
-        .onChange(of: selectedItemID) { _, newID in
-            guard let newID,
-                  let item = visibleItems.first(where: { $0.id == newID }) else { return }
-            selectedItemID = nil
-            onEdit?(item)
+            .mapStyle(.standard(emphasis: mapStyleMuted ? .muted : .automatic, pointsOfInterest: .excludingAll, showsTraffic: true))
+            .mapControls { }
+            .overlay(alignment: .bottomLeading) {
+                MapCompass(scope: mapScope)
+                    .onContinuousHover { phase in
+                        #if canImport(AppKit)
+                        if case .ended = phase { NSCursor.arrow.set() }
+                        #endif
+                    }
+                    .padding(.bottom, 62)
+                    .padding(.leading, 8)
+            }
+            .mapScope(mapScope)
+            .ignoresSafeArea(edges: .bottom)
+
+            .onChange(of: selectedItemID) { _, newID in
+                guard let newID,
+                      let item = visibleItems.first(where: { $0.id == newID }) else { return }
+                selectedItemID = nil
+                onEdit?(item)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .updating($pressLocation) { value, state, _ in
+                        state = value.startLocation
+                    }
+            )
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.5)
+                    .onEnded { _ in
+                        guard let onAddAtLocation,
+                              let point = pressLocation,
+                              let clCoord = proxy.convert(point, from: .local) else { return }
+                        onAddAtLocation(Coordinate(latitude: clCoord.latitude, longitude: clCoord.longitude))
+                    }
+            )
         }
     }
 
@@ -105,7 +144,7 @@ struct MapListView: View {
             Text("No Locations")
                 .font(.title3)
                 .fontWeight(.semibold)
-            Text("Paste a Google Maps or Apple Maps link on an item to pin it here.")
+            Text("No items are pinned yet. Open an item and tap Location to get started.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

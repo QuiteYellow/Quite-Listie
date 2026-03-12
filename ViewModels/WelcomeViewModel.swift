@@ -33,6 +33,7 @@ struct LocationEntry: Identifiable {
     let list: UnifiedList
     let labelName: String?
     let labelColor: String?   // Hex color
+    let labelSymbol: String?
 }
 
 @Observable
@@ -119,16 +120,19 @@ class WelcomeViewModel {
                 for item in items where item.location != nil && !item.isDeleted {
                     var labelName: String? = nil
                     var labelColor: String? = nil
+                    var labelSymbol: String? = nil
                     if let labelId = item.labelId,
                        let label = labels.first(where: { $0.id == labelId }) {
                         labelName = label.name
                         labelColor = label.color
+                        labelSymbol = label.symbol
                     }
                     locEntries.append(LocationEntry(
                         item: item,
                         list: list,
                         labelName: labelName,
-                        labelColor: labelColor
+                        labelColor: labelColor,
+                        labelSymbol: labelSymbol
                     ))
                 }
 

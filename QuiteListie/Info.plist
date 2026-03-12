@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Quite Listie shows your current location on the map so you can see nearby items.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Quite Listie adds your reminder items to a dedicated calendar so they appear alongside your other events.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

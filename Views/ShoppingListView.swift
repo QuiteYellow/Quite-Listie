@@ -5,8 +5,10 @@
 //  Updated to work seamlessly with both local and external lists
 //
 
+import CoreLocation
 import os
 import SwiftUI
+import MapKit
 
 // MARK: - Section Header View
 struct SectionHeaderView: View {
@@ -280,6 +282,8 @@ struct ShoppingListView: View {
     @State private var beatenToItMessage: String? = nil
     @State private var mapLabelFilter: Set<String> = []
     @State private var mapShowCompleted: Bool = false
+    @State private var mapAddLocation: Coordinate? = nil
+    @State private var mapCameraPosition: MapCameraPosition = .automatic
     
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
@@ -530,7 +534,75 @@ struct ShoppingListView: View {
             }
         }
     }
-    
+
+    private var listContent: some View {
+        let sectionKeys = labelsForListBody
+        let groupedItems = viewModel.filteredItemsGroupedByLabel
+        let completedItems = viewModel.filteredCompletedItems
+        let showCompleted = viewModel.showCompletedAtBottom
+        return List {
+            if list.enableMapData == true {
+                let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
+                if !locationItems.isEmpty {
+                    Section {
+                        Button {
+                            withAnimation(.easeInOut) { viewModel.setViewMode(.map) }
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.title2)
+                                    .foregroundStyle(.tint)
+                                    .frame(width: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Pinned Locations")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                    Text("\(locationItems.count) item\(locationItems.count == 1 ? "" : "s") with location")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            ForEach(sectionKeys, id: \.self) { labelName in
+                let items = groupedItems[labelName] ?? []
+                let color = viewModel.colorForLabel(name: labelName)
+                renderSection(labelName: labelName, items: items, color: color)
+            }
+            if showCompleted && !completedItems.isEmpty {
+                renderSection(labelName: "Completed", items: completedItems, color: .primary)
+            }
+        }
+        .id(unifiedList.id)
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .environment(\.chipsInline, shouldShowChipsInline(
+            itemTitles: viewModel.items.map(\.note),
+            availableWidth: listWidth
+        ))
+    }
+
+    private var mapListView: some View {
+        MapListView(
+            items: viewModel.items,
+            labels: viewModel.labels,
+            selectedLabelIDs: $mapLabelFilter,
+            cameraPosition: $mapCameraPosition,
+            showCompleted: mapShowCompleted,
+            searchText: viewModel.searchText,
+            onEdit: { editingItem = $0 },
+            onAddAtLocation: { coord in mapAddLocation = coord }
+        )
+    }
+
     var body: some View {
         Group {
             if viewModel.viewMode == .kanban {
@@ -546,78 +618,9 @@ struct ShoppingListView: View {
                     }
                 )
             } else if viewModel.viewMode == .map {
-                MapListView(
-                    items: viewModel.items,
-                    labels: viewModel.labels,
-                    selectedLabelIDs: $mapLabelFilter,
-                    showCompleted: mapShowCompleted,
-                    searchText: viewModel.searchText,
-                    onEdit: { editingItem = $0 }
-                )
+                mapListView
             } else {
-                // Snapshot grouped data in a single pass to prevent key/value
-                // divergence if @Published arrays update between SwiftUI render passes.
-                let sectionKeys = labelsForListBody
-                let groupedItems = viewModel.filteredItemsGroupedByLabel
-                let completedItems = viewModel.filteredCompletedItems
-                let showCompleted = viewModel.showCompletedAtBottom
-
-                List {
-                    // Map card — shown when map data is enabled and items have locations
-                    if list.enableMapData == true {
-                        let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
-                        if !locationItems.isEmpty {
-                            Section {
-                                Button {
-                                    withAnimation(.easeInOut) {
-                                        viewModel.setViewMode(.map)
-                                    }
-                                } label: {
-                                    HStack(spacing: 14) {
-                                        Image(systemName: "mappin.and.ellipse")
-                                            .font(.title2)
-                                            .foregroundStyle(.tint)
-                                            .frame(width: 36)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Pinned Locations")
-                                                .font(.headline)
-                                                .foregroundStyle(.primary)
-                                            Text("\(locationItems.count) item\(locationItems.count == 1 ? "" : "s") with location")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-
-                                        Spacer()
-
-                                        Image(systemName: "chevron.right")
-                                            .font(.footnote.weight(.semibold))
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                    .padding(.vertical, 4)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    ForEach(sectionKeys, id: \.self) { labelName in
-                        let items = groupedItems[labelName] ?? []
-                        let color = viewModel.colorForLabel(name: labelName)
-                        renderSection(labelName: labelName, items: items, color: color)
-                    }
-
-                    if showCompleted && !completedItems.isEmpty {
-                        renderSection(labelName: "Completed", items: completedItems, color: .primary)
-                    }
-                }
-                .id(unifiedList.id)
-                .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
-                .environment(\.chipsInline, shouldShowChipsInline(
-                    itemTitles: viewModel.items.map(\.note),
-                    availableWidth: listWidth
-                ))
+                listContent
             }
         }
         .background(
@@ -737,52 +740,21 @@ struct ShoppingListView: View {
             // Flexible spacer pushes all bottom-bar items to the right
             //ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarSpacer(.fixed, placement: .bottomBar)
+            ToolbarItem(id: "map-location", placement: .bottomBar) {
+                if viewModel.viewMode == .map {
+                    Button {
+                        LocationPermissionManager.shared.requestIfNeeded()
+                        mapCameraPosition = .userLocation(fallback: .automatic)
+                    } label: {
+                        Image(systemName: "location.fill")
+                    }
+                }
+            }
+            ToolbarSpacer(.fixed, placement: .bottomBar)
             // Filter menu — visible in map mode when there is something to filter
             ToolbarItem(id: "map-filter", placement: .bottomBar) {
                 if viewModel.viewMode == .map {
-                    let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
-                    let labelsWithPins: [ShoppingLabel] = {
-                        let usedIDs = Set(locationItems.compactMap { $0.labelId })
-                        return viewModel.labels.filter { usedIDs.contains($0.id) }
-                    }()
-                    let hasCompletedPins = locationItems.contains { $0.checked }
-                    let isFiltering = mapShowCompleted || !mapLabelFilter.isEmpty
-                    if hasCompletedPins || !labelsWithPins.isEmpty {
-                        Menu {
-                            if hasCompletedPins {
-                                Button {
-                                    mapShowCompleted.toggle()
-                                } label: {
-                                    Label("Show Completed", systemImage: mapShowCompleted ? "checkmark.circle.fill" : "circle")
-                                }
-                            }
-                            if !labelsWithPins.isEmpty {
-                                if hasCompletedPins { Divider() }
-                                ForEach(labelsWithPins) { label in
-                                    Button {
-                                        if mapLabelFilter.contains(label.id) {
-                                            mapLabelFilter.remove(label.id)
-                                        } else {
-                                            mapLabelFilter.insert(label.id)
-                                        }
-                                    } label: {
-                                        Label(label.name, systemImage: mapLabelFilter.contains(label.id) ? "checkmark" : "tag.fill")
-                                    }
-                                }
-                            }
-                            if isFiltering {
-                                Divider()
-                                Button("Clear All Filters", role: .destructive) {
-                                    mapLabelFilter.removeAll()
-                                    mapShowCompleted = false
-                                }
-                            }
-                        } label: {
-                            Image(systemName: isFiltering
-                                  ? "line.3.horizontal.decrease.circle.fill"
-                                  : "line.3.horizontal.decrease.circle")
-                        }
-                    }
+                    mapFilterMenu
                 }
             }
 
@@ -812,15 +784,12 @@ struct ShoppingListView: View {
                 .disabled(unifiedList.isReadOnly)
             }
 
+        }
+        .toolbar {
             // Menu - always present, just hidden/disabled
             ToolbarItem(id: "menu", placement: .navigationBarTrailing) {
-                Menu {
-                    overflowMenuContent
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
+                overflowMenu
             }
-            
         }
         .animation(nil, value: isPerformingBulkAction)
         
@@ -884,6 +853,7 @@ struct ShoppingListView: View {
             viewModel: viewModel,
             welcomeViewModel: welcomeViewModel,
             showingAddView: $showingAddView,
+            mapAddLocation: $mapAddLocation,
             editingItem: $editingItem,
             showingRecycleBin: $showingRecycleBin,
             showingMarkdownImport: $showingMarkdownImport,
@@ -923,6 +893,61 @@ struct ShoppingListView: View {
         .padding(.horizontal, 4)
     }
     
+    @ViewBuilder
+    private var mapFilterMenu: some View {
+        let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
+        let labelsWithPins: [ShoppingLabel] = {
+            let usedIDs = Set(locationItems.compactMap { $0.labelId })
+            return viewModel.labels.filter { usedIDs.contains($0.id) }
+        }()
+        let hasCompletedPins = locationItems.contains { $0.checked }
+        let isFiltering = mapShowCompleted || !mapLabelFilter.isEmpty
+        if hasCompletedPins || !labelsWithPins.isEmpty {
+            Menu {
+                if hasCompletedPins {
+                    Button {
+                        mapShowCompleted.toggle()
+                    } label: {
+                        Label("Show Completed", systemImage: mapShowCompleted ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+                if !labelsWithPins.isEmpty {
+                    if hasCompletedPins { Divider() }
+                    ForEach(labelsWithPins) { label in
+                        Button {
+                            if mapLabelFilter.contains(label.id) {
+                                mapLabelFilter.remove(label.id)
+                            } else {
+                                mapLabelFilter.insert(label.id)
+                            }
+                        } label: {
+                            Label(label.name, systemImage: mapLabelFilter.contains(label.id) ? "checkmark" : (label.symbol ?? "tag.fill"))
+                        }
+                    }
+                }
+                if isFiltering {
+                    Divider()
+                    Button("Clear All Filters", role: .destructive) {
+                        mapLabelFilter.removeAll()
+                        mapShowCompleted = false
+                    }
+                }
+            } label: {
+                Image(systemName: isFiltering
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle")
+            }
+        }
+    }
+
+    private var overflowMenu: some View {
+        Menu {
+            overflowMenuContent
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+    }
+
     @ViewBuilder
     private var overflowMenuContent: some View {
         Button {
@@ -1090,6 +1115,7 @@ private struct ShoppingListSheetsModifier: ViewModifier {
     var welcomeViewModel: WelcomeViewModel
 
     @Binding var showingAddView: Bool
+    @Binding var mapAddLocation: Coordinate?
     @Binding var editingItem: ShoppingItem?
     @Binding var showingRecycleBin: Bool
     @Binding var showingMarkdownImport: Bool
@@ -1110,6 +1136,11 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                 Task { await refreshReminderCounts() }
             }) {
                 AddItemView(list: list, viewModel: viewModel)
+            }
+            .fullScreenCover(item: $mapAddLocation, onDismiss: {
+                Task { await refreshReminderCounts() }
+            }) { coord in
+                AddItemView(list: list, viewModel: viewModel, initialLocation: coord)
             }
             .fullScreenCover(item: $editingItem, onDismiss: {
                 Task { await refreshReminderCounts() }
