@@ -4,15 +4,17 @@ This privacy policy applies to the Quite Listie app (hereby referred to as "Appl
 
 **What information does the Application obtain and how is it used?**
 
-The Application does not obtain any information when you download and use it. Registration is not required to use the Application.
+The Application stores list data — including any location coordinates you choose to attach to items — locally on your device and, if enabled, in your personal iCloud or Nextcloud account. This data is entirely under your control and is never transmitted to or accessed by the Service Provider. Registration is not required to use the Application.
 
 **Does the Application collect precise real time location information of the device?**
 
-This Application does not collect precise information about the location of your mobile device.
+The Application can access your device's current location, but only to centre the map on your position when you tap the location button. This information is used solely on-device for navigation purposes and is never stored, logged, or transmitted to the Service Provider or any third party.
+
+You may also voluntarily attach location coordinates to individual list items by pasting an Apple Maps or Google Maps link, or by using the in-app location picker. These coordinates are saved as part of your list data in the same storage location you have chosen (iCloud, Nextcloud, or local device storage) and remain under your sole control.
 
 **Do third parties see and/or have access to information obtained by the Application?**
 
-Since the Application does not collect any information, no data is shared with third parties.
+The Service Provider does not collect or receive any data from the Application. List data (including any location coordinates you attach to items) is stored in your chosen location — iCloud, Nextcloud, or local device storage — and is governed by the privacy policies of those services. No data is shared with any third party by the Service Provider.
 
 **What are my opt-out rights?**
 
@@ -26,13 +28,13 @@ The Service Provider does not knowingly collect personally identifiable informat
 
 **Security**
 
-The Service Provider is concerned about safeguarding the confidentiality of your information. However, since the Application does not collect any information, there is no risk of your data being accessed by unauthorized individuals.
+The Service Provider is concerned about safeguarding the confidentiality of your information. Since the Application does not transmit any data to the Service Provider, there is no risk of your data being accessed by the Service Provider or unauthorized individuals through our systems. The security of data stored in iCloud or Nextcloud is governed by those services' own security practices.
 
 **Changes**
 
 This Privacy Policy may be updated from time to time for any reason. The Service Provider will notify you of any changes to their Privacy Policy by updating this page with the new Privacy Policy. You are advised to consult this Privacy Policy regularly for any changes, as continued use is deemed approval of all changes.
 
-This privacy policy is effective as of 2025-05-28
+This privacy policy is effective as of 2026-03-13
 
 **Your Consent**
 
