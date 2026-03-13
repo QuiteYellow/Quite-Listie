@@ -9,9 +9,6 @@
 import CoreLocation
 import SwiftUI
 import MapKit
-#if canImport(AppKit)
-import AppKit
-#endif
 
 struct GlobalMapView: View {
     var welcomeViewModel: WelcomeViewModel
@@ -76,7 +73,20 @@ struct GlobalMapView: View {
         .navigationTitle("Locations")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarSpacer(.fixed, placement: .bottomBar)
+#if targetEnvironment(macCatalyst)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    LocationPermissionManager.shared.requestIfNeeded()
+                    cameraPosition = .userLocation(fallback: .automatic)
+                } label: {
+                    Image(systemName: "location.fill")
+                }
+            }
+            ToolbarItem(placement: .navigationBarLeading) {
+                filterMenu
+            }
+#else
+            ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button {
                     LocationPermissionManager.shared.requestIfNeeded()
@@ -89,6 +99,7 @@ struct GlobalMapView: View {
             ToolbarItem(placement: .bottomBar) {
                 filterMenu
             }
+#endif
         }
     }
 
@@ -116,16 +127,8 @@ struct GlobalMapView: View {
             pointsOfInterest: .excludingAll,
             showsTraffic: true
         ))
-        .mapControls { }
-        .overlay(alignment: .bottomLeading) {
+        .mapControls {
             MapCompass(scope: mapScope)
-                .onContinuousHover { phase in
-                    #if canImport(AppKit)
-                    if case .ended = phase { NSCursor.arrow.set() }
-                    #endif
-                }
-                .padding(.bottom, 62)
-                .padding(.leading, 8)
         }
         .mapScope(mapScope)
         .ignoresSafeArea(edges: .bottom)

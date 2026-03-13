@@ -10,10 +10,6 @@
 import CoreLocation
 import SwiftUI
 import MapKit
-#if canImport(AppKit)
-import AppKit
-#endif
-
 
 struct MapListView: View {
     let items: [ShoppingItem]
@@ -96,16 +92,8 @@ struct MapListView: View {
                 }
             }
             .mapStyle(.standard(emphasis: mapStyleMuted ? .muted : .automatic, pointsOfInterest: .excludingAll, showsTraffic: true))
-            .mapControls { }
-            .overlay(alignment: .bottomLeading) {
+            .mapControls {
                 MapCompass(scope: mapScope)
-                    .onContinuousHover { phase in
-                        #if canImport(AppKit)
-                        if case .ended = phase { NSCursor.arrow.set() }
-                        #endif
-                    }
-                    .padding(.bottom, 62)
-                    .padding(.leading, 8)
             }
             .mapScope(mapScope)
             .ignoresSafeArea(edges: .bottom)

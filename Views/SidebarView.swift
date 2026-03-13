@@ -253,7 +253,9 @@ struct SidebarView: View {
             }
         }
         .navigationTitle("Quite Listie")
+        #if !targetEnvironment(macCatalyst)
         .navigationBarTitleDisplayMode(.large)
+        #endif
         //.animation(.none, value: welcomeViewModel.uncheckedCounts)
         //.animation(.none, value: unifiedProvider.allLists)
         .safeAreaInset(edge: .bottom) {
