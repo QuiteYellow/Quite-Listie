@@ -222,7 +222,7 @@ struct ShoppingListApp: App {
         titlebar.titleVisibility = .hidden
         
         // Use expanded unified toolbar style
-        titlebar.toolbarStyle = .expanded
+        titlebar.toolbarStyle = .unified
         
     }
 #endif // targetEnvironment(macCatalyst)
