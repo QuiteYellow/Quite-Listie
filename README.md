@@ -63,9 +63,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 ---
 
 ## Screenshots
-![Welcome](https://github.com/user-attachments/assets/52fbc711-f990-40f9-9377-cc97331c037b)
-![Item](https://github.com/user-attachments/assets/6ad8e269-5964-4e90-a5f2-aafeef0310b4)
-![markdown](https://github.com/user-attachments/assets/e24852c8-3a01-47d3-a5ed-270f88de4993)
+
 
 ---
 
