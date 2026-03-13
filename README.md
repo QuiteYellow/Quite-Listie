@@ -1,7 +1,8 @@
 # Quite Listie — iOS, iPadOS and macOS
 A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and Nextcloud sync.
 
-<img width="1310" alt="Screenshot 2025-05-31 at 16 20 24" src="https://github.com/user-attachments/assets/c4ea3a65-4db1-4d05-903d-cd8a9708a0f7" />
+<img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 45 07" src="https://github.com/user-attachments/assets/ff491cdb-ada5-4b6c-8e10-dae242c8f29f" />
+<img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 44 53" src="https://github.com/user-attachments/assets/a8a493e6-11a4-4133-9aad-eea1e9440135" />
 
 ## Features
 
