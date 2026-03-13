@@ -453,8 +453,9 @@ struct WelcomeView: View {
         )
         .searchToolbarBehavior(.minimize)
         .toolbar {
-            ToolbarSpacer(.flexible, placement: .bottomBar)
+            #if !targetEnvironment(macCatalyst)
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            #endif
         }
     }
 

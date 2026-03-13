@@ -737,9 +737,48 @@ struct ShoppingListView: View {
                 .disabled(refreshState != .idle)
             }
 
+#if targetEnvironment(macCatalyst)
+            ToolbarItem(id: "map-location", placement: .navigationBarLeading) {
+                if viewModel.viewMode == .map {
+                    Button {
+                        LocationPermissionManager.shared.requestIfNeeded()
+                        mapCameraPosition = .userLocation(fallback: .automatic)
+                    } label: {
+                        Image(systemName: "location.fill")
+                    }
+                }
+            }
+            // Filter menu — visible in map mode when there is something to filter
+            ToolbarItem(id: "map-filter", placement: .navigationBarLeading) {
+                if viewModel.viewMode == .map {
+                    mapFilterMenu
+                }
+            }
+            // Map/List toggle
+            ToolbarItem(id: "map", placement: .navigationBarLeading) {
+                let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
+                if list.enableMapData == true && (!locationItems.isEmpty || viewModel.viewMode == .map) {
+                    Button {
+                        withAnimation(.easeInOut) {
+                            viewModel.setViewMode(viewModel.viewMode == .map ? .list : .map)
+                        }
+                    } label: {
+                        Image(systemName: viewModel.viewMode == .map ? "list.bullet" : "map")
+                    }
+                }
+            }
+            // Add button
+            ToolbarItem(id: "add", placement: .navigationBarLeading) {
+                Button {
+                    showingAddView = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(unifiedList.isReadOnly)
+            }
+#else
             // Flexible spacer pushes all bottom-bar items to the right
-            //ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarSpacer(.fixed, placement: .bottomBar)
+            ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(id: "map-location", placement: .bottomBar) {
                 if viewModel.viewMode == .map {
                     Button {
@@ -757,7 +796,6 @@ struct ShoppingListView: View {
                     mapFilterMenu
                 }
             }
-
             // Map/List toggle
             ToolbarItem(id: "map", placement: .bottomBar) {
                 let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
@@ -771,9 +809,7 @@ struct ShoppingListView: View {
                     }
                 }
             }
-
             ToolbarSpacer(.fixed, placement: .bottomBar)
-
             // Add button
             ToolbarItem(id: "add", placement: .bottomBar) {
                 Button {
@@ -783,6 +819,7 @@ struct ShoppingListView: View {
                 }
                 .disabled(unifiedList.isReadOnly)
             }
+#endif
 
         }
         .toolbar {

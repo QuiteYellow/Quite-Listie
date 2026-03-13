@@ -28,6 +28,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 
 ### Views
 - **List view** — standard checklist
+- **Map view** — per-list map showing items pinned to locations, with label filtering and long-press to add items
 - **Kanban board** — drag items between label columns
 - **Markdown preview** — rendered markdown view of the list
 
@@ -49,6 +50,14 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 - "Today" and "Scheduled" smart boxes in the sidebar
 - Complete items directly from a notification
 - Background refresh to keep reminder counts current
+
+### Locations & Maps
+- Pin a location to any item by pasting a Google Maps or Apple Maps link, or using the location picker
+- **Per-list map view** — see all pinned items for the current list on an interactive map; markers inherit the item's label colour and symbol
+- **Global Locations view** — a single map aggregating every pinned item across all lists; tap a pin to jump straight to that item
+- Filter map pins by label or toggle visibility of completed items
+- Long-press on the map to drop a new item at that coordinate
+- Open any pinned location in Apple Maps, Google Maps, or TomTom GO
 
 ### Smart Features
 - Recycle bin with 30-day auto-delete
