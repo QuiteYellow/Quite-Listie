@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		377036582F6495BE00811E99 /* QuiteListie.icon in Resources */ = {isa = PBXBuildFile; fileRef = 377036572F6495BE00811E99 /* QuiteListie.icon */; };
 		379DF6462F01885B00475782 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6452F01885B00475782 /* MarkdownView */; };
 		37DE9A5A2F5B1B460067D1AB /* NextcloudKit in Frameworks */ = {isa = PBXBuildFile; productRef = 37DE9A592F5B1B460067D1AB /* NextcloudKit */; };
 		CB001A012F100000002F4B13 /* ListieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A002F100000002F4B13 /* ListieTests.swift */; };
@@ -32,6 +33,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		377036572F6495BE00811E99 /* QuiteListie.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = QuiteListie.icon; sourceTree = "<group>"; };
 		37F742762EF8531900C4EEF4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = QuiteListie/Info.plist; sourceTree = "<group>"; };
 		CB001A002F100000002F4B13 /* ListieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListieTests.swift; sourceTree = "<group>"; };
 		CBEFA7AB2DE31318002F4B13 /* QuiteListie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiteListie.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -143,6 +145,7 @@
 				CB3015E22DE9D43700CCFCC8 /* Frameworks */,
 				CB001A022F100000002F4B13 /* QuiteListieTests */,
 				CBEFA7AC2DE31318002F4B13 /* Products */,
+				377036572F6495BE00811E99 /* QuiteListie.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -283,6 +286,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				377036582F6495BE00811E99 /* QuiteListie.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -465,12 +469,12 @@
 		CBEFA7CE2DE3131A002F4B13 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = QuiteListie;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -491,7 +495,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Quite Listie";
 				INFOPLIST_KEY_CFBundleName = "Quite Listie";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.shopping";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs access to your local network to communicate with devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -514,7 +518,7 @@
 				MARKETING_VERSION = 1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.quitelistie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
+					PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -531,12 +535,12 @@
 		CBEFA7CF2DE3131A002F4B13 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = QuiteListie;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -557,7 +561,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Quite Listie";
 				INFOPLIST_KEY_CFBundleName = "Quite Listie";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.shopping";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs access to your local network to communicate with devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -580,7 +584,7 @@
 				MARKETING_VERSION = 1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quiteyellow.quitelistie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
+					PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -599,7 +603,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -621,7 +625,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -642,7 +646,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -665,7 +669,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -738,22 +738,7 @@ struct ShoppingListView: View {
             }
 
 #if targetEnvironment(macCatalyst)
-            ToolbarItem(id: "map-location", placement: .navigationBarLeading) {
-                if viewModel.viewMode == .map {
-                    Button {
-                        LocationPermissionManager.shared.requestIfNeeded()
-                        mapCameraPosition = .userLocation(fallback: .automatic)
-                    } label: {
-                        Image(systemName: "location.fill")
-                    }
-                }
-            }
-            // Filter menu — visible in map mode when there is something to filter
-            ToolbarItem(id: "map-filter", placement: .navigationBarLeading) {
-                if viewModel.viewMode == .map {
-                    mapFilterMenu
-                }
-            }
+
             // Map/List toggle
             ToolbarItem(id: "map", placement: .navigationBarLeading) {
                 let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
@@ -776,10 +761,27 @@ struct ShoppingListView: View {
                 }
                 .disabled(unifiedList.isReadOnly)
             }
+            ToolbarSpacer(.fixed, placement: .navigationBarLeading)
+            ToolbarItem(id: "center-map-on-location", placement: .navigationBarLeading) {
+                if viewModel.viewMode == .map {
+                    Button {
+                        LocationPermissionManager.shared.requestIfNeeded()
+                        mapCameraPosition = .userLocation(fallback: .automatic)
+                    } label: {
+                        Image(systemName: "location.fill")
+                    }
+                }
+            }
+            // Filter menu — visible in map mode when there is something to filter
+            ToolbarItem(id: "map-filter", placement: .navigationBarLeading) {
+                if viewModel.viewMode == .map {
+                    mapFilterMenu
+                }
+            }
 #else
             // Flexible spacer pushes all bottom-bar items to the right
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(id: "map-location", placement: .bottomBar) {
+            ToolbarItem(id: "center-map-on-location", placement: .bottomBar) {
                 if viewModel.viewMode == .map {
                     Button {
                         LocationPermissionManager.shared.requestIfNeeded()
