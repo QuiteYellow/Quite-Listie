@@ -27,6 +27,8 @@ struct SettingsView: View {
     @State private var storageLocation = "Loading..."
     @State private var showICloudInfo = false
 
+    let provider: UnifiedListProvider
+
     @Bindable private var ekManager = EventKitManager.shared
 
     // Nextcloud
@@ -119,7 +121,10 @@ struct SettingsView: View {
                         .toggleStyle(.switch)
                         .onChange(of: ekManager.isEnabled) { _, enabled in
                             if enabled {
-                                Task { await EventKitManager.shared.requestAccessAndEnable() }
+                                Task {
+                                    await EventKitManager.shared.requestAccessAndEnable()
+                                    await EventKitManager.shared.syncIfEnabled(provider: provider)
+                                }
                             } else {
                                 EventKitManager.shared.disable()
                             }
@@ -378,6 +383,7 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(
+        provider: UnifiedListProvider(),
         hideWelcomeList: .constant(false),
         hideQuickAdd: .constant(false),
         hideEmptyLabels: .constant(false)

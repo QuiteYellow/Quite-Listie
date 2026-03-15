@@ -461,7 +461,7 @@ class EventKitManager {
         var candidates: [String: [EventCandidate]] = [:]
         store.enumerateEvents(matching: predicate) { event, _ in
             guard let url = event.url,
-                  url.scheme == "listie",
+                  url.scheme == "quitelistie",
                   url.host == "item",
                   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                   let uuidStr = components.queryItems?.first(where: { $0.name == "id" })?.value,
