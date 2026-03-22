@@ -17,6 +17,12 @@ enum LocationParser {
     /// Follows redirects for short URLs (e.g. maps.app.goo.gl) before parsing.
     /// Falls back to geocoding when the resolved URL contains only a place name query.
     static func parseCoordinate(from urlString: String) async -> Coordinate? {
+        await parseCoordinateWithSource(from: urlString)?.coord
+    }
+
+    /// Like `parseCoordinate(from:)` but also returns the resolved URL string (after any redirect).
+    /// Use `sourceURL` with `parsePlaceName` and `linkLabel` for accurate results on short links.
+    static func parseCoordinateWithSource(from urlString: String) async -> (coord: Coordinate, sourceURL: String)? {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let log = AppLogger.location
@@ -24,13 +30,13 @@ enum LocationParser {
         // Try parsing immediately first — handles most full URLs
         if let coord = parseDirectURL(trimmed) {
             log.debug("parseCoordinate: direct parse succeeded")
-            return coord
+            return (coord, trimmed)
         }
 
         // Direct Google Maps place URL with no embedded coordinates — geocode the place name
         if let coord = await geocodePlaceFromGoogleMapsPath(trimmed) {
             log.debug("parseCoordinate: place-name geocode succeeded (direct)")
-            return coord
+            return (coord, trimmed)
         }
 
         // For short / redirect URLs, resolve the redirect chain first
@@ -55,19 +61,19 @@ enum LocationParser {
 
         if let coord = parseDirectURL(resolvedString) {
             log.debug("parseCoordinate: direct parse succeeded after redirect")
-            return coord
+            return (coord, resolvedString)
         }
 
         // Fallback: geocode the place name from the ?q= param
         if let coord = await geocodeQueryParam(resolvedString) {
             log.debug("parseCoordinate: q-param geocode succeeded after redirect")
-            return coord
+            return (coord, resolvedString)
         }
 
         // Fallback: geocode from Google Maps place name in path
         if let coord = await geocodePlaceFromGoogleMapsPath(resolvedString) {
             log.debug("parseCoordinate: place-name geocode succeeded after redirect")
-            return coord
+            return (coord, resolvedString)
         }
 
         log.warning("parseCoordinate: all strategies exhausted")
@@ -300,6 +306,46 @@ enum LocationParser {
 
     private static func isValidLatLng(_ lat: Double, _ lng: Double) -> Bool {
         lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+    }
+
+    // MARK: - Place name & link label helpers
+
+    /// Extracts a human-readable place name from a Google Maps or Apple Maps URL.
+    /// Returns nil for short/redirect URLs or if no name is present.
+    static func parsePlaceName(from urlString: String) -> String? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else { return nil }
+        let host = url.host ?? ""
+
+        // Google Maps: /maps/place/PLACE_NAME/@...
+        if host.contains("google.com") {
+            let parts = url.pathComponents
+            guard let placeIdx = parts.firstIndex(of: "place"), placeIdx + 1 < parts.count else { return nil }
+            let raw = parts[placeIdx + 1]
+            let decoded = (raw.removingPercentEncoding ?? raw).replacingOccurrences(of: "+", with: " ")
+            return decoded.isEmpty ? nil : decoded
+        }
+
+        // Apple Maps: q= param
+        if host.contains("apple.com") || host == "maps.apple" {
+            guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let q = components.queryItems?.first(where: { $0.name == "q" })?.value,
+                  !q.isEmpty else { return nil }
+            return q.replacingOccurrences(of: "+", with: " ")
+        }
+
+        return nil
+    }
+
+    /// Returns an appropriate link label for the map URL source.
+    static func linkLabel(for urlString: String) -> String {
+        guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return "Show on map"
+        }
+        let host = url.host ?? ""
+        if host.contains("google.com") || host.contains("goo.gl") { return "Show on Google Maps" }
+        if host.contains("apple.com") || host.contains("link.maps.apple") { return "Show on Apple Maps" }
+        return "Show on map"
     }
 }
 

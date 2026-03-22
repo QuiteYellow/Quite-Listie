@@ -24,6 +24,7 @@ struct GlobalMapView: View {
     @State private var selectedLabelIDs: Set<String> = []
     @State private var showCompleted: Bool = false
     @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var focusState: MapFocusState = .all
 
     // MARK: - Derived Data
 
@@ -64,7 +65,9 @@ struct GlobalMapView: View {
 
     var body: some View {
         Group {
-            if welcomeViewModel.locationEntries.isEmpty {
+            if !welcomeViewModel.hasLoadedLocations {
+                Color.clear
+            } else if welcomeViewModel.locationEntries.isEmpty {
                 emptyState
             } else {
                 mapContent
@@ -76,10 +79,9 @@ struct GlobalMapView: View {
 #if targetEnvironment(macCatalyst)
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    LocationPermissionManager.shared.requestIfNeeded()
-                    cameraPosition = .userLocation(fallback: .automatic)
+                    toggleFocus()
                 } label: {
-                    Image(systemName: "location.fill")
+                    Image(systemName: focusState.icon)
                 }
             }
             ToolbarItem(placement: .navigationBarLeading) {
@@ -89,10 +91,9 @@ struct GlobalMapView: View {
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button {
-                    LocationPermissionManager.shared.requestIfNeeded()
-                    cameraPosition = .userLocation(fallback: .automatic)
+                    toggleFocus()
                 } label: {
-                    Image(systemName: "location.fill")
+                    Image(systemName: focusState.icon)
                 }
             }
             ToolbarSpacer(.fixed, placement: .bottomBar)
@@ -107,6 +108,7 @@ struct GlobalMapView: View {
 
     private var mapContent: some View {
         Map(position: $cameraPosition, selection: $selectedItemID, scope: mapScope) {
+            UserAnnotation()
             ForEach(visibleEntries) { entry in
                 if let loc = entry.item.location {
                     let coord = CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
@@ -138,6 +140,36 @@ struct GlobalMapView: View {
             selectedItemID = nil
             onTapItem?(entry.item, entry.list)
         }
+        .onChange(of: searchText) { _, newText in
+            if !newText.isEmpty && focusState != .all {
+                cameraPosition = .automatic
+                focusState = .all
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 10)
+                .onChanged { _ in
+                    if focusState == .heading {
+                        focusState = .all
+                    }
+                }
+        )
+    }
+
+    // MARK: - Toggle Focus
+
+    private func toggleFocus() {
+        LocationPermissionManager.shared.requestIfNeeded()
+        focusState = focusState.next
+        switch focusState {
+        case .all:     cameraPosition = .automatic
+        case .city:    cameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
+        case .heading: applyHeadingCamera()
+        }
+    }
+
+    private func applyHeadingCamera() {
+        cameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
     }
 
     // MARK: - Filter Menu

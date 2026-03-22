@@ -46,7 +46,7 @@ extension NextcloudCredentials {
             kSecClass:           kSecClassGenericPassword,
             kSecAttrAccount:     NextcloudCredentials.keychainKey,
             kSecValueData:       data,
-            kSecAttrAccessible:  kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccessible:  kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         // Remove any previous entry first
         SecItemDelete(query as CFDictionary)

@@ -5,6 +5,7 @@
 //  Simplified data model with fewer UUIDs and cleaner structure
 //
 
+import CoreLocation
 import Foundation
 
 // MARK: - Document Version
@@ -336,4 +337,33 @@ func sortedLabels(_ labels: [ShoppingLabel], by labelOrder: [String]?) -> [Shopp
     result.append(contentsOf: remaining)
 
     return result
+}
+
+// MARK: - Map Focus State
+
+enum MapFocusState {
+    case all, city, heading
+
+    /// Cycles all → city → heading → all, skipping heading on devices without a compass.
+    var next: MapFocusState {
+        switch self {
+        case .all:     return .city
+        case .city:
+#if targetEnvironment(macCatalyst)
+            return .all
+#else
+            return CLLocationManager.headingAvailable() ? .heading : .all
+#endif
+        case .heading: return .all
+        }
+    }
+
+    /// SF Symbol representing the current mode (matches Apple Maps conventions)
+    var icon: String {
+        switch self {
+        case .all:     return "location"
+        case .city:    return "location.fill"
+        case .heading: return "location.north.line.fill"
+        }
+    }
 }

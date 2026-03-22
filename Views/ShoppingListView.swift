@@ -284,6 +284,7 @@ struct ShoppingListView: View {
     @State private var mapShowCompleted: Bool = false
     @State private var mapAddLocation: Coordinate? = nil
     @State private var mapCameraPosition: MapCameraPosition = .automatic
+    @State private var mapFocusState: MapFocusState = .all
     
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
@@ -599,8 +600,20 @@ struct ShoppingListView: View {
             showCompleted: mapShowCompleted,
             searchText: viewModel.searchText,
             onEdit: { editingItem = $0 },
-            onAddAtLocation: { coord in mapAddLocation = coord }
+            onAddAtLocation: { coord in mapAddLocation = coord },
+            isLoaded: viewModel.hasLoaded,
+            onUserCameraInteraction: {
+                if mapFocusState == .heading {
+                    mapFocusState = .all
+                }
+            }
         )
+        .onChange(of: viewModel.searchText) { _, newText in
+            if !newText.isEmpty && mapFocusState != .all {
+                mapCameraPosition = .automatic
+                mapFocusState = .all
+            }
+        }
     }
 
     var body: some View {
@@ -645,6 +658,15 @@ struct ShoppingListView: View {
             if newMode != .map {
                 mapLabelFilter.removeAll()
                 mapShowCompleted = false
+            } else {
+                mapCameraPosition = .automatic
+                mapFocusState = .all
+            }
+        }
+        .onChange(of: viewModel.searchText) { _, newText in
+            if !newText.isEmpty && mapFocusState != .all {
+                mapCameraPosition = .automatic
+                mapFocusState = .all
             }
         }
         .navigationTitle(list.name)
@@ -765,10 +787,9 @@ struct ShoppingListView: View {
             ToolbarItem(id: "center-map-on-location", placement: .navigationBarLeading) {
                 if viewModel.viewMode == .map {
                     Button {
-                        LocationPermissionManager.shared.requestIfNeeded()
-                        mapCameraPosition = .userLocation(fallback: .automatic)
+                        toggleMapFocus()
                     } label: {
-                        Image(systemName: "location.fill")
+                        Image(systemName: mapFocusState.icon)
                     }
                 }
             }
@@ -784,10 +805,9 @@ struct ShoppingListView: View {
             ToolbarItem(id: "center-map-on-location", placement: .bottomBar) {
                 if viewModel.viewMode == .map {
                     Button {
-                        LocationPermissionManager.shared.requestIfNeeded()
-                        mapCameraPosition = .userLocation(fallback: .automatic)
+                        toggleMapFocus()
                     } label: {
-                        Image(systemName: "location.fill")
+                        Image(systemName: mapFocusState.icon)
                     }
                 }
             }
@@ -1106,6 +1126,20 @@ struct ShoppingListView: View {
             Label("Recycle Bin", systemImage: "trash")
         }
         .disabled(unifiedList.isReadOnly)
+    }
+
+    private func toggleMapFocus() {
+        LocationPermissionManager.shared.requestIfNeeded()
+        mapFocusState = mapFocusState.next
+        switch mapFocusState {
+        case .all:     mapCameraPosition = .automatic
+        case .city:    mapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
+        case .heading: applyHeadingCamera()
+        }
+    }
+
+    private func applyHeadingCamera() {
+        mapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
     }
 
     private func addInlineItem(to labelName: String) {

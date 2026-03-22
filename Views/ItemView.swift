@@ -342,12 +342,17 @@ struct ItemFormView: View {
         }
         pasteLocationFeedback = .loading
         AppLogger.location.debug("pasteLocation clipboard: \(text, privacy: .public)")
-        if let coord = await LocationParser.parseCoordinate(from: text) {
-            AppLogger.location.debug("pasteLocation parsed: \(coord.latitude, privacy: .public), \(coord.longitude, privacy: .public)")
-            location = coord
-            // Append the source link to markdown notes
-            let trimmedURL = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let link = "\n[Location](\(trimmedURL))"
+        if let result = await LocationParser.parseCoordinateWithSource(from: text) {
+            AppLogger.location.debug("pasteLocation parsed: \(result.coord.latitude, privacy: .public), \(result.coord.longitude, privacy: .public)")
+            location = result.coord
+            // Auto-fill item name from place name if not yet set
+            if itemName.isEmpty, let placeName = LocationParser.parsePlaceName(from: result.sourceURL) {
+                itemName = placeName
+            }
+            // Append the source link to markdown notes using the original URL but resolved label/name
+            let label = LocationParser.linkLabel(for: result.sourceURL)
+            let originalURL = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let link = "\n[\(label)](\(originalURL))"
             if !mdNotes.contains(link) {
                 mdNotes += link
             }

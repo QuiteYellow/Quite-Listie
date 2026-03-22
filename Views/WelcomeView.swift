@@ -66,10 +66,10 @@ struct WelcomeView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(
-                provider: unifiedProvider,
                 hideWelcomeList: $hideWelcomeList,
                 hideQuickAdd: $hideQuickAdd,
-                hideEmptyLabels: $hideEmptyLabels
+                hideEmptyLabels: $hideEmptyLabels,
+                provider: unifiedProvider
             )
         }
         .sheet(item: $editingUnifiedList, onDismiss: {

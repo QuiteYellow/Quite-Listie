@@ -20,6 +20,8 @@ enum ListViewMode: String, Codable {
 class ShoppingListViewModel {
     var items: [ShoppingItem] = []
     var isLoading = false
+    /// True once `loadItems` has completed at least one full fetch
+    var hasLoaded = false
     var labels: [ShoppingLabel] = []
 
     var expandedSections: [String: Bool] = [:]
@@ -88,6 +90,7 @@ class ShoppingListViewModel {
             AppLogger.items.error("Error loading items: \(error, privacy: .public)")
         }
         guard !Task.isCancelled else { return }
+        hasLoaded = true
         isLoading = false
     }
 
