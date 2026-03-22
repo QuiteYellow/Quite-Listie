@@ -13,18 +13,47 @@ import UserNotifications
 
 // MARK: - Location Permission
 
-final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
+final class LocationPermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = LocationPermissionManager()
     private let manager = CLLocationManager()
+
+    @Published var currentLocation: CLLocation?
+    @Published var currentHeading: CLHeading?
 
     private override init() {
         super.init()
         manager.delegate = self
+        startIfAuthorized()
     }
 
     func requestIfNeeded() {
-        guard manager.authorizationStatus == .notDetermined else { return }
-        manager.requestWhenInUseAuthorization()
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            startIfAuthorized()
+        default:
+            break
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        startIfAuthorized()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        currentLocation = locations.last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        currentHeading = newHeading
+    }
+
+    private func startIfAuthorized() {
+        guard manager.authorizationStatus == .authorizedWhenInUse ||
+              manager.authorizationStatus == .authorizedAlways else { return }
+        manager.startUpdatingLocation()
+        manager.startUpdatingHeading()
     }
 }
 

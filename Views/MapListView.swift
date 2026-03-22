@@ -20,6 +20,8 @@ struct MapListView: View {
     var searchText: String = ""
     var onEdit: ((ShoppingItem) -> Void)?
     var onAddAtLocation: ((Coordinate) -> Void)? = nil
+    var isLoaded: Bool = true
+    var onUserCameraInteraction: (() -> Void)? = nil
 
     @Namespace private var mapScope
 
@@ -64,7 +66,9 @@ struct MapListView: View {
     }
 
     var body: some View {
-        if allLocationItems.isEmpty {
+        if !isLoaded {
+            Color.clear
+        } else if allLocationItems.isEmpty {
             emptyState
         } else {
             mapContent
@@ -76,6 +80,7 @@ struct MapListView: View {
     private var mapContent: some View {
         MapReader { proxy in
             Map(position: $cameraPosition, selection: $selectedItemID, scope: mapScope) {
+                UserAnnotation()
                 ForEach(visibleItems) { item in
                     if let loc = item.location {
                         let coord = CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
@@ -109,6 +114,10 @@ struct MapListView: View {
                     .updating($pressLocation) { value, state, _ in
                         state = value.startLocation
                     }
+            )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { _ in onUserCameraInteraction?() }
             )
             .simultaneousGesture(
                 LongPressGesture(minimumDuration: 0.5)

@@ -13,6 +13,7 @@ struct SettingsView: View {
     @Binding var hideWelcomeList: Bool
     @Binding var hideQuickAdd: Bool
     @Binding var hideEmptyLabels: Bool
+    let provider: UnifiedListProvider
 
     @AppStorage("kanbanColumnWidth") private var kanbanColumnWidth = "normal"
     @AppStorage("navShowAppleMaps") private var navShowAppleMaps: Bool = true
@@ -26,8 +27,6 @@ struct SettingsView: View {
     @State private var iCloudSyncEnabled = true
     @State private var storageLocation = "Loading..."
     @State private var showICloudInfo = false
-
-    let provider: UnifiedListProvider
 
     @Bindable private var ekManager = EventKitManager.shared
 
@@ -383,9 +382,9 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(
-        provider: UnifiedListProvider(),
         hideWelcomeList: .constant(false),
         hideQuickAdd: .constant(false),
-        hideEmptyLabels: .constant(false)
+        hideEmptyLabels: .constant(false),
+        provider: UnifiedListProvider()
     )
 }

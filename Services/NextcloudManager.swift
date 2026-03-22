@@ -74,6 +74,9 @@ actor NextcloudManager {
             creds.setupSession(nk: nk)
             // Actor init is synchronous so we defer monitor start
             Task { await NextcloudManager.shared.startNetworkMonitor() }
+            // Migration: re-save to upgrade keychain accessibility to AfterFirstUnlock.
+            try? creds.save()
+            // End migration: can be removed once all users have run this version.
         }
     }
 
