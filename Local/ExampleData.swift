@@ -224,7 +224,7 @@ Every item can have rich **markdown notes** attached to it. Use them for recipes
 ### Supported Markdown
 
 - **Bold**, *italic*, ~~strikethrough~~
-- [Links](https://example.com)
+- [Links](hxxps://example.com)
 - `Inline code` and code blocks
 - Headings (`#`, `##`, `###`)
 - Bullet lists and numbered lists
