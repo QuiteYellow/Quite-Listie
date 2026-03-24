@@ -314,6 +314,9 @@ struct ReminderListView: View {
     // MARK: - Actions
 
     private func toggleItem(_ entry: ReminderEntry) async {
+        // Optimistically remove the entry so the UI responds immediately
+        welcomeViewModel.reminderEntries.removeAll { $0.id == entry.id }
+
         let vm = viewModel(for: entry)
         await vm.loadItems()
         await vm.toggleChecked(for: entry.item) { count in
