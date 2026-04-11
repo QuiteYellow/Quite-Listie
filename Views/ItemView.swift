@@ -36,6 +36,8 @@ struct ItemFormView: View {
     var enableMapData: Bool = false
     /// The item's current pinned coordinate (read/write).
     @Binding var location: Coordinate?
+    /// The original maps URL used to set the location.
+    @Binding var sourceURL: String?
 
     @State private var linkCopied = false
     @State private var pasteLocationFeedback: PasteLocationFeedback = .idle
@@ -256,8 +258,17 @@ struct ItemFormView: View {
                         .buttonStyle(.plain)
                     }
                     .confirmationDialog("Remove Location?", isPresented: $showRemoveLocationConfirm, titleVisibility: .visible) {
-                        Button("Remove", role: .destructive) { location = nil }
+                        Button("Remove", role: .destructive) {
+                            location = nil
+                            sourceURL = nil
+                        }
                         Button("Cancel", role: .cancel) {}
+                    }
+
+                    if let url = sourceURL, !url.isEmpty {
+                        Button { openSourceURL(url) } label: {
+                            Label(sourceURLLabel(for: url), systemImage: "safari")
+                        }
                     }
 
                     if navShowAppleMaps {
@@ -349,13 +360,8 @@ struct ItemFormView: View {
             if itemName.isEmpty, let placeName = LocationParser.parsePlaceName(from: result.sourceURL) {
                 itemName = placeName
             }
-            // Append the source link to markdown notes using the original URL but resolved label/name
-            let label = LocationParser.linkLabel(for: result.sourceURL)
-            let originalURL = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let link = "\n[\(label)](\(originalURL))"
-            if !mdNotes.contains(link) {
-                mdNotes += link
-            }
+            // Save the original URL to the sourceURL field
+            sourceURL = text.trimmingCharacters(in: .whitespacesAndNewlines)
             pasteLocationFeedback = .success
         } else {
             AppLogger.location.warning("pasteLocation failed to parse: \(text, privacy: .public)")
@@ -363,6 +369,19 @@ struct ItemFormView: View {
         }
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         pasteLocationFeedback = .idle
+    }
+
+    private func sourceURLLabel(for urlString: String) -> String {
+        guard let url = URL(string: urlString) else { return "View in Maps" }
+        let host = url.host ?? ""
+        if host.contains("google.com") || host.contains("goo.gl") { return "View in Google Maps" }
+        if host.contains("apple.com") || host.contains("link.maps.apple") { return "View in Apple Maps" }
+        return "View in Maps"
+    }
+
+    private func openSourceURL(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        UIApplication.shared.open(url)
     }
 
     private func openInAppleMaps(_ coord: Coordinate) {
@@ -523,6 +542,7 @@ struct AddItemView: View {
     @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
     @State private var location: Coordinate?
+    @State private var sourceURL: String?
 
     init(list: ShoppingListSummary, viewModel: ShoppingListViewModel, initialLocation: Coordinate? = nil) {
         self.list = list
@@ -546,7 +566,8 @@ struct AddItemView: View {
                 availableLabels: availableLabels,
                 isLoading: isLoading,
                 enableMapData: list.enableMapData == true,
-                location: $location
+                location: $location,
+                sourceURL: $sourceURL
             )
             .navigationTitle("Add Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -563,7 +584,8 @@ struct AddItemView: View {
                                 reminderDate: reminderEnabled ? reminderDate : nil,
                                 reminderRepeatRule: reminderEnabled ? repeatRule : nil,
                                 reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil,
-                                location: location
+                                location: location,
+                                sourceURL: sourceURL
                             )
                             if success {
                                 dismiss()
@@ -643,6 +665,7 @@ struct EditItemView: View {
     @State private var repeatRule: ReminderRepeatRule? = nil
     @State private var repeatMode: ReminderRepeatMode = .fixed
     @State private var location: Coordinate? = nil
+    @State private var sourceURL: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -664,7 +687,8 @@ struct EditItemView: View {
                 folderName: editFolderName,
                 itemID: item.id,
                 enableMapData: list.enableMapData == true,
-                location: $location
+                location: $location,
+                sourceURL: $sourceURL
             )
             .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
@@ -691,7 +715,8 @@ struct EditItemView: View {
                                     reminderDate: reminderEnabled ? reminderDate : nil,
                                     reminderRepeatRule: reminderEnabled ? repeatRule : nil,
                                     reminderRepeatMode: reminderEnabled && repeatRule != nil ? repeatMode : nil,
-                                    location: location
+                                    location: location,
+                                    sourceURL: sourceURL
                                 )
                                 if success {
                                     dismiss()
@@ -769,6 +794,7 @@ struct EditItemView: View {
             repeatRule = item.reminderRepeatRule
             repeatMode = item.reminderRepeatMode ?? .fixed
             location = item.location
+            sourceURL = item.sourceURL
         }
     }
 }

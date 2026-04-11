@@ -354,6 +354,13 @@ struct SidebarView: View {
                     .imageScale(.small)
             }
 
+            // Show sync-pending indicator for lists serving cached data
+            if unifiedProvider.syncPendingListIDs.contains(list.id) {
+                Image(systemName: "icloud.slash")
+                    .foregroundStyle(.secondary)
+                    .imageScale(.small)
+            }
+
             // Show sync status icons
             if list.isExternal || list.isNextcloud {
                 saveStatusView(for: saveStatus)

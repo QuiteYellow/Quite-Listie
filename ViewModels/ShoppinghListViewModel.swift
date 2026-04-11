@@ -165,7 +165,7 @@ class ShoppingListViewModel {
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil) async -> Bool {
+    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil, sourceURL: String? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         var newItem = ModelHelpers.createNewItem(
             note: note,
@@ -176,7 +176,8 @@ class ShoppingListViewModel {
             reminderDate: reminderDate,
             reminderRepeatRule: reminderRepeatRule,
             reminderRepeatMode: reminderRepeatMode,
-            location: location
+            location: location,
+            sourceURL: sourceURL
         )
 
         // Handle recurrence when adding a checked item with a repeat rule
@@ -337,7 +338,7 @@ class ShoppingListViewModel {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil) async -> Bool {
+    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil, sourceURL: String? = nil) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
@@ -348,6 +349,7 @@ class ShoppingListViewModel {
         updatedItem.reminderRepeatRule = reminderRepeatRule
         updatedItem.reminderRepeatMode = reminderRepeatMode
         updatedItem.location = location
+        updatedItem.sourceURL = sourceURL
         updatedItem.modifiedAt = Date()  // Update timestamp
 
         // Handle recurrence when checking off an item with a repeat rule
@@ -425,7 +427,8 @@ class ShoppingListViewModel {
     func incrementQuantity(for item: ShoppingItem) async {
         let newQty = item.quantity + 1
         _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes,
-                             reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode)
+                             reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode,
+                             location: item.location, sourceURL: item.sourceURL)
     }
 
     /// Decrements item quantity by 1. Returns false if item should be deleted (qty would be 0)
@@ -435,7 +438,8 @@ class ShoppingListViewModel {
         }
         let newQty = max(item.quantity - 1, 1)
         _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes,
-                             reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode)
+                             reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode,
+                             location: item.location, sourceURL: item.sourceURL)
         return true
     }
     

@@ -14,30 +14,34 @@ struct ListDocument: Codable {
     var list: ShoppingListSummary
     var items: [ShoppingItem]
     var labels: [ShoppingLabel]
-    
-    init(list: ShoppingListSummary, items: [ShoppingItem] = [], labels: [ShoppingLabel] = []) {
+    var deletedLabelIDs: [String] = []  // Tombstones: IDs of labels intentionally deleted
+
+    init(list: ShoppingListSummary, items: [ShoppingItem] = [], labels: [ShoppingLabel] = [], deletedLabelIDs: [String] = []) {
         self.version = 2
         self.list = list
         self.items = items
         self.labels = labels
+        self.deletedLabelIDs = deletedLabelIDs
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case version
         case list
         case items
         case labels
+        case deletedLabelIDs
     }
-    
+
     // Custom decoder to handle missing version field (old withMealie files)
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
+
         // Default to version 1 if not present (old withMealie format)
         self.version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         self.list = try container.decode(ShoppingListSummary.self, forKey: .list)
         self.items = try container.decode([ShoppingItem].self, forKey: .items)
         self.labels = try container.decode([ShoppingLabel].self, forKey: .labels)
+        self.deletedLabelIDs = try container.decodeIfPresent([String].self, forKey: .deletedLabelIDs) ?? []
     }
 }
 
@@ -204,17 +208,18 @@ struct ShoppingItem: Identifiable, Codable {
     var reminderRepeatRule: ReminderRepeatRule?  // repeat rule (unit + interval)
     var reminderRepeatMode: ReminderRepeatMode?  // fixed or after-completion
     var location: Coordinate?  // optional pinned map coordinate
+    var sourceURL: String?  // original maps URL used to set the location
 
 
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode, location
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode, location, sourceURL
         }
 
     init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
              labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(),
              isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil,
              reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil,
-             location: Coordinate? = nil) {
+             location: Coordinate? = nil, sourceURL: String? = nil) {
             self.id = id
             self.note = note
             self.quantity = quantity
@@ -228,6 +233,7 @@ struct ShoppingItem: Identifiable, Codable {
             self.reminderRepeatRule = reminderRepeatRule
             self.reminderRepeatMode = reminderRepeatMode
             self.location = location
+            self.sourceURL = sourceURL
         }
     }
 
