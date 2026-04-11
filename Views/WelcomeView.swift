@@ -16,6 +16,8 @@ struct WelcomeView: View {
     @State private var selectedListID: String? = nil
     /// Item ID to open in the editor once the target ShoppingListView appears.
     @State private var pendingItemID: String? = nil
+    @State private var mapEditingItem: ShoppingItem? = nil
+    @State private var mapEditingList: UnifiedList? = nil
     @State private var isPresentingNewList = false
     @State private var showFileImporter = false
     @State private var showFileExporter = false
@@ -423,11 +425,24 @@ struct WelcomeView: View {
                 GlobalMapView(
                     welcomeViewModel: welcomeViewModel,
                     searchText: detailSearchText,
-                    onTapItem: { item, list in
-                        selectedListID = list.id
-                        pendingItemID = item.id.uuidString
+                    onShowDetails: { item, list in
+                        mapEditingItem = item
+                        mapEditingList = list
                     }
                 )
+                .fullScreenCover(item: $mapEditingItem) { item in
+                    if let list = mapEditingList {
+                        let vm = ShoppingListViewModel(list: list, provider: unifiedProvider)
+                        NavigationStack {
+                            EditItemView(
+                                viewModel: vm,
+                                item: item,
+                                list: list.summary,
+                                unifiedList: list
+                            )
+                        }
+                    }
+                }
             } else if let listID = selectedListID,
                let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
                 ShoppingListView(

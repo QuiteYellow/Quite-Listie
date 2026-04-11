@@ -151,15 +151,19 @@ actor FileStore {
                 if let conflictDoc = try? decoder.decode(ListDocument.self, from: conflictData) {
                     
                     if let existing = mergedDocument {
+                        // Union tombstones from both sides so deletions propagate
+                        let deletedIDs = Set(existing.deletedLabelIDs).union(conflictDoc.deletedLabelIDs)
+
                         // Merge items and labels
                         let mergedItems = mergeItems(cached: existing.items, disk: conflictDoc.items)
-                        let mergedLabels = mergeLabels(cached: existing.labels, disk: conflictDoc.labels)
-                        
+                        let mergedLabels = mergeLabels(cached: existing.labels, disk: conflictDoc.labels, deletedIDs: deletedIDs)
+
                         var combined = existing
                         combined.items = mergedItems
                         combined.labels = mergedLabels
+                        combined.deletedLabelIDs = Array(deletedIDs)
                         combined.list.modifiedAt = max(existing.list.modifiedAt, conflictDoc.list.modifiedAt)
-                        
+
                         mergedDocument = combined
                     } else {
                         mergedDocument = conflictDoc
@@ -966,7 +970,7 @@ actor FileStore {
     /// Merges labels from cache and disk — union of both sets.
     /// Labels only in cache (new local) are kept. Labels only on disk (new remote) are kept.
     /// Labels in both are kept (name/color from cache since it's the latest local state).
-    private func mergeLabels(cached: [ShoppingLabel], disk: [ShoppingLabel]) -> [ShoppingLabel] {
+    private func mergeLabels(cached: [ShoppingLabel], disk: [ShoppingLabel], deletedIDs: Set<String> = []) -> [ShoppingLabel] {
         var labelsById: [String: ShoppingLabel] = [:]
 
         // Add all disk labels first (remote state)
@@ -979,10 +983,13 @@ actor FileStore {
             labelsById[label.id] = label
         }
 
+        // Remove tombstoned labels so stale caches can't resurrect deleted labels
+        for id in deletedIDs { labelsById.removeValue(forKey: id) }
+
         // Preserve disk order, then append any new cached labels at the end
         let diskIDs = Set(disk.map { $0.id })
         var result = disk.compactMap { labelsById[$0.id] }
-        let newFromCache = cached.filter { !diskIDs.contains($0.id) }
+        let newFromCache = cached.filter { !diskIDs.contains($0.id) && !deletedIDs.contains($0.id) }
         result.append(contentsOf: newFromCache)
 
         return result

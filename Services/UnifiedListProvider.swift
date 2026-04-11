@@ -102,6 +102,10 @@ class UnifiedListProvider {
     var loadingProgress: (current: Int, total: Int) = (0, 0)
     var isInitialLoad: Bool = true
 
+    /// Lists currently serving cached data because the server was unreachable.
+    /// Cleared automatically when sync succeeds.
+    var syncPendingListIDs: Set<String> = []
+
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
     private var activeSyncs: Set<String> = []
 
@@ -376,6 +380,36 @@ class UnifiedListProvider {
                 if case NCError.notFound = error {} else if allLists.contains(where: { $0.id == runtimeId }) {
                     continue
                 }
+
+                // For transient errors (not 404), try disk cache before marking unavailable.
+                // After an app kill the memCache is empty, but disk cache may still be valid.
+                if case NCError.notFound = error {} else {
+                    if let diskDoc = await NextcloudManager.shared.openFileFromDiskCache(remotePath: remotePath) {
+                        AppLogger.nextcloud.info("[NC] Using disk cache after transient error for \(remotePath, privacy: .public)")
+                        var summary = diskDoc.list
+                        summary.id = runtimeId
+                        nextcloudLabels[remotePath] = diskDoc.labels
+                        newEntry = UnifiedList(
+                            id: runtimeId,
+                            source: .nextcloud(accountId: accountId, remotePath: remotePath),
+                            summary: summary,
+                            originalFileId: diskDoc.list.id,
+                            isReadOnly: false
+                        )
+
+                        if let index = allLists.firstIndex(where: { $0.id == runtimeId }) {
+                            allLists[index] = newEntry
+                        } else {
+                            allLists.append(newEntry)
+                            allLists.sort { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }
+                        }
+                        saveStatus[runtimeId] = .saved
+                        syncPendingListIDs.insert(runtimeId)
+                        loadedIds.insert(runtimeId)
+                        continue
+                    }
+                }
+
                 let fileName = remotePath.split(separator: "/").last.map(String.init) ?? remotePath
                 let displayName = fileName.replacingOccurrences(of: ".listie", with: "")
                 let serverHost = accountId.components(separatedBy: "@").last ?? accountId
@@ -406,6 +440,18 @@ class UnifiedListProvider {
 
         // Remove stale NC entries (files removed from UserDefaults while app was running)
         allLists.removeAll { $0.isNextcloud && !loadedIds.contains($0.id) }
+
+        // Check server reachability — if unreachable, mark all loaded NC lists as sync-pending
+        // so the user sees a subtle offline indicator instead of stale data with no warning.
+        if !loadedIds.isEmpty {
+            let reachable = await NextcloudManager.shared.isServerReachable()
+            if !reachable {
+                for id in loadedIds {
+                    syncPendingListIDs.insert(id)
+                }
+                AppLogger.nextcloud.info("[NC] Server unreachable — marked \(loadedIds.count) list(s) as sync-pending")
+            }
+        }
 
         currentlyLoadingFile = nil
         loadingProgress = (0, 0)
@@ -621,8 +667,13 @@ class UnifiedListProvider {
         if case .nextcloud(let accountId, let remotePath) = list.source {
             let hasPending = await NextcloudManager.shared.hasPendingUpload(remotePath: remotePath)
             do {
-                // hasFileChanged throws NCError.notFound if the file was deleted/moved on the server
-                let hasChanged = try await NextcloudManager.shared.hasFileChanged(remotePath: remotePath)
+                // checkFileChanged throws NCError.notFound if the file was deleted/moved on the server
+                let changeResult = try await NextcloudManager.shared.checkFileChanged(remotePath: remotePath)
+                // Only clear sync-pending when the server actually responded
+                if changeResult != .unreachable {
+                    syncPendingListIDs.remove(list.id)
+                }
+                let hasChanged = changeResult == .changed
                 guard hasPending || hasChanged else { return }
 
                 AppLogger.sync.debug("[Sync] Nextcloud sync needed for \(list.summary.name, privacy: .public) (pending=\(hasPending), changed=\(hasChanged))")
@@ -694,6 +745,14 @@ class UnifiedListProvider {
     }
 
     func syncAllLists() async {
+        // Re-establish the NextcloudKit URLSession — iOS may have invalidated it
+        // during extended suspension (deep sleep). This is a no-op if not connected.
+        await NextcloudManager.shared.reactivateSession()
+
+        // First, retry any unavailable Nextcloud lists — they may have been marked unavailable
+        // due to transient errors (network down, app killed while offline, etc.)
+        await retryUnavailableNextcloudLists()
+
         for list in allLists where !list.isReadOnly {
             do { try await syncIfNeeded(for: list) }
             catch { AppLogger.sync.warning("Sync skipped for \(list.id, privacy: .public): \(error, privacy: .public)") }
@@ -701,6 +760,43 @@ class UnifiedListProvider {
     }
 
     func syncAllExternalLists() async { await syncAllLists() }
+
+    /// Attempts to recover Nextcloud lists that were marked unavailable due to transient errors.
+    /// Skips lists that were unavailable because the file was deleted on the server (.fileNotFound).
+    private func retryUnavailableNextcloudLists() async {
+        let unavailableNC = allLists.filter { list in
+            guard list.isUnavailable, list.isNextcloud else { return false }
+            // Don't retry files confirmed deleted on the server
+            if let reason = list.unavailableBookmark?.reason, case .fileNotFound = reason { return false }
+            return true
+        }
+        guard !unavailableNC.isEmpty else { return }
+
+        AppLogger.nextcloud.info("[NC] Retrying \(unavailableNC.count) unavailable Nextcloud list(s)")
+
+        for list in unavailableNC {
+            guard case .nextcloud(let accountId, let remotePath) = list.source else { continue }
+            do {
+                let doc = try await NextcloudManager.shared.openFile(remotePath: remotePath, forceReload: true)
+                var summary = doc.list
+                summary.id = list.id
+                nextcloudLabels[remotePath] = doc.labels
+                if let index = allLists.firstIndex(where: { $0.id == list.id }) {
+                    allLists[index] = UnifiedList(
+                        id: list.id,
+                        source: .nextcloud(accountId: accountId, remotePath: remotePath),
+                        summary: summary,
+                        originalFileId: doc.list.id,
+                        isReadOnly: false
+                    )
+                    saveStatus[list.id] = .saved
+                    AppLogger.nextcloud.info("[NC] Recovered unavailable list: \(list.summary.name, privacy: .public)")
+                }
+            } catch {
+                AppLogger.nextcloud.debug("[NC] Retry still failing for \(list.summary.name, privacy: .public): \(error, privacy: .public)")
+            }
+        }
+    }
 
     func updateItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
@@ -765,6 +861,7 @@ class UnifiedListProvider {
     func createLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         document.labels.append(label)
+        document.deletedLabelIDs.removeAll { $0 == label.id }
         document.list.modifiedAt = Date()
         cacheLabels(document.labels, for: list)
         await cacheDocument(document, for: list)
@@ -797,6 +894,9 @@ class UnifiedListProvider {
         AppLogger.labels.debug("[deleteLabel] Document has \(document.labels.count, privacy: .public) labels before delete")
 
         document.labels.removeAll { $0.id == label.id }
+        if !document.deletedLabelIDs.contains(label.id) {
+            document.deletedLabelIDs.append(label.id)
+        }
         document.list.modifiedAt = Date()
         cacheLabels(document.labels, for: list)
         // Update document cache before saving so any merge logic sees the deletion,

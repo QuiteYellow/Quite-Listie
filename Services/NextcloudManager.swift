@@ -106,6 +106,16 @@ actor NextcloudManager {
         monitor.start(queue: DispatchQueue.global(qos: .utility))
     }
 
+    /// Re-establishes the NextcloudKit session after the app returns from deep sleep.
+    /// iOS can invalidate URLSession instances during extended suspension; calling this
+    /// before any network I/O ensures the session is fresh.
+    func reactivateSession() {
+        guard let creds = credentials else { return }
+        creds.setupSession(nk: nk)
+        startNetworkMonitor()
+        AppLogger.nextcloud.info("[NC] Session reactivated after foreground return")
+    }
+
     /// Removes the session and clears credentials.
     func disconnect() {
         guard let creds = credentials else { return }
@@ -261,6 +271,18 @@ actor NextcloudManager {
         }
     }
 
+    /// Returns a document from disk cache only (no network). Used as a fallback when
+    /// the server is unreachable during app launch to avoid marking lists unavailable.
+    func openFileFromDiskCache(remotePath: String) -> ListDocument? {
+        guard let creds = credentials else { return nil }
+        let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
+        guard FileManager.default.fileExists(atPath: diskURL.path),
+              let doc = try? loadFromDisk(at: diskURL) else { return nil }
+        let key = cacheKey(creds: creds, remotePath: remotePath)
+        memCache[key] = doc
+        return doc
+    }
+
     /// Updates only the in-memory and disk cache without uploading.
     func updateCache(_ doc: ListDocument, remotePath: String) async {
         guard let creds = credentials else { return }
@@ -270,12 +292,37 @@ actor NextcloudManager {
         try? saveToDisk(doc, at: diskURL)
     }
 
+    /// Returns true if the Nextcloud server is reachable (a lightweight PROPFIND on the DAV root).
+    func isServerReachable() async -> Bool {
+        guard let creds = credentials else { return false }
+        let url = creds.davBase()
+        let result = await nk.readFileOrFolderAsync(
+            serverUrlFileName: url,
+            depth: "0",
+            account: creds.accountId
+        )
+        return result.error == .success
+    }
+
+    enum FileChangeResult {
+        case changed
+        case unchanged
+        case unreachable  // server could not be contacted
+    }
+
     /// Returns true if the server ETag differs from the locally cached ETag.
     /// Returns true if the server ETag differs from the cached ETag.
     /// Throws `NCError.notFound` if the server returns 404 (file deleted or moved).
     /// Returns false for other network errors (assume unchanged).
     func hasFileChanged(remotePath: String) async throws -> Bool {
-        guard let creds = credentials else { return false }
+        let result = try await checkFileChanged(remotePath: remotePath)
+        return result == .changed
+    }
+
+    /// Like `hasFileChanged` but distinguishes "unchanged" from "server unreachable".
+    /// Throws `NCError.notFound` if the server returns 404 (file deleted or moved).
+    func checkFileChanged(remotePath: String) async throws -> FileChangeResult {
+        guard let creds = credentials else { return .unreachable }
         let url = creds.davURL(for: remotePath)
         let result = await nk.readFileOrFolderAsync(
             serverUrlFileName: url,
@@ -286,10 +333,10 @@ actor NextcloudManager {
             throw NCError.notFound(remotePath)
         }
         guard result.error == .success, let serverEtag = result.files?.first?.etag else {
-            return false  // transient network error — assume unchanged
+            return .unreachable  // transient network error — assume unchanged
         }
         let key = etagKey(creds: creds, remotePath: remotePath)
-        return serverEtag != etagStore[key]
+        return serverEtag != etagStore[key] ? .changed : .unchanged
     }
 
     /// Background refresh triggered after serving from cache.
@@ -375,7 +422,7 @@ actor NextcloudManager {
 
     /// Merges a local document with a freshly downloaded server document.
     /// Items: merge by ID, latest `modifiedAt` wins. Labels: union, server wins on conflict.
-    /// List summary: latest `modifiedAt` wins.
+    /// List summary: latest `modifiedAt` wins. Deleted-label tombstones are unioned and respected.
     private func mergeDocuments(local: ListDocument, server: ListDocument) -> ListDocument {
         // Items: latest modifiedAt wins per ID
         var itemsById: [UUID: ShoppingItem] = Dictionary(
@@ -389,14 +436,19 @@ actor NextcloudManager {
             }
         }
 
+        // Union tombstones from both sides so deletions propagate across devices
+        let deletedIDs = Set(local.deletedLabelIDs).union(server.deletedLabelIDs)
+
         // Labels: no modifiedAt — local wins on conflict (preserves edits just made),
         // server adds any labels created on other devices that don't exist locally.
+        // Tombstoned labels are excluded so stale caches can't resurrect deleted labels.
         var labelsById: [String: ShoppingLabel] = Dictionary(
             uniqueKeysWithValues: local.labels.map { ($0.id, $0) }
         )
         for label in server.labels where labelsById[label.id] == nil {
             labelsById[label.id] = label
         }
+        for id in deletedIDs { labelsById.removeValue(forKey: id) }
 
         // List summary: latest modifiedAt wins
         let summary = local.list.modifiedAt > server.list.modifiedAt ? local.list : server.list
@@ -404,7 +456,8 @@ actor NextcloudManager {
         return ListDocument(
             list: summary,
             items: Array(itemsById.values),
-            labels: Array(labelsById.values)
+            labels: Array(labelsById.values),
+            deletedLabelIDs: Array(deletedIDs)
         )
     }
 

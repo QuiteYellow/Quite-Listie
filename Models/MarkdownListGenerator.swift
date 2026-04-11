@@ -197,6 +197,12 @@ enum MarkdownListGenerator {
                         warnings.append("'\(item.note)' has notes that can't be exported: \(skippedCount) line(s) skipped")
                     }
                 }
+
+                // Export sourceURL as a markdown link sub-item
+                if includeNotes, let url = item.sourceURL, !url.isEmpty {
+                    let label = LocationParser.linkLabel(for: url)
+                    markdown += "  - [\(label)](\(url))\n"
+                }
             }
             
             markdown += "\n"
