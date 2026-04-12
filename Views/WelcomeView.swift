@@ -8,6 +8,12 @@
 import os
 import SwiftUI
 
+struct MapEditingContext: Identifiable {
+    let item: ShoppingItem
+    let list: UnifiedList
+    var id: UUID { item.id }
+}
+
 struct WelcomeView: View {
     @State private var welcomeViewModel = WelcomeViewModel()
     @State private var unifiedProvider = UnifiedListProvider()
@@ -16,8 +22,7 @@ struct WelcomeView: View {
     @State private var selectedListID: String? = nil
     /// Item ID to open in the editor once the target ShoppingListView appears.
     @State private var pendingItemID: String? = nil
-    @State private var mapEditingItem: ShoppingItem? = nil
-    @State private var mapEditingList: UnifiedList? = nil
+    @State private var mapEditingContext: MapEditingContext? = nil
     @State private var isPresentingNewList = false
     @State private var showFileImporter = false
     @State private var showFileExporter = false
@@ -426,21 +431,18 @@ struct WelcomeView: View {
                     welcomeViewModel: welcomeViewModel,
                     searchText: detailSearchText,
                     onShowDetails: { item, list in
-                        mapEditingItem = item
-                        mapEditingList = list
+                        mapEditingContext = MapEditingContext(item: item, list: list)
                     }
                 )
-                .fullScreenCover(item: $mapEditingItem) { item in
-                    if let list = mapEditingList {
-                        let vm = ShoppingListViewModel(list: list, provider: unifiedProvider)
-                        NavigationStack {
-                            EditItemView(
-                                viewModel: vm,
-                                item: item,
-                                list: list.summary,
-                                unifiedList: list
-                            )
-                        }
+                .fullScreenCover(item: $mapEditingContext) { context in
+                    let vm = ShoppingListViewModel(list: context.list, provider: unifiedProvider)
+                    NavigationStack {
+                        EditItemView(
+                            viewModel: vm,
+                            item: context.item,
+                            list: context.list.summary,
+                            unifiedList: context.list
+                        )
                     }
                 }
             } else if let listID = selectedListID,
