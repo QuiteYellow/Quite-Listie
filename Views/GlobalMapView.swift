@@ -167,6 +167,18 @@ struct GlobalMapView: View {
         popoverEntry = next
     }
 
+    private func handlePopoverShowDetails(item: ShoppingItem) {
+        showPopover = false
+        if let entry = popoverEntry {
+            onShowDetails?(item, entry.list)
+        }
+    }
+
+    private func handleSheetShowDetails(item: ShoppingItem, entry: LocationEntry) {
+        showPopover = false
+        onShowDetails?(item, entry.list)
+    }
+
     private static func dist2(_ a: Coordinate, _ b: Coordinate?) -> Double {
         guard let b else { return .greatestFiniteMagnitude }
         let dlat = a.latitude - b.latitude
@@ -216,10 +228,7 @@ struct GlobalMapView: View {
                                     onPrevious: cyclePrevious,
                                     onNext: cycleNext
                                 ) {
-                                    showPopover = false
-                                    if let entry = popoverEntry {
-                                        onShowDetails?(item, entry.list)
-                                    }
+                                    handlePopoverShowDetails(item: item)
                                 }
                             }
                         }
@@ -287,8 +296,7 @@ struct GlobalMapView: View {
                         onPrevious: cyclePrevious,
                         onNext: cycleNext
                     ) {
-                        showPopover = false
-                        onShowDetails?(item, entry.list)
+                        handleSheetShowDetails(item: item, entry: entry)
                     }
                 }
                 .presentationDetents([.medium])

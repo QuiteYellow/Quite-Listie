@@ -153,8 +153,9 @@ struct ItemFormView: View {
         }
     }
     
+    @ViewBuilder
     private var formLeftContent: some View {
-        Section() {
+        Section {
             HStack {
                 Label("Name", systemImage: "textformat")
                 Spacer()
@@ -206,7 +207,9 @@ struct ItemFormView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
             }
+        }
 
+        Section {
             HStack {
                 Label("Reminder", systemImage: "bell")
                 Spacer()
@@ -233,9 +236,10 @@ struct ItemFormView: View {
                     }
                 }
             }
+        }
 
-            // Location — shown just below Reminder when map data is enabled
-            if enableMapData {
+        if enableMapData {
+            Section {
                 if let coord = location {
                     HStack {
                         Button {
@@ -264,30 +268,6 @@ struct ItemFormView: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     }
-
-                    if let url = sourceURL, !url.isEmpty {
-                        Button { openSourceURL(url) } label: {
-                            Label(sourceURLLabel(for: url), systemImage: "safari")
-                        }
-                    }
-
-                    if navShowAppleMaps {
-                        Button { openInAppleMaps(coord) } label: {
-                            Label("Navigate with Apple Maps", systemImage: "map")
-                        }
-                    }
-                    if navShowGoogleMaps {
-                        Button { openInGoogleMaps(coord) } label: {
-                            Label("Navigate with Google Maps", systemImage: "globe")
-                        }
-                    }
-                    #if !targetEnvironment(macCatalyst)
-                    if navShowTomTomGo {
-                        Button { navigateInTomTomGo(coord) } label: {
-                            Label("Navigate with TomTom Go", systemImage: "car.fill")
-                        }
-                    }
-                    #endif
                 } else {
                     HStack {
                         Button {
@@ -323,9 +303,38 @@ struct ItemFormView: View {
                 }
             }
 
-            if let name = listName {
-                HStack(spacing: 6) {
+            if let coord = location {
+                Section {
+                    if let url = sourceURL, !url.isEmpty {
+                        Button { openSourceURL(url) } label: {
+                            Label(sourceURLLabel(for: url), systemImage: "safari")
+                        }
+                    }
 
+                    if navShowAppleMaps {
+                        Button { openInAppleMaps(coord) } label: {
+                            Label("Navigate with Apple Maps", systemImage: "map")
+                        }
+                    }
+                    if navShowGoogleMaps {
+                        Button { openInGoogleMaps(coord) } label: {
+                            Label("Navigate with Google Maps", systemImage: "globe")
+                        }
+                    }
+                    #if !targetEnvironment(macCatalyst)
+                    if navShowTomTomGo {
+                        Button { navigateInTomTomGo(coord) } label: {
+                            Label("Navigate with TomTom Go", systemImage: "car.fill")
+                        }
+                    }
+                    #endif
+                }
+            }
+        }
+
+        if let name = listName {
+            Section {
+                HStack(spacing: 6) {
                     Spacer()
                     ItemFormChip(
                         icon: listIcon ?? "list.bullet",
