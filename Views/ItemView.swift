@@ -304,13 +304,15 @@ struct ItemFormView: View {
             }
 
             if let coord = location {
-                Section {
-                    if let url = sourceURL, !url.isEmpty {
+                if let url = sourceURL, !url.isEmpty {
+                    Section {
                         Button { openSourceURL(url) } label: {
                             Label(sourceURLLabel(for: url), systemImage: "safari")
                         }
                     }
+                }
 
+                Section {
                     if navShowAppleMaps {
                         Button { openInAppleMaps(coord) } label: {
                             Label("Navigate with Apple Maps", systemImage: "map")
