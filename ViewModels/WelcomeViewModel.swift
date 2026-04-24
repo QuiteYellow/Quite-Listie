@@ -12,7 +12,7 @@ import SwiftUI
 /// A reminder item paired with its parent list context and label metadata
 struct ReminderEntry: Identifiable {
     var id: UUID { item.id }
-    let item: ShoppingItem
+    let item: ListItem
     let list: UnifiedList
     let labelName: String?
     let labelColor: String?   // Hex color
@@ -29,7 +29,7 @@ struct ReminderEntry: Identifiable {
 /// An item with a pinned location, paired with its parent list and label metadata
 struct LocationEntry: Identifiable {
     var id: UUID { item.id }
-    let item: ShoppingItem
+    let item: ListItem
     let list: UnifiedList
     let labelName: String?
     let labelColor: String?   // Hex color
@@ -39,7 +39,7 @@ struct LocationEntry: Identifiable {
 @Observable
 @MainActor
 class WelcomeViewModel {
-    var lists: [ShoppingListSummary] = []
+    var lists: [ListSummary] = []
     var isLoading = false
     var errorMessage: String?
     var uncheckedCounts: [String: Int] = [:]
@@ -54,7 +54,7 @@ class WelcomeViewModel {
     var hasLoadedLocations = false
 
     /// All labels referenced by items with locations (deduplicated by ID)
-    var allLocationLabels: [ShoppingLabel] = []
+    var allLocationLabels: [ListLabel] = []
 
     /// Count of non-completed pinned items across all lists (shown on sidebar card)
     var activeLocationCount: Int {
@@ -77,7 +77,7 @@ class WelcomeViewModel {
         }.count
     }
 
-    var selectedListForSettings: ShoppingListSummary? = nil
+    var selectedListForSettings: ListSummary? = nil
     var showingListSettings = false
 
     /// Legacy method - kept for backward compatibility but now does nothing
@@ -91,7 +91,7 @@ class WelcomeViewModel {
         var result: [String: Int] = [:]
         var entries: [ReminderEntry] = []
         var locEntries: [LocationEntry] = []
-        var labelsDict: [String: ShoppingLabel] = [:]
+        var labelsDict: [String: ListLabel] = [:]
 
         for list in lists {
             do {

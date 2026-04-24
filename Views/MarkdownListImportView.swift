@@ -24,8 +24,8 @@ struct MarkdownListImportView: View {
     let autoPreview: Bool
 
     
-    @State private var existingItems: [ShoppingItem]
-    @State private var existingLabels: [ShoppingLabel]
+    @State private var existingItems: [ListItem]
+    @State private var existingLabels: [ListLabel]
     
     
     @Environment(\.dismiss) var dismiss
@@ -41,8 +41,8 @@ struct MarkdownListImportView: View {
     init(
         list: UnifiedList,
         provider: UnifiedListProvider,
-        existingItems: [ShoppingItem] = [],
-        existingLabels: [ShoppingLabel] = [],
+        existingItems: [ListItem] = [],
+        existingLabels: [ListLabel] = [],
         initialMarkdown: String? = nil,
         autoPreview: Bool = false
     ) {
@@ -262,7 +262,7 @@ struct MarkdownListImportView: View {
                 Text("Summary")
             }
             
-            // Items grouped by label (ShoppingListView style)
+            // Items grouped by label (ListView style)
             let grouped = Dictionary(grouping: parsed.items.enumerated()) { (index, item) -> String in
                 item.labelName ?? "No Label"
             }
@@ -400,7 +400,7 @@ struct MarkdownListImportView: View {
         let isSelected = selectedItemIndices.contains(index)
         
         HStack(spacing: 12) {
-            // Quantity indicator (like ShoppingListView)
+            // Quantity indicator (like ListView)
             if item.quantity > 1 {
                 Text(Int(item.quantity).formatted(.number.precision(.fractionLength(0))))
                     .font(.subheadline)
@@ -443,7 +443,7 @@ struct MarkdownListImportView: View {
             
             Spacer()
             
-            // Selection toggle (like checkbox in ShoppingListView)
+            // Selection toggle (like checkbox in ListView)
             Button(action: {
                 if isSelected {
                     selectedItemIndices.remove(index)
@@ -479,7 +479,7 @@ struct MarkdownListImportView: View {
         
         do {
             // Step 1: Create/match labels (only for selected items)
-            var labelMap: [String: ShoppingLabel] = [:]
+            var labelMap: [String: ListLabel] = [:]
             
             for labelName in labelNamesInSelection {
                 if let existing = existingLabels.first(where: { $0.name.lowercased() == labelName.lowercased() }) {
@@ -551,7 +551,7 @@ struct MarkdownListImportView: View {
         list: UnifiedList(
             id: "test",
             source: .privateICloud("test"),
-            summary: ShoppingListSummary(
+            summary: ListSummary(
                 id: "test",
                 name: "Test List",
                 modifiedAt: Date()

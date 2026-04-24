@@ -160,12 +160,12 @@ final class MarkdownListParserTests: XCTestCase {
 
 final class MarkdownListGeneratorTests: XCTestCase {
 
-    private func makeItem(note: String, quantity: Double = 1, checked: Bool = false, labelId: String? = nil, markdownNotes: String? = nil) -> ShoppingItem {
-        ShoppingItem(id: UUID(), note: note, quantity: quantity, checked: checked, labelId: labelId, markdownNotes: markdownNotes)
+    private func makeItem(note: String, quantity: Double = 1, checked: Bool = false, labelId: String? = nil, markdownNotes: String? = nil) -> ListItem {
+        ListItem(id: UUID(), note: note, quantity: quantity, checked: checked, labelId: labelId, markdownNotes: markdownNotes)
     }
 
-    private func makeLabel(id: String, name: String, color: String = "#FF0000") -> ShoppingLabel {
-        ShoppingLabel(id: id, name: name, color: color)
+    private func makeLabel(id: String, name: String, color: String = "#FF0000") -> ListLabel {
+        ListLabel(id: id, name: name, color: color)
     }
 
     // MARK: - Basic Generation
@@ -312,8 +312,8 @@ final class MarkdownListGeneratorTests: XCTestCase {
 
 final class SortedLabelNamesTests: XCTestCase {
 
-    private func makeLabel(id: String, name: String) -> ShoppingLabel {
-        ShoppingLabel(id: id, name: name, color: "#000000")
+    private func makeLabel(id: String, name: String) -> ListLabel {
+        ListLabel(id: id, name: name, color: "#000000")
     }
 
     func testAlphabeticalSortWithNoOrder() {
@@ -362,8 +362,8 @@ final class SortedLabelNamesTests: XCTestCase {
     }
 
     func testSortedLabelsFunction() {
-        let labelA = ShoppingLabel(id: "id-a", name: "AAA", color: "#000")
-        let labelB = ShoppingLabel(id: "id-b", name: "BBB", color: "#000")
+        let labelA = ListLabel(id: "id-a", name: "AAA", color: "#000")
+        let labelB = ListLabel(id: "id-b", name: "BBB", color: "#000")
         let labels = [labelB, labelA]
         let result = sortedLabels(labels, by: ["id-a", "id-b"])
         XCTAssertEqual(result[0].id, "id-a")
@@ -527,18 +527,18 @@ final class ModelHelpersTests: XCTestCase {
 
 // MARK: -
 
-final class ShoppingModelTests: XCTestCase {
+final class ListModelTests: XCTestCase {
 
-    // MARK: - ShoppingListSummary cleanId
+    // MARK: - ListSummary cleanId
 
     func testCleanIdStripsLocalPrefix() {
-        let summary = ShoppingListSummary(id: "local-abc-123", name: "Test")
+        let summary = ListSummary(id: "local-abc-123", name: "Test")
         XCTAssertEqual(summary.cleanId, "abc-123")
     }
 
     func testCleanIdNoPrefix() {
         let id = UUID().uuidString
-        let summary = ShoppingListSummary(id: id, name: "Test")
+        let summary = ListSummary(id: id, name: "Test")
         XCTAssertEqual(summary.cleanId, id)
     }
 
@@ -547,16 +547,16 @@ final class ShoppingModelTests: XCTestCase {
         XCTAssertFalse("abc".isLocalListId)
     }
 
-    // MARK: - ShoppingLabel cleanId & isLocal
+    // MARK: - ListLabel cleanId & isLocal
 
     func testLabelCleanId() {
-        let label = ShoppingLabel(id: "local-xyz", name: "Test", color: "#000")
+        let label = ListLabel(id: "local-xyz", name: "Test", color: "#000")
         XCTAssertEqual(label.cleanId, "xyz")
     }
 
     func testLabelIsLocal() {
-        let local = ShoppingLabel(id: "local-xyz", name: "Test", color: "#000")
-        let remote = ShoppingLabel(id: "xyz", name: "Test", color: "#000")
+        let local = ListLabel(id: "local-xyz", name: "Test", color: "#000")
+        let remote = ListLabel(id: "xyz", name: "Test", color: "#000")
         XCTAssertTrue(local.isLocal)
         XCTAssertFalse(remote.isLocal)
     }
@@ -592,10 +592,10 @@ final class ShoppingModelTests: XCTestCase {
         XCTAssertEqual(rule.displayName, "Every 3 Days")
     }
 
-    // MARK: - ShoppingItem Codable round-trip
+    // MARK: - ListItem Codable round-trip
 
-    func testShoppingItemCodableRoundTrip() throws {
-        let original = ShoppingItem(
+    func testListItemCodableRoundTrip() throws {
+        let original = ListItem(
             id: UUID(),
             note: "Apples",
             quantity: 3,
@@ -613,7 +613,7 @@ final class ShoppingModelTests: XCTestCase {
         let data = try encoder.encode(original)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(ShoppingItem.self, from: data)
+        let decoded = try decoder.decode(ListItem.self, from: data)
         XCTAssertEqual(decoded.id, original.id)
         XCTAssertEqual(decoded.note, original.note)
         XCTAssertEqual(decoded.quantity, original.quantity)

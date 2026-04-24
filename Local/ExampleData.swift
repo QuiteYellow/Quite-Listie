@@ -10,7 +10,7 @@ import Foundation
 enum ExampleData {
     static let welcomeListId = "example-welcome-list"
 
-    static let welcomeList = ShoppingListSummary(
+    static let welcomeList = ListSummary(
         id: welcomeListId,
         name: "Welcome to Listie",
         modifiedAt: Date(),
@@ -30,16 +30,16 @@ enum ExampleData {
 
     // MARK: - Labels (categories for help topics)
 
-    private static let labelGettingStarted = ShoppingLabel(id: "welcome-getting-started", name: "Start Here", color: "#34C759")
-    private static let labelItems = ShoppingLabel(id: "welcome-items", name: "Items & Editing", color: "#FF9500")
-    private static let labelLabels = ShoppingLabel(id: "welcome-labels", name: "Labels & Organisation", color: "#AF52DE")
-    private static let labelViews = ShoppingLabel(id: "welcome-views", name: "Views & Layout", color: "#5AC8FA")
-    private static let labelReminders = ShoppingLabel(id: "welcome-reminders", name: "Reminders", color: "#FF3B30")
-    private static let labelImportExport = ShoppingLabel(id: "welcome-import-export", name: "Import & Export", color: "#007AFF")
-    private static let labelCollaboration = ShoppingLabel(id: "welcome-collaboration", name: "Collaboration", color: "#FF2D55")
-    private static let labelShortcuts = ShoppingLabel(id: "welcome-shortcuts", name: "Keyboard Shortcuts", color: "#8E8E93")
+    private static let labelGettingStarted = ListLabel(id: "welcome-getting-started", name: "Start Here", color: "#34C759")
+    private static let labelItems = ListLabel(id: "welcome-items", name: "Items & Editing", color: "#FF9500")
+    private static let labelLabels = ListLabel(id: "welcome-labels", name: "Labels & Organisation", color: "#AF52DE")
+    private static let labelViews = ListLabel(id: "welcome-views", name: "Views & Layout", color: "#5AC8FA")
+    private static let labelReminders = ListLabel(id: "welcome-reminders", name: "Reminders", color: "#FF3B30")
+    private static let labelImportExport = ListLabel(id: "welcome-import-export", name: "Import & Export", color: "#007AFF")
+    private static let labelCollaboration = ListLabel(id: "welcome-collaboration", name: "Collaboration", color: "#FF2D55")
+    private static let labelShortcuts = ListLabel(id: "welcome-shortcuts", name: "Keyboard Shortcuts", color: "#8E8E93")
 
-    static let welcomeLabels: [ShoppingLabel] = [
+    static let welcomeLabels: [ListLabel] = [
         labelGettingStarted,
         labelItems,
         labelLabels,
@@ -52,11 +52,11 @@ enum ExampleData {
 
     // MARK: - Items
 
-    static let welcomeItems: [ShoppingItem] = [
+    static let welcomeItems: [ListItem] = [
 
         // ── Getting Started ──────────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "About Listie",
             quantity: 1,
@@ -91,7 +91,7 @@ Tap the **+** button in the sidebar to get started:
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Private vs Connected Lists",
             quantity: 1,
@@ -124,7 +124,7 @@ Tap the **+** button in the sidebar to get started:
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Settings & Preferences",
             quantity: 1,
@@ -156,7 +156,7 @@ Each list also has its own settings (tap the gear icon in the list toolbar):
 
         // ── Items & Editing ──────────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Adding & Editing Items",
             quantity: 1,
@@ -183,7 +183,7 @@ Each list also has its own settings (tap the gear icon in the list toolbar):
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Gestures & Quick Actions",
             quantity: 1,
@@ -210,7 +210,7 @@ Long-press (or right-click on Mac) an item for more options:
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Markdown Notes",
             quantity: 1,
@@ -240,7 +240,7 @@ Every item can have rich **markdown notes** attached to it. Use them for recipes
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Recycle Bin",
             quantity: 1,
@@ -270,7 +270,7 @@ Open the Recycle Bin from the list toolbar menu.
 
         // ── Labels & Organisation ────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Creating & Managing Labels",
             quantity: 1,
@@ -299,7 +299,7 @@ Produce, Dairy, Meat, Bakery, Frozen, Pantry, Snacks, Beverages, Household, Pers
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Organising Items with Labels",
             quantity: 1,
@@ -333,7 +333,7 @@ Produce, Dairy, Meat, Bakery, Frozen, Pantry, Snacks, Beverages, Household, Pers
 
         // ── Reminders ────────────────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Creating Reminders",
             quantity: 1,
@@ -366,7 +366,7 @@ You can set a reminder on any item to get a notification at a specific date and 
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Smart Boxes & Notifications",
             quantity: 1,
@@ -399,7 +399,7 @@ In the reminder views you can search across:
 
         // ── Views & Layout ───────────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Default List View",
             quantity: 1,
@@ -432,7 +432,7 @@ The default view shows items in a vertical list, grouped by label.
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Kanban Board View",
             quantity: 1,
@@ -466,7 +466,7 @@ Toggle between List and Kanban view using the view mode button in the list toolb
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Sidebar & Navigation",
             quantity: 1,
@@ -497,7 +497,7 @@ Connected lists from the same folder are grouped together in the sidebar, with t
 
         // ── Import & Export ──────────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Importing from Markdown",
             quantity: 1,
@@ -539,7 +539,7 @@ The importer can intelligently merge with existing items in your list, so you wo
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Exporting Lists",
             quantity: 1,
@@ -575,7 +575,7 @@ From any list, tap the **menu** → **Export As...** to choose a format.
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "URL Scheme & Shortcuts",
             quantity: 1,
@@ -625,7 +625,7 @@ quitelistie://import?list=LIST_ID&markdown=ENCODED&enc=zlib&preview=true
 
         // ── Collaboration ────────────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Sharing & Real-Time Collaboration",
             quantity: 1,
@@ -656,7 +656,7 @@ When two people edit the list at the same time:
             modifiedAt: Date()
         ),
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "Working with External Files",
             quantity: 1,
@@ -690,7 +690,7 @@ Connected lists use the `.listie` JSON format (Version 2):
 
         // ── Keyboard Shortcuts ───────────────────────────────────
 
-        ShoppingItem(
+        ListItem(
             id: UUID(),
             note: "All Keyboard Shortcuts",
             quantity: 1,

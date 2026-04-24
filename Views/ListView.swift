@@ -1,5 +1,5 @@
 //
-//  ShoppingListView.swift (UNIFIED VERSION)
+//  ListView.swift (UNIFIED VERSION)
 //  Listie.md
 //
 //  Updated to work seamlessly with both local and external lists
@@ -52,7 +52,7 @@ struct SectionHeaderView: View {
 
 // MARK: - Item Row View
 struct ItemRowView: View {
-    let item: ShoppingItem
+    let item: ListItem
     let isLast: Bool
     let onTap: () -> Void
     let onTextTap: () -> Void
@@ -116,7 +116,7 @@ struct ItemRowView: View {
 
     @ViewBuilder
     static func itemContextMenu(
-        item: ShoppingItem,
+        item: ListItem,
         isReadOnly: Bool,
         onEdit: @escaping () -> Void,
         onIncrement: @escaping () -> Void,
@@ -247,24 +247,24 @@ struct MarkdownExport: Identifiable {
     let id = UUID()
     let listName: String
     let listId: String?
-    let items: [ShoppingItem]
-    let labels: [ShoppingLabel]
+    let items: [ListItem]
+    let labels: [ListLabel]
     let labelOrder: [String]?
     let activeOnly: Bool
 }
 
-struct ShoppingListView: View {
-    let list: ShoppingListSummary
+struct ListView: View {
+    let list: ListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
     var welcomeViewModel: WelcomeViewModel
     var onExportJSON: (() -> Void)?
     
-    @State private var viewModel: ShoppingListViewModel
+    @State private var viewModel: ListViewModel
     @State private var showingAddView = false
-    @State private var editingItem: ShoppingItem? = nil
+    @State private var editingItem: ListItem? = nil
     @State private var showingEditView = false
-    @State private var itemToDelete: ShoppingItem? = nil
+    @State private var itemToDelete: ListItem? = nil
     
     @State private var showingMarkdownImport = false
     @State private var markdownToExport: MarkdownExport? = nil
@@ -302,7 +302,7 @@ struct ShoppingListView: View {
     @Binding var searchText: String
     @Binding var pendingItemID: String?
 
-    init(list: ShoppingListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, pendingItemID: Binding<String?> = .constant(nil), onExportJSON exportJSON: (() -> Void)? = nil) {
+    init(list: ListSummary, unifiedList: UnifiedList, unifiedProvider: UnifiedListProvider, welcomeViewModel: WelcomeViewModel, searchText: Binding<String>, pendingItemID: Binding<String?> = .constant(nil), onExportJSON exportJSON: (() -> Void)? = nil) {
         self.list = list
         self.unifiedList = unifiedList
         self.unifiedProvider = unifiedProvider
@@ -310,7 +310,7 @@ struct ShoppingListView: View {
         self._searchText = searchText
         self._pendingItemID = pendingItemID
         self.onExportJSON = exportJSON
-        self._viewModel = State(wrappedValue: ShoppingListViewModel(list: unifiedList, provider: unifiedProvider))
+        self._viewModel = State(wrappedValue: ListViewModel(list: unifiedList, provider: unifiedProvider))
     }
     
     private var saveStatus: UnifiedListProvider.SaveStatus {
@@ -356,7 +356,7 @@ struct ShoppingListView: View {
     
     
     @ViewBuilder
-    private func itemWithActions(_ item: ShoppingItem) -> some View {
+    private func itemWithActions(_ item: ListItem) -> some View {
         ItemRowView(
             item: item,
             isLast: false,
@@ -431,7 +431,7 @@ struct ShoppingListView: View {
     }
 
     @ViewBuilder
-    private func renderSection(labelName: String, items: [ShoppingItem], color: Color?) -> some View {
+    private func renderSection(labelName: String, items: [ListItem], color: Color?) -> some View {
         let isExpanded = viewModel.expandedSections[labelName] ?? true
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
@@ -905,7 +905,7 @@ struct ShoppingListView: View {
             }
         }
 
-        .modifier(ShoppingListSheetsModifier(
+        .modifier(ListSheetsModifier(
             list: list,
             unifiedList: unifiedList,
             unifiedProvider: unifiedProvider,
@@ -955,7 +955,7 @@ struct ShoppingListView: View {
     @ViewBuilder
     private var mapFilterMenu: some View {
         let locationItems = viewModel.items.filter { $0.location != nil && !$0.isDeleted }
-        let labelsWithPins: [ShoppingLabel] = {
+        let labelsWithPins: [ListLabel] = {
             let usedIDs = Set(locationItems.compactMap { $0.labelId })
             return viewModel.labels.filter { usedIDs.contains($0.id) }
         }()
@@ -1180,22 +1180,22 @@ struct ShoppingListView: View {
 
 // MARK: - Sheets, Alerts & Notification Handlers (extracted to reduce body complexity)
 
-private struct ShoppingListSheetsModifier: ViewModifier {
-    let list: ShoppingListSummary
+private struct ListSheetsModifier: ViewModifier {
+    let list: ListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    var viewModel: ShoppingListViewModel
+    var viewModel: ListViewModel
     var welcomeViewModel: WelcomeViewModel
 
     @Binding var showingAddView: Bool
     @Binding var mapAddLocation: Coordinate?
-    @Binding var editingItem: ShoppingItem?
+    @Binding var editingItem: ListItem?
     @Binding var showingRecycleBin: Bool
     @Binding var showingMarkdownImport: Bool
     @Binding var markdownToExport: MarkdownExport?
     @Binding var shareLinkExport: MarkdownExport?
     @Binding var showingListSettings: Bool
-    @Binding var itemToDelete: ShoppingItem?
+    @Binding var itemToDelete: ListItem?
     @Binding var beatenToItMessage: String?
     @Binding var triggerMarkdownExport: Bool
     @Binding var triggerJSONExport: Bool
@@ -1287,14 +1287,14 @@ private struct ShoppingListSheetsModifier: ViewModifier {
                     }
                 }
             }
-            .modifier(ShoppingListAlertsModifier(
+            .modifier(ListAlertsModifier(
                 viewModel: viewModel,
                 unifiedList: unifiedList,
                 itemToDelete: $itemToDelete,
                 beatenToItMessage: $beatenToItMessage,
                 editingItem: $editingItem
             ))
-            .modifier(ShoppingListObserversModifier(
+            .modifier(ListObserversModifier(
                 list: list,
                 unifiedList: unifiedList,
                 unifiedProvider: unifiedProvider,
@@ -1321,12 +1321,12 @@ private struct ShoppingListSheetsModifier: ViewModifier {
 
 // MARK: - Alerts (extracted from sheets modifier)
 
-private struct ShoppingListAlertsModifier: ViewModifier {
-    var viewModel: ShoppingListViewModel
+private struct ListAlertsModifier: ViewModifier {
+    var viewModel: ListViewModel
     let unifiedList: UnifiedList
-    @Binding var itemToDelete: ShoppingItem?
+    @Binding var itemToDelete: ListItem?
     @Binding var beatenToItMessage: String?
-    @Binding var editingItem: ShoppingItem?
+    @Binding var editingItem: ListItem?
 
     func body(content: Content) -> some View {
         content
@@ -1359,18 +1359,18 @@ private struct ShoppingListAlertsModifier: ViewModifier {
 
 // MARK: - Notification & onChange Observers (extracted from body)
 
-private struct ShoppingListObserversModifier: ViewModifier {
-    let list: ShoppingListSummary
+private struct ListObserversModifier: ViewModifier {
+    let list: ListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
-    var viewModel: ShoppingListViewModel
+    var viewModel: ListViewModel
     @Binding var markdownToExport: MarkdownExport?
     @Binding var shareLinkExport: MarkdownExport?
     @Binding var triggerMarkdownExport: Bool
     @Binding var triggerJSONExport: Bool
     @Binding var triggerShareLink: Bool
     @Binding var searchText: String
-    @Binding var editingItem: ShoppingItem?
+    @Binding var editingItem: ListItem?
     @Binding var beatenToItMessage: String?
     var onExportJSON: (() -> Void)?
 

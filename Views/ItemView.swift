@@ -14,7 +14,7 @@ import MarkdownView
 struct ItemFormView: View {
     @Binding var itemName: String
     @Binding var quantity: Int
-    @Binding var selectedLabel: ShoppingLabel?
+    @Binding var selectedLabel: ListLabel?
     @Binding var checked: Bool
     @Binding var mdNotes: String
     @Binding var showMarkdownEditor: Bool
@@ -23,7 +23,7 @@ struct ItemFormView: View {
     @Binding var repeatRule: ReminderRepeatRule?
     @Binding var repeatMode: ReminderRepeatMode
 
-    let availableLabels: [ShoppingLabel]
+    let availableLabels: [ListLabel]
     let isLoading: Bool
 
     /// Optional list context shown at the top of the form (icon, name, folder)
@@ -189,7 +189,7 @@ struct ItemFormView: View {
                     ProgressView()
                 } else {
                     Picker("", selection: $selectedLabel) {
-                        Text("No Label").tag(Optional<ShoppingLabel>(nil))
+                        Text("No Label").tag(Optional<ListLabel>(nil))
 
                         ForEach(availableLabels, id: \.id) { label in
                             Text(label.name)
@@ -534,14 +534,14 @@ struct RepeatRulePicker: View {
 }
 
 struct AddItemView: View {
-    let list: ShoppingListSummary
+    let list: ListSummary
 
     @Environment(\.dismiss) var dismiss
-    var viewModel: ShoppingListViewModel
+    var viewModel: ListViewModel
 
     @State private var itemName = ""
-    @State private var selectedLabel: ShoppingLabel? = nil
-    @State private var availableLabels: [ShoppingLabel] = []
+    @State private var selectedLabel: ListLabel? = nil
+    @State private var availableLabels: [ListLabel] = []
     @State private var checked: Bool = false
     @State private var isLoading = true
     @State private var quantity: Int = 1
@@ -555,7 +555,7 @@ struct AddItemView: View {
     @State private var location: Coordinate?
     @State private var sourceURL: String?
 
-    init(list: ShoppingListSummary, viewModel: ShoppingListViewModel, initialLocation: Coordinate? = nil) {
+    init(list: ListSummary, viewModel: ListViewModel, initialLocation: Coordinate? = nil) {
         self.list = list
         self.viewModel = viewModel
         self._location = State(initialValue: initialLocation)
@@ -648,10 +648,10 @@ struct AddItemView: View {
 
 struct EditItemView: View {
     @Environment(\.dismiss) var dismiss
-    var viewModel: ShoppingListViewModel
+    var viewModel: ListViewModel
 
-    let item: ShoppingItem
-    let list: ShoppingListSummary
+    let item: ListItem
+    let list: ListSummary
     let unifiedList: UnifiedList
 
     private var editFolderName: String? {
@@ -662,10 +662,10 @@ struct EditItemView: View {
     }
 
     @State private var itemName: String = ""
-    @State private var selectedLabel: ShoppingLabel? = nil
+    @State private var selectedLabel: ListLabel? = nil
     @State private var quantity: Int = 1
     @State private var mdNotes: String = ""
-    @State private var availableLabels: [ShoppingLabel] = []
+    @State private var availableLabels: [ListLabel] = []
     @State private var checked: Bool = false
     @State private var isLoading = true
     @State private var showDeleteConfirmation = false
@@ -881,7 +881,7 @@ struct CheckableMarkdownView: View {
 
 struct ItemPreviewView: View {
     @Environment(\.dismiss) var dismiss
-    let item: ShoppingItem
+    let item: ListItem
     @State private var notes: String = ""
 
     var body: some View {

@@ -4,7 +4,7 @@
 //
 //  Displays items with pinned locations on an iOS 17+ MapKit map.
 //  Search filtering is driven by the existing search bar via searchText.
-//  Label filtering is driven by the bottom-bar Menu in ShoppingListView via selectedLabelIDs.
+//  Label filtering is driven by the bottom-bar Menu in ListView via selectedLabelIDs.
 //
 
 import CoreLocation
@@ -12,13 +12,13 @@ import SwiftUI
 import MapKit
 
 struct MapListView: View {
-    let items: [ShoppingItem]
-    let labels: [ShoppingLabel]
+    let items: [ListItem]
+    let labels: [ListLabel]
     @Binding var selectedLabelIDs: Set<String>
     @Binding var cameraPosition: MapCameraPosition
     var showCompleted: Bool = false
     var searchText: String = ""
-    var onEdit: ((ShoppingItem) -> Void)?
+    var onEdit: ((ListItem) -> Void)?
     var onAddAtLocation: ((Coordinate) -> Void)? = nil
     var isLoaded: Bool = true
     var onUserCameraInteraction: (() -> Void)? = nil
@@ -33,7 +33,7 @@ struct MapListView: View {
     }
 
     @State private var selectedItemID: UUID?
-    @State private var popoverItem: ShoppingItem? = nil
+    @State private var popoverItem: ListItem? = nil
     @State private var showPopover: Bool = false
     @State private var visibleRegion: MKCoordinateRegion?
     @GestureState private var pressLocation: CGPoint? = nil
@@ -43,11 +43,11 @@ struct MapListView: View {
     @AppStorage("navShowTomTomGo") private var navShowTomTomGo: Bool = true
 
     /// Keyed by label ID for O(1) lookup per marker.
-    private var labelByID: [String: ShoppingLabel] {
+    private var labelByID: [String: ListLabel] {
         Dictionary(uniqueKeysWithValues: labels.map { ($0.id, $0) })
     }
 
-    private func markerTint(for item: ShoppingItem) -> Color {
+    private func markerTint(for item: ListItem) -> Color {
         guard let labelId = item.labelId, let label = labelByID[labelId] else {
             return .accentColor
         }
@@ -55,12 +55,12 @@ struct MapListView: View {
     }
 
     // Active location items — excludes deleted items and, by default, completed ones.
-    private var allLocationItems: [ShoppingItem] {
+    private var allLocationItems: [ListItem] {
         items.filter { $0.location != nil && !$0.isDeleted }
     }
 
     // Items visible on the map after completed / search / label filters are applied.
-    private var visibleItems: [ShoppingItem] {
+    private var visibleItems: [ListItem] {
         var result = allLocationItems
         if !showCompleted {
             result = result.filter { !$0.checked }
@@ -93,7 +93,7 @@ struct MapListView: View {
     @State private var visitHistory: [UUID] = []
 
     /// Items in the visible viewport.
-    private var viewportItems: [ShoppingItem] {
+    private var viewportItems: [ListItem] {
         guard let region = visibleRegion else { return visibleItems }
         let latDelta = region.span.latitudeDelta / 2
         let lonDelta = region.span.longitudeDelta / 2
@@ -106,7 +106,7 @@ struct MapListView: View {
     }
 
     /// The nearest unvisited item in the viewport from the current pin.
-    private var nextItem: ShoppingItem? {
+    private var nextItem: ListItem? {
         guard let origin = popoverItem?.location else { return nil }
         let visited = Set(visitHistory)
         return viewportItems
@@ -117,7 +117,7 @@ struct MapListView: View {
     private var hasPrevious: Bool { visitHistory.count > 1 }
     private var hasNext: Bool { nextItem != nil }
 
-    private func startCycling(from item: ShoppingItem) {
+    private func startCycling(from item: ListItem) {
         visitHistory = [item.id]
     }
 
@@ -284,8 +284,8 @@ struct MapListView: View {
 
 struct MapPinSheetContent: View {
     @Environment(\.dismiss) private var dismiss
-    let item: ShoppingItem
-    let label: ShoppingLabel?
+    let item: ListItem
+    let label: ListLabel?
     let navShowAppleMaps: Bool
     let navShowGoogleMaps: Bool
     let navShowTomTomGo: Bool
@@ -410,8 +410,8 @@ struct MapPinSheetContent: View {
 // MARK: - Map Pin Popover (iPad/Mac)
 
 struct MapPinPopover: View {
-    let item: ShoppingItem
-    let label: ShoppingLabel?
+    let item: ListItem
+    let label: ListLabel?
     let navShowAppleMaps: Bool
     let navShowGoogleMaps: Bool
     let navShowTomTomGo: Bool

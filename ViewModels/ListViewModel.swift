@@ -1,5 +1,5 @@
 //
-//  ShoppingListViewModel.swift (V2 - UNIFIED VERSION)
+//  ListViewModel.swift (V2 - UNIFIED VERSION)
 //  Listie.md
 //
 //  Updated to use V2 format with labelId references and timestamps
@@ -17,12 +17,12 @@ enum ListViewMode: String, Codable {
 
 @Observable
 @MainActor
-class ShoppingListViewModel {
-    var items: [ShoppingItem] = []
+class ListViewModel {
+    var items: [ListItem] = []
     var isLoading = false
     /// True once `loadItems` has completed at least one full fetch
     var hasLoaded = false
-    var labels: [ShoppingLabel] = []
+    var labels: [ListLabel] = []
 
     var expandedSections: [String: Bool] = [:]
     /// Saved collapse state before a search began; nil when not searching.
@@ -37,7 +37,7 @@ class ShoppingListViewModel {
     var list: UnifiedList
     let provider: UnifiedListProvider
     
-    var shoppingListId: String { list.summary.id }
+    var listId: String { list.summary.id }
     
     init(list: UnifiedList, provider: UnifiedListProvider) {
         self.list = list
@@ -114,7 +114,7 @@ class ShoppingListViewModel {
     
     // MARK: - Filtering & Grouping
     
-    var filteredItems: [ShoppingItem] {
+    var filteredItems: [ListItem] {
         guard !searchText.isEmpty else { return items }
         
         return items.filter { item in
@@ -133,7 +133,7 @@ class ShoppingListViewModel {
         }
     }
     
-    var filteredItemsGroupedByLabel: [String: [ShoppingItem]] {
+    var filteredItemsGroupedByLabel: [String: [ListItem]] {
         let grouped = Dictionary(grouping: filteredItems) { item in
             if let labelId = item.labelId,
                let label = labels.first(where: { $0.id == labelId }) {
@@ -158,14 +158,14 @@ class ShoppingListViewModel {
         )
     }
     
-    var filteredCompletedItems: [ShoppingItem] {
+    var filteredCompletedItems: [ListItem] {
         filteredItems.filter { $0.checked }.sorted {
             $0.note.localizedCaseInsensitiveCompare($1.note) == .orderedAscending
         }
     }
     
     @MainActor
-    func addItem(note: String, label: ShoppingLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil, sourceURL: String? = nil) async -> Bool {
+    func addItem(note: String, label: ListLabel?, quantity: Double?, checked: Bool = false, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil, sourceURL: String? = nil) async -> Bool {
         // Use ModelHelpers to create a clean V2 item
         var newItem = ModelHelpers.createNewItem(
             note: note,
@@ -226,7 +226,7 @@ class ShoppingListViewModel {
     }
     
     @MainActor
-    func deleteItem(_ item: ShoppingItem) async -> Bool {
+    func deleteItem(_ item: ListItem) async -> Bool {
         do {
             try await provider.deleteItem(item, from: list)
             
@@ -241,7 +241,7 @@ class ShoppingListViewModel {
         }
     }
 
-    func toggleChecked(for item: ShoppingItem, didUpdate: @escaping (Int) async -> Void) async {
+    func toggleChecked(for item: ListItem, didUpdate: @escaping (Int) async -> Void) async {
         var updated = item
         updated.checked.toggle()
         updated.modifiedAt = Date()  // Update timestamp
@@ -338,7 +338,7 @@ class ShoppingListViewModel {
     }
     
     @MainActor
-    func updateItem(_ item: ShoppingItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil, sourceURL: String? = nil) async -> Bool {
+    func updateItem(_ item: ListItem, note: String, labelId: String?, quantity: Double?, checked: Bool, markdownNotes: String?, reminderDate: Date? = nil, reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil, location: Coordinate? = nil, sourceURL: String? = nil) async -> Bool {
         var updatedItem = item
         updatedItem.note = note
         updatedItem.labelId = labelId  // Use labelId reference instead of embedded object
@@ -396,7 +396,7 @@ class ShoppingListViewModel {
         }
     }
     
-    var itemsGroupedByLabel: [String: [ShoppingItem]] {
+    var itemsGroupedByLabel: [String: [ListItem]] {
         let grouped = Dictionary(grouping: items) { item in  
             if let labelId = item.labelId,
                let label = labels.first(where: { $0.id == labelId }) {
@@ -424,7 +424,7 @@ class ShoppingListViewModel {
     // MARK: - Quantity Management
     
     /// Increments item quantity by 1
-    func incrementQuantity(for item: ShoppingItem) async {
+    func incrementQuantity(for item: ListItem) async {
         let newQty = item.quantity + 1
         _ = await updateItem(item, note: item.note, labelId: item.labelId, quantity: newQty, checked: item.checked, markdownNotes: item.markdownNotes,
                              reminderDate: item.reminderDate, reminderRepeatRule: item.reminderRepeatRule, reminderRepeatMode: item.reminderRepeatMode,
@@ -432,7 +432,7 @@ class ShoppingListViewModel {
     }
 
     /// Decrements item quantity by 1. Returns false if item should be deleted (qty would be 0)
-    func decrementQuantity(for item: ShoppingItem) async -> Bool {
+    func decrementQuantity(for item: ListItem) async -> Bool {
         if item.quantity <= 1 {
             return false
         }

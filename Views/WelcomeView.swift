@@ -9,7 +9,7 @@ import os
 import SwiftUI
 
 struct MapEditingContext: Identifiable {
-    let item: ShoppingItem
+    let item: ListItem
     let list: UnifiedList
     var id: UUID { item.id }
 }
@@ -20,7 +20,7 @@ struct WelcomeView: View {
     @State private var deeplinkCoordinator = DeeplinkCoordinator()
     
     @State private var selectedListID: String? = nil
-    /// Item ID to open in the editor once the target ShoppingListView appears.
+    /// Item ID to open in the editor once the target ListView appears.
     @State private var pendingItemID: String? = nil
     @State private var mapEditingContext: MapEditingContext? = nil
     @State private var isPresentingNewList = false
@@ -85,7 +85,7 @@ struct WelcomeView: View {
             makeListSettingsSheet(unifiedList)
         }
         .sheet(isPresented: $isPresentingNewList) {
-            NewShoppingListView {
+            NewListView {
                 Task {
                     await refreshLists()
                 }
@@ -435,7 +435,7 @@ struct WelcomeView: View {
                     }
                 )
                 .fullScreenCover(item: $mapEditingContext) { context in
-                    let vm = ShoppingListViewModel(list: context.list, provider: unifiedProvider)
+                    let vm = ListViewModel(list: context.list, provider: unifiedProvider)
                     NavigationStack {
                         EditItemView(
                             viewModel: vm,
@@ -447,7 +447,7 @@ struct WelcomeView: View {
                 }
             } else if let listID = selectedListID,
                let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
-                ShoppingListView(
+                ListView(
                     list: unifiedList.summary,
                     unifiedList: unifiedList,
                     unifiedProvider: unifiedProvider,
@@ -539,7 +539,7 @@ struct WelcomeView: View {
         let pendingIds = Set(pendingRequests.map(\.identifier))
 
         // Collect all items and cancel stale notifications per-list
-        var allReminderItems: [(item: ShoppingItem, listName: String, listId: String)] = []
+        var allReminderItems: [(item: ListItem, listName: String, listId: String)] = []
 
         for list in unifiedProvider.allLists where !list.isReadOnly {
             do {
@@ -566,7 +566,7 @@ struct WelcomeView: View {
     }
     
     @MainActor
-    private func exportList(_ list: ShoppingListSummary) async {
+    private func exportList(_ list: ListSummary) async {
         guard let unifiedList = unifiedProvider.allLists.first(where: { $0.summary.id == list.id }) else {
             return
         }

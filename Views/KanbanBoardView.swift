@@ -8,13 +8,13 @@
 import SwiftUI
 
 struct KanbanBoardView: View {
-    let list: ShoppingListSummary
+    let list: ListSummary
     let unifiedList: UnifiedList
-    var viewModel: ShoppingListViewModel
+    var viewModel: ListViewModel
 
-    @Binding var editingItem: ShoppingItem?
+    @Binding var editingItem: ListItem?
     @Binding var showingEditView: Bool
-    @Binding var itemToDelete: ShoppingItem?
+    @Binding var itemToDelete: ListItem?
 
     @AppStorage("hideQuickAdd") private var hideQuickAdd = false
     @AppStorage("hideEmptyLabels") private var hideEmptyLabels = true
@@ -120,7 +120,7 @@ struct KanbanBoardView: View {
     // MARK: - Column
 
     @ViewBuilder
-    private func kanbanColumn(labelName: String, items: [ShoppingItem], color: Color?, columnHeight: CGFloat, columnWidth: CGFloat) -> some View {
+    private func kanbanColumn(labelName: String, items: [ListItem], color: Color?, columnHeight: CGFloat, columnWidth: CGFloat) -> some View {
         let uncheckedItems = items.filter { !$0.checked }
         let checkedItems = items.filter { $0.checked }
 
@@ -205,7 +205,7 @@ struct KanbanBoardView: View {
     // MARK: - Item Row (with context menu)
 
     @ViewBuilder
-    private func itemRow(item: ShoppingItem) -> some View {
+    private func itemRow(item: ListItem) -> some View {
         ItemRowView(
             item: item,
             isLast: false,

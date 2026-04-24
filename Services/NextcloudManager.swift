@@ -88,6 +88,27 @@ actor NextcloudManager {
 
     // MARK: - Session lifecycle
 
+    /// Returns current credentials, retrying the keychain if nil.
+    ///
+    /// iOS can refuse keychain access during cold launch after deep sleep or app
+    /// prewarming. By retrying here we recover transparently once the device is
+    /// fully unlocked, instead of staying in a permanent "not connected" state.
+    private func resolveCredentials() -> NextcloudCredentials? {
+        if let creds = credentials { return creds }
+        guard let creds = NextcloudCredentials.load() else { return nil }
+        credentials = creds
+        creds.setupSession(nk: nk)
+        startNetworkMonitor()
+        AppLogger.nextcloud.info("[NC] Credentials recovered from keychain (lazy retry)")
+        return creds
+    }
+
+    /// Returns current credentials, retrying the keychain if needed.
+    /// External callers should use this instead of reading `credentials` directly.
+    func currentCredentials() -> NextcloudCredentials? {
+        resolveCredentials()
+    }
+
     /// Registers credentials and sets up the NextcloudKit session.
     func setup(credentials: NextcloudCredentials) {
         self.credentials = credentials
@@ -109,8 +130,13 @@ actor NextcloudManager {
     /// Re-establishes the NextcloudKit session after the app returns from deep sleep.
     /// iOS can invalidate URLSession instances during extended suspension; calling this
     /// before any network I/O ensures the session is fresh.
+    ///
+    /// Also retries loading credentials from the keychain. iOS can temporarily refuse
+    /// keychain access during cold launch (especially after deep sleep or prewarming),
+    /// so if `credentials` is nil we try again here — the device is unlocked by the
+    /// time the user is interacting with the app.
     func reactivateSession() {
-        guard let creds = credentials else { return }
+        guard let creds = resolveCredentials() else { return }
         creds.setupSession(nk: nk)
         startNetworkMonitor()
         AppLogger.nextcloud.info("[NC] Session reactivated after foreground return")
@@ -158,7 +184,7 @@ actor NextcloudManager {
 
     /// Lists files at a given remote path (e.g. "/", "/lists").
     func listFiles(at remotePath: String) async throws -> [NKFile] {
-        guard let creds = credentials else { throw NCError.notConnected }
+        guard let creds = resolveCredentials() else { throw NCError.notConnected }
         let url = creds.davURL(for: remotePath)
         let result = await nk.readFileOrFolderAsync(
             serverUrlFileName: url,
@@ -177,7 +203,7 @@ actor NextcloudManager {
 
     /// Opens a file, serving from cache immediately and refreshing in background.
     func openFile(remotePath: String, forceReload: Bool = false) async throws -> ListDocument {
-        guard let creds = credentials else { throw NCError.notConnected }
+        guard let creds = resolveCredentials() else { throw NCError.notConnected }
 
         let cacheKey = cacheKey(creds: creds, remotePath: remotePath)
 
@@ -225,7 +251,7 @@ actor NextcloudManager {
     /// Stage 2 — server ETag check: if the server has a version that isn't even in memCache yet
     /// (i.e. etagStore diverges from the server), download and merge before uploading.
     func saveFile(_ doc: ListDocument, to remotePath: String) async throws {
-        guard let creds = credentials else { throw NCError.notConnected }
+        guard let creds = resolveCredentials() else { throw NCError.notConnected }
 
         let key = cacheKey(creds: creds, remotePath: remotePath)
 
@@ -274,7 +300,7 @@ actor NextcloudManager {
     /// Returns a document from disk cache only (no network). Used as a fallback when
     /// the server is unreachable during app launch to avoid marking lists unavailable.
     func openFileFromDiskCache(remotePath: String) -> ListDocument? {
-        guard let creds = credentials else { return nil }
+        guard let creds = resolveCredentials() else { return nil }
         let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
         guard FileManager.default.fileExists(atPath: diskURL.path),
               let doc = try? loadFromDisk(at: diskURL) else { return nil }
@@ -285,7 +311,7 @@ actor NextcloudManager {
 
     /// Updates only the in-memory and disk cache without uploading.
     func updateCache(_ doc: ListDocument, remotePath: String) async {
-        guard let creds = credentials else { return }
+        guard let creds = resolveCredentials() else { return }
         let key = cacheKey(creds: creds, remotePath: remotePath)
         memCache[key] = doc
         let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
@@ -294,7 +320,7 @@ actor NextcloudManager {
 
     /// Returns true if the Nextcloud server is reachable (a lightweight PROPFIND on the DAV root).
     func isServerReachable() async -> Bool {
-        guard let creds = credentials else { return false }
+        guard let creds = resolveCredentials() else { return false }
         let url = creds.davBase()
         let result = await nk.readFileOrFolderAsync(
             serverUrlFileName: url,
@@ -322,7 +348,7 @@ actor NextcloudManager {
     /// Like `hasFileChanged` but distinguishes "unchanged" from "server unreachable".
     /// Throws `NCError.notFound` if the server returns 404 (file deleted or moved).
     func checkFileChanged(remotePath: String) async throws -> FileChangeResult {
-        guard let creds = credentials else { return .unreachable }
+        guard let creds = resolveCredentials() else { return .unreachable }
         let url = creds.davURL(for: remotePath)
         let result = await nk.readFileOrFolderAsync(
             serverUrlFileName: url,
@@ -345,7 +371,7 @@ actor NextcloudManager {
     /// still return `true` when `saveFile` runs, so any conflict is caught and merged there.
     /// Posts `nextcloudFileNotFound` if the server returns 404.
     private func backgroundSync(remotePath: String) async throws {
-        guard let creds = credentials else { return }
+        guard let creds = resolveCredentials() else { return }
         do {
             let serverChanged = try await hasFileChanged(remotePath: remotePath)
             guard serverChanged else { return }
@@ -369,7 +395,7 @@ actor NextcloudManager {
     /// Throws `NCError.notFound` if the server returns 404.
     @discardableResult
     func syncFile(remotePath: String) async throws -> ListDocument {
-        guard let creds = credentials else { throw NCError.notConnected }
+        guard let creds = resolveCredentials() else { throw NCError.notConnected }
 
         let hasPending = pendingUploads.contains(remotePath)
         // Always check server ETag first (before uploading) — throws NCError.notFound if file deleted
@@ -425,7 +451,7 @@ actor NextcloudManager {
     /// List summary: latest `modifiedAt` wins. Deleted-label tombstones are unioned and respected.
     private func mergeDocuments(local: ListDocument, server: ListDocument) -> ListDocument {
         // Items: latest modifiedAt wins per ID
-        var itemsById: [UUID: ShoppingItem] = Dictionary(
+        var itemsById: [UUID: ListItem] = Dictionary(
             uniqueKeysWithValues: server.items.map { ($0.id, $0) }
         )
         for item in local.items {
@@ -442,7 +468,7 @@ actor NextcloudManager {
         // Labels: no modifiedAt — local wins on conflict (preserves edits just made),
         // server adds any labels created on other devices that don't exist locally.
         // Tombstoned labels are excluded so stale caches can't resurrect deleted labels.
-        var labelsById: [String: ShoppingLabel] = Dictionary(
+        var labelsById: [String: ListLabel] = Dictionary(
             uniqueKeysWithValues: local.labels.map { ($0.id, $0) }
         )
         for label in server.labels where labelsById[label.id] == nil {
@@ -463,7 +489,7 @@ actor NextcloudManager {
 
     /// Removes a file from in-memory cache and pending uploads (does NOT delete disk cache).
     func closeFile(remotePath: String) async {
-        guard let creds = credentials else { return }
+        guard let creds = resolveCredentials() else { return }
         let key = cacheKey(creds: creds, remotePath: remotePath)
         memCache.removeValue(forKey: key)
         if pendingUploads.remove(remotePath) != nil { savePendingUploads() }
@@ -471,7 +497,7 @@ actor NextcloudManager {
 
     /// Removes from cache and pending; deletes the disk cache file.
     func removeLocalCache(remotePath: String) async {
-        guard let creds = credentials else { return }
+        guard let creds = resolveCredentials() else { return }
         let key = cacheKey(creds: creds, remotePath: remotePath)
         memCache.removeValue(forKey: key)
         if pendingUploads.remove(remotePath) != nil { savePendingUploads() }

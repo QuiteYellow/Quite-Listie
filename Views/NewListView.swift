@@ -1,5 +1,5 @@
 //
-//  NewShoppingListView.swift (V2 - SIMPLIFIED)
+//  NewListView.swift (V2 - SIMPLIFIED)
 //  Listie.md
 //
 //  Updated to use V2 format with clean IDs
@@ -9,7 +9,7 @@ import os
 import SwiftUI
 import SymbolPicker
 
-struct NewShoppingListView: View {
+struct NewListView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var name: String = ""
