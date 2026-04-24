@@ -1,5 +1,5 @@
 //
-//  ShoppingModel.swift (V2 - SIMPLIFIED)
+//  ListModel.swift (V2 - SIMPLIFIED)
 //  Listie.md
 //
 //  Simplified data model with fewer UUIDs and cleaner structure
@@ -11,12 +11,12 @@ import Foundation
 // MARK: - Document Version
 struct ListDocument: Codable {
     var version: Int = 2  // Version 2 = new simplified format
-    var list: ShoppingListSummary
-    var items: [ShoppingItem]
-    var labels: [ShoppingLabel]
+    var list: ListSummary
+    var items: [ListItem]
+    var labels: [ListLabel]
     var deletedLabelIDs: [String] = []  // Tombstones: IDs of labels intentionally deleted
 
-    init(list: ShoppingListSummary, items: [ShoppingItem] = [], labels: [ShoppingLabel] = [], deletedLabelIDs: [String] = []) {
+    init(list: ListSummary, items: [ListItem] = [], labels: [ListLabel] = [], deletedLabelIDs: [String] = []) {
         self.version = 2
         self.list = list
         self.items = items
@@ -38,9 +38,9 @@ struct ListDocument: Codable {
 
         // Default to version 1 if not present (old withMealie format)
         self.version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
-        self.list = try container.decode(ShoppingListSummary.self, forKey: .list)
-        self.items = try container.decode([ShoppingItem].self, forKey: .items)
-        self.labels = try container.decode([ShoppingLabel].self, forKey: .labels)
+        self.list = try container.decode(ListSummary.self, forKey: .list)
+        self.items = try container.decode([ListItem].self, forKey: .items)
+        self.labels = try container.decode([ListLabel].self, forKey: .labels)
         self.deletedLabelIDs = try container.decodeIfPresent([String].self, forKey: .deletedLabelIDs) ?? []
     }
 }
@@ -53,7 +53,7 @@ struct Coordinate: Codable, Equatable, Identifiable {
 }
 
 // MARK: - Shopping List
-struct ShoppingListSummary: Codable, Identifiable, Hashable {
+struct ListSummary: Codable, Identifiable, Hashable {
     var id: String  // Clean UUID without "local-" prefix
     var name: String
     var modifiedAt: Date
@@ -192,7 +192,7 @@ struct ReminderRepeatRule: Codable, Equatable {
 }
 
 // MARK: - Shopping Item
-struct ShoppingItem: Identifiable, Codable {
+struct ListItem: Identifiable, Codable {
     var id: UUID  // Keep UUID for conflict resolution
     var note: String
     var quantity: Double
@@ -239,7 +239,7 @@ struct ShoppingItem: Identifiable, Codable {
 
 
 // MARK: - Shopping Label
-struct ShoppingLabel: Identifiable, Codable, Hashable, Equatable {
+struct ListLabel: Identifiable, Codable, Hashable, Equatable {
     var id: String  // Simple string like "need", "want", "groceries"
     var name: String
     var color: String  // Hex color
@@ -270,7 +270,7 @@ extension String {
     }
 }
 
-extension ShoppingLabel {
+extension ListLabel {
     var isLocal: Bool {
         id.hasPrefix("local-")
     }
@@ -281,7 +281,7 @@ extension ShoppingLabel {
 /// Sorts label names respecting a custom label order.
 /// Labels in `labelOrder` appear first (in that sequence), remaining labels follow alphabetically.
 /// "No Label" is always placed last.
-func sortedLabelNames(_ names: [String], labels: [ShoppingLabel], labelOrder: [String]?) -> [String] {
+func sortedLabelNames(_ names: [String], labels: [ListLabel], labelOrder: [String]?) -> [String] {
     guard let order = labelOrder, !order.isEmpty else {
         // No custom order — alphabetical, "No Label" last
         return names.sorted { lhs, rhs in
@@ -319,15 +319,15 @@ func sortedLabelNames(_ names: [String], labels: [ShoppingLabel], labelOrder: [S
     return orderedNames
 }
 
-/// Sorts ShoppingLabel objects respecting a custom label order.
+/// Sorts ListLabel objects respecting a custom label order.
 /// Labels in `labelOrder` appear first (in that sequence), remaining labels follow alphabetically.
-func sortedLabels(_ labels: [ShoppingLabel], by labelOrder: [String]?) -> [ShoppingLabel] {
+func sortedLabels(_ labels: [ListLabel], by labelOrder: [String]?) -> [ListLabel] {
     guard let order = labelOrder, !order.isEmpty else {
         return labels.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     let idToLabel = Dictionary(uniqueKeysWithValues: labels.map { ($0.id, $0) })
-    var result: [ShoppingLabel] = []
+    var result: [ListLabel] = []
     var seen = Set<String>()
 
     for labelId in order {

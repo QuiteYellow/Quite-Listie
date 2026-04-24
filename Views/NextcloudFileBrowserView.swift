@@ -210,7 +210,7 @@ struct NextcloudFileBrowserView: View {
         let remotePath = currentPath == "/" ? "/\(fileName)" : "\(currentPath)/\(fileName)"
 
         let doc = ListDocument(
-            list: ShoppingListSummary(id: UUID().uuidString, name: name),
+            list: ListSummary(id: UUID().uuidString, name: name),
             items: [],
             labels: []
         )

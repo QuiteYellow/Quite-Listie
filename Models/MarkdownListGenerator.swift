@@ -82,8 +82,8 @@ enum MarkdownListGenerator {
     /// Generates markdown from shopping list
     static func generate(
         listName: String,
-        items: [ShoppingItem],
-        labels: [ShoppingLabel],
+        items: [ListItem],
+        labels: [ListLabel],
         labelOrder: [String]? = nil,
         activeOnly: Bool = false,
         includeNotes: Bool = false

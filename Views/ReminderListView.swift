@@ -26,7 +26,7 @@ struct ReminderListView: View {
     @State private var notificationsDenied = false
 
     // Cache of ViewModels per list ID for operations
-    @State private var viewModelCache: [String: ShoppingListViewModel] = [:]
+    @State private var viewModelCache: [String: ListViewModel] = [:]
     @State private var listWidth: CGFloat = 0
 
     private var title: String {
@@ -149,11 +149,11 @@ struct ReminderListView: View {
 
     // MARK: - ViewModel Access
 
-    private func viewModel(for entry: ReminderEntry) -> ShoppingListViewModel {
+    private func viewModel(for entry: ReminderEntry) -> ListViewModel {
         if let cached = viewModelCache[entry.list.id] {
             return cached
         }
-        let vm = ShoppingListViewModel(list: entry.list, provider: unifiedProvider)
+        let vm = ListViewModel(list: entry.list, provider: unifiedProvider)
         DispatchQueue.main.async {
             viewModelCache[entry.list.id] = vm
         }

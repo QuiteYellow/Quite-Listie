@@ -21,8 +21,8 @@ import UniformTypeIdentifiers
 struct MarkdownExportView: View {
     let listName: String
     let listId: String?
-    let items: [ShoppingItem]
-    let labels: [ShoppingLabel]
+    let items: [ListItem]
+    let labels: [ListLabel]
     let labelOrder: [String]?
     let activeOnly: Bool
 
@@ -310,21 +310,21 @@ struct MarkdownDocument: FileDocument {
         listName: "My Shopping List",
         listId: "preview-list-123",
         items: [
-            ShoppingItem(
+            ListItem(
                 id: UUID(),
                 note: "Apples",
                 quantity: 2,
                 checked: false,
                 labelId: "produce"
             ),
-            ShoppingItem(
+            ListItem(
                 id: UUID(),
                 note: "Bananas",
                 quantity: 1,
                 checked: true,
                 labelId: "produce"
             ),
-            ShoppingItem(
+            ListItem(
                 id: UUID(),
                 note: "Milk",
                 quantity: 1,
@@ -333,8 +333,8 @@ struct MarkdownDocument: FileDocument {
             )
         ],
         labels: [
-            ShoppingLabel(id: "produce", name: "Produce", color: "#4CAF50"),
-            ShoppingLabel(id: "dairy", name: "Dairy", color: "#2196F3")
+            ListLabel(id: "produce", name: "Produce", color: "#4CAF50"),
+            ListLabel(id: "dairy", name: "Dairy", color: "#2196F3")
         ],
         labelOrder: nil,
         activeOnly: false

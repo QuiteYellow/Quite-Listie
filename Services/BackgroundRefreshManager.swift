@@ -137,7 +137,7 @@ enum BackgroundRefreshManager {
         AppLogger.background.debug("Scanning \(listsToScan.count) of \(allLists.count) lists")
 
         // Collect all reminder items across selected lists
-        var allReminderItems: [(item: ShoppingItem, listName: String, listId: String)] = []
+        var allReminderItems: [(item: ListItem, listName: String, listId: String)] = []
         var listsScanned = 0
         var listsFailed = 0
 

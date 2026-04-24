@@ -10,8 +10,8 @@ import SwiftUI
 struct ShareLinkSheet: View {
     let listName: String
     let listId: String?
-    let items: [ShoppingItem]
-    let labels: [ShoppingLabel]
+    let items: [ListItem]
+    let labels: [ListLabel]
     let labelOrder: [String]?
 
     @Environment(\.dismiss) var dismiss
@@ -23,7 +23,7 @@ struct ShareLinkSheet: View {
 
     // MARK: - Computed Properties
 
-    private var filteredItems: [ShoppingItem] {
+    private var filteredItems: [ListItem] {
         includeActiveOnly ? items.filter { !$0.checked } : items
     }
 

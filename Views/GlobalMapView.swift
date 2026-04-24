@@ -14,7 +14,7 @@ struct GlobalMapView: View {
     var welcomeViewModel: WelcomeViewModel
     var searchText: String = ""
     /// Called when the user taps "Show Details" — opens the item editor without leaving the map.
-    var onShowDetails: ((ShoppingItem, UnifiedList) -> Void)?
+    var onShowDetails: ((ListItem, UnifiedList) -> Void)?
 
     @Namespace private var mapScope
 
@@ -25,7 +25,7 @@ struct GlobalMapView: View {
     @State private var showCompleted: Bool = false
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var focusState: MapFocusState = .all
-    @State private var popoverItem: ShoppingItem? = nil
+    @State private var popoverItem: ListItem? = nil
     @State private var popoverEntry: LocationEntry? = nil
     @State private var showPopover: Bool = false
     @State private var visibleRegion: MKCoordinateRegion?
@@ -41,7 +41,7 @@ struct GlobalMapView: View {
 
     // MARK: - Derived Data
 
-    private var labelsWithItems: [ShoppingLabel] {
+    private var labelsWithItems: [ListLabel] {
         let usedLabelIDs = Set(welcomeViewModel.locationEntries.compactMap { $0.item.labelId })
         return welcomeViewModel.allLocationLabels
             .filter { usedLabelIDs.contains($0.id) }
@@ -146,7 +146,7 @@ struct GlobalMapView: View {
     private var hasPrevious: Bool { visitHistory.count > 1 }
     private var hasNext: Bool { nextEntry != nil }
 
-    private func startCycling(from item: ShoppingItem) {
+    private func startCycling(from item: ListItem) {
         visitHistory = [item.id]
     }
 
@@ -167,14 +167,14 @@ struct GlobalMapView: View {
         popoverEntry = next
     }
 
-    private func handlePopoverShowDetails(item: ShoppingItem) {
+    private func handlePopoverShowDetails(item: ListItem) {
         showPopover = false
         if let entry = popoverEntry {
             onShowDetails?(item, entry.list)
         }
     }
 
-    private func handleSheetShowDetails(item: ShoppingItem, entry: LocationEntry) {
+    private func handleSheetShowDetails(item: ListItem, entry: LocationEntry) {
         showPopover = false
         onShowDetails?(item, entry.list)
     }
@@ -217,7 +217,7 @@ struct GlobalMapView: View {
                                 MapPinPopover(
                                     item: item,
                                     label: entry.labelName.map { name in
-                                        ShoppingLabel(id: entry.item.labelId ?? "", name: name, color: entry.labelColor ?? "", symbol: entry.labelSymbol)
+                                        ListLabel(id: entry.item.labelId ?? "", name: name, color: entry.labelColor ?? "", symbol: entry.labelSymbol)
                                     },
                                     navShowAppleMaps: navShowAppleMaps,
                                     navShowGoogleMaps: navShowGoogleMaps,
@@ -286,7 +286,7 @@ struct GlobalMapView: View {
                     MapPinSheetContent(
                         item: item,
                         label: entry.labelName.map { name in
-                            ShoppingLabel(id: entry.item.labelId ?? "", name: name, color: entry.labelColor ?? "", symbol: entry.labelSymbol)
+                            ListLabel(id: entry.item.labelId ?? "", name: name, color: entry.labelColor ?? "", symbol: entry.labelSymbol)
                         },
                         navShowAppleMaps: navShowAppleMaps,
                         navShowGoogleMaps: navShowGoogleMaps,

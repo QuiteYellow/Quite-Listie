@@ -20,10 +20,10 @@ enum ModelHelpers {
     // MARK: - List Creation
     
     /// Creates a new shopping list with V2 format
-    static func createNewList(name: String, icon: String = "checklist") -> ShoppingListSummary {
+    static func createNewList(name: String, icon: String = "checklist") -> ListSummary {
         let cleanId = UUID().uuidString  // No "local-" prefix
         
-        return ShoppingListSummary(
+        return ListSummary(
             id: cleanId,
             name: name,
             modifiedAt: Date(),
@@ -47,8 +47,8 @@ enum ModelHelpers {
         reminderRepeatMode: ReminderRepeatMode? = nil,
         location: Coordinate? = nil,
         sourceURL: String? = nil
-    ) -> ShoppingItem {
-        return ShoppingItem(
+    ) -> ListItem {
+        return ListItem(
             id: UUID(),
             note: note,
             quantity: quantity,
@@ -67,8 +67,8 @@ enum ModelHelpers {
     
     // MARK: - Label Creation
     
-    static func createNewLabel(name: String, color: String, symbol: String? = nil, existingLabels: [ShoppingLabel] = []) -> ShoppingLabel {
-        return ShoppingLabel(
+    static func createNewLabel(name: String, color: String, symbol: String? = nil, existingLabels: [ListLabel] = []) -> ListLabel {
+        return ListLabel(
             id: UUID().uuidString,
             name: name,
             color: color,
@@ -76,9 +76,9 @@ enum ModelHelpers {
         )
     }
     
-    static func createCommonLabels() -> [ShoppingLabel] {
+    static func createCommonLabels() -> [ListLabel] {
         return commonLabels.map { (name, color) in
-            ShoppingLabel(
+            ListLabel(
                 id: UUID().uuidString,
                 name: name,
                 color: color
@@ -105,14 +105,14 @@ enum ModelHelpers {
     // MARK: - Update Helpers
     
     /// Updates an item's modified timestamp
-    static func touchItem(_ item: ShoppingItem) -> ShoppingItem {
+    static func touchItem(_ item: ListItem) -> ListItem {
         var updated = item
         updated.modifiedAt = Date()
         return updated
     }
     
     /// Updates a list's modified timestamp
-    static func touchList(_ list: ShoppingListSummary) -> ShoppingListSummary {
+    static func touchList(_ list: ListSummary) -> ListSummary {
         var updated = list
         updated.modifiedAt = Date()
         return updated
@@ -120,7 +120,7 @@ enum ModelHelpers {
     
     /// Updates a list summary with new values from extras
     static func updateListFromExtras(
-        _ list: inout ShoppingListSummary,
+        _ list: inout ListSummary,
         name: String,
         extras: [String: String]
     ) {

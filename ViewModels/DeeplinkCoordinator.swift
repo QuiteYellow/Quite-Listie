@@ -21,7 +21,7 @@ class DeeplinkCoordinator {
     var showError = false
 
     /// Set when a `quitelistie://item?id=<itemUUID>` deeplink is received.
-    /// WelcomeView navigates to the resolved list and ShoppingListView opens the editor.
+    /// WelcomeView navigates to the resolved list and ListView opens the editor.
     var pendingItemNavigation: ItemNavigation?
 
     struct ItemNavigation: Equatable {

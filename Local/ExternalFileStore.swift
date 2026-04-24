@@ -921,8 +921,8 @@ actor FileStore {
     }
     
     /// Merges items from cache and disk, preferring the one with the latest modification date
-    private func mergeItems(cached: [ShoppingItem], disk: [ShoppingItem]) -> [ShoppingItem] {
-        var itemsById: [UUID: ShoppingItem] = [:]
+    private func mergeItems(cached: [ListItem], disk: [ListItem]) -> [ListItem] {
+        var itemsById: [UUID: ListItem] = [:]
         
         // Note: Items may reference labelIds that don't exist in labels array
         // This is handled gracefully - labelForItem returns nil and item appears under "No Label"
@@ -970,8 +970,8 @@ actor FileStore {
     /// Merges labels from cache and disk — union of both sets.
     /// Labels only in cache (new local) are kept. Labels only on disk (new remote) are kept.
     /// Labels in both are kept (name/color from cache since it's the latest local state).
-    private func mergeLabels(cached: [ShoppingLabel], disk: [ShoppingLabel], deletedIDs: Set<String> = []) -> [ShoppingLabel] {
-        var labelsById: [String: ShoppingLabel] = [:]
+    private func mergeLabels(cached: [ListLabel], disk: [ListLabel], deletedIDs: Set<String> = []) -> [ListLabel] {
+        var labelsById: [String: ListLabel] = [:]
 
         // Add all disk labels first (remote state)
         for label in disk {

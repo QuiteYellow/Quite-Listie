@@ -15,10 +15,10 @@ struct RecycleBinView: View {
     var onItemsChanged: (() -> Void)?
     @Environment(\.dismiss) var dismiss
     
-    @State private var deletedItems: [ShoppingItem] = []
+    @State private var deletedItems: [ListItem] = []
     @State private var showDeleteAllConfirmation = false
     @State private var showRestoreAllConfirmation = false
-    @State private var itemToDelete: ShoppingItem?
+    @State private var itemToDelete: ListItem?
     @State private var bulkErrorMessage: String?
     @State private var showBulkError = false
     
@@ -148,7 +148,7 @@ struct RecycleBinView: View {
         }
     }
     
-    private func restore(_ item: ShoppingItem) async {
+    private func restore(_ item: ListItem) async {
         do {
             try await provider.restoreItem(item, in: list)
             await loadDeletedItems()
@@ -158,7 +158,7 @@ struct RecycleBinView: View {
         }
     }
     
-    private func permanentlyDelete(_ item: ShoppingItem) async {
+    private func permanentlyDelete(_ item: ListItem) async {
         do {
             try await provider.permanentlyDeleteItem(item, from: list)
             await loadDeletedItems()

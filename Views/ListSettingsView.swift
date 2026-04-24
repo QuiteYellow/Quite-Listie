@@ -10,9 +10,9 @@ import SwiftUI
 import SymbolPicker
 
 struct ListSettingsView: View {
-    @State private var allLabels: [ShoppingLabel] = []
+    @State private var allLabels: [ListLabel] = []
     @State private var hiddenLabelIDs: Set<String> = []
-    let list: ShoppingListSummary
+    let list: ListSummary
     let unifiedList: UnifiedList
     let unifiedProvider: UnifiedListProvider
     let onSave: (String, String?, [String]?, [String]?, Bool?) -> Void  // (name, icon, hiddenLabels, labelOrder, enableMapData)
@@ -26,9 +26,9 @@ struct ListSettingsView: View {
     
     // Label management states
     @State private var showingLabelEditor = false
-    @State private var editingLabel: ShoppingLabel? = nil
+    @State private var editingLabel: ListLabel? = nil
     @State private var showingDeleteConfirmation = false
-    @State private var labelToDelete: ShoppingLabel? = nil
+    @State private var labelToDelete: ListLabel? = nil
     
     @State private var showCompletedAtBottom: Bool = false
     @State private var listBackground: ListBackground? = nil
@@ -95,7 +95,7 @@ struct ListSettingsView: View {
         }
     }
     
-    private func updateLabel(_ label: ShoppingLabel) async {
+    private func updateLabel(_ label: ListLabel) async {
         do {
             try await unifiedProvider.updateLabel(label, for: unifiedList)
             await loadLabels()
@@ -104,7 +104,7 @@ struct ListSettingsView: View {
         }
     }
     
-    private func deleteLabel(_ label: ShoppingLabel) async {
+    private func deleteLabel(_ label: ListLabel) async {
         do {
             try await unifiedProvider.deleteLabel(label, from: unifiedList)
             await loadLabels()

@@ -75,7 +75,7 @@ enum ReminderManager {
 
     /// Schedules a local notification for an item's reminder date.
     /// Replaces any existing notification for the same item.
-    static func scheduleReminder(for item: ShoppingItem, listName: String, listId: String) {
+    static func scheduleReminder(for item: ListItem, listName: String, listId: String) {
         guard let reminderDate = item.reminderDate, reminderDate > Date() else { return }
 
         let content = UNMutableNotificationContent()
@@ -116,14 +116,14 @@ enum ReminderManager {
     // MARK: - Cancellation
 
     /// Cancels the pending notification for a specific item.
-    static func cancelReminder(for item: ShoppingItem) {
+    static func cancelReminder(for item: ListItem) {
         let id = notificationId(for: item)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
         AppLogger.reminders.info("Cancelled reminder for '\(item.note, privacy: .public)'")
     }
 
     /// Cancels notifications for multiple items.
-    static func cancelReminders(for items: [ShoppingItem]) {
+    static func cancelReminders(for items: [ListItem]) {
         let ids = items.map { notificationId(for: $0) }
         guard !ids.isEmpty else { return }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
@@ -134,7 +134,7 @@ enum ReminderManager {
 
     /// Single-list reconciliation: only cancels stale notifications for checked/deleted/removed items.
     /// Does NOT schedule new ones — that's handled by `reconcileWithBudget` to respect the 64-notification limit.
-    static func reconcileCancellations(items: [ShoppingItem], listId: String, pendingIds: Set<String>) {
+    static func reconcileCancellations(items: [ListItem], listId: String, pendingIds: Set<String>) {
         var idsToCancel: [String] = []
 
         for item in items {
@@ -153,7 +153,7 @@ enum ReminderManager {
     }
 
     /// Legacy per-list reconciliation — kept for backward compatibility with `UnifiedListProvider.syncIfNeeded`.
-    static func reconcile(items: [ShoppingItem], listName: String, listId: String) async {
+    static func reconcile(items: [ListItem], listName: String, listId: String) async {
         let pendingRequests = await UNUserNotificationCenter.current().pendingNotificationRequests()
         let pendingIds = Set(pendingRequests.map(\.identifier))
         reconcileCancellations(items: items, listId: listId, pendingIds: pendingIds)
@@ -170,7 +170,7 @@ enum ReminderManager {
     /// 3. Schedules the top 60, cancels any beyond that
     /// 4. Logs a complete summary
     static func reconcileWithBudget(
-        allItems: [(item: ShoppingItem, listName: String, listId: String)],
+        allItems: [(item: ListItem, listName: String, listId: String)],
         trigger: String
     ) async {
         AppLogger.reminders.debug("[Reconcile] Starting budget reconciliation (trigger: \(trigger, privacy: .public))")
@@ -373,7 +373,7 @@ enum ReminderManager {
     // MARK: - Helpers
 
     /// Consistent notification identifier for an item.
-    private static func notificationId(for item: ShoppingItem) -> String {
+    private static func notificationId(for item: ListItem) -> String {
         "reminder-\(item.id.uuidString)"
     }
 }

@@ -43,7 +43,7 @@ extension Notification.Name {
 struct UnifiedList: Identifiable, Hashable {
     let id: String
     let source: ListSource
-    var summary: ShoppingListSummary
+    var summary: ListSummary
 
     var originalFileId: String?
     var isReadOnly: Bool = false
@@ -94,8 +94,8 @@ class UnifiedListProvider {
     var saveStatus: [String: SaveStatus] = [:]
 
     // REACTIVE label caches
-    var externalLabels: [URL: [ShoppingLabel]] = [:]
-    var nextcloudLabels: [String: [ShoppingLabel]] = [:]  // keyed by remotePath
+    var externalLabels: [URL: [ListLabel]] = [:]
+    var nextcloudLabels: [String: [ListLabel]] = [:]  // keyed by remotePath
 
     var isDownloadingFile = false
     var currentlyLoadingFile: String? = nil
@@ -158,7 +158,7 @@ class UnifiedListProvider {
     }
 
     /// Caches label array into the per-backend reactive dictionary.
-    private func cacheLabels(_ labels: [ShoppingLabel], for list: UnifiedList) {
+    private func cacheLabels(_ labels: [ListLabel], for list: UnifiedList) {
         switch list.source {
         case .external(let url):
             externalLabels[url] = labels
@@ -277,7 +277,7 @@ class UnifiedListProvider {
                 let folderName = url.deletingLastPathComponent().lastPathComponent
                 let runtimeId = "unavailable:\(url.path)"
 
-                let placeholderSummary = ShoppingListSummary(
+                let placeholderSummary = ListSummary(
                     id: runtimeId, name: fileName, modifiedAt: Date(), icon: "exclamationmark.triangle"
                 )
                 let unavailableBookmark = UnavailableBookmark(
@@ -300,7 +300,7 @@ class UnifiedListProvider {
         let unavailableBookmarks = await FileStore.shared.getUnavailableBookmarks()
         for bookmark in unavailableBookmarks {
             let runtimeId = "unavailable:\(bookmark.id)"
-            let placeholderSummary = ShoppingListSummary(
+            let placeholderSummary = ListSummary(
                 id: runtimeId, name: bookmark.fileName, modifiedAt: Date(),
                 icon: bookmark.reason.icon
             )
@@ -422,7 +422,7 @@ class UnifiedListProvider {
                 newEntry = UnifiedList(
                     id: runtimeId,
                     source: .nextcloud(accountId: accountId, remotePath: remotePath),
-                    summary: ShoppingListSummary(id: runtimeId, name: displayName, modifiedAt: Date(), icon: "cloud"),
+                    summary: ListSummary(id: runtimeId, name: displayName, modifiedAt: Date(), icon: "cloud"),
                     originalFileId: nil,
                     isReadOnly: true,
                     unavailableBookmark: bookmark
@@ -460,7 +460,7 @@ class UnifiedListProvider {
 
     /// Opens a Nextcloud file and adds it to `allLists`.
     func openNextcloudFile(remotePath: String) async throws -> String {
-        guard let creds = await NextcloudManager.shared.credentials else {
+        guard let creds = await NextcloudManager.shared.currentCredentials() else {
             throw NCError.notConnected
         }
         let accountId = creds.accountId
@@ -645,13 +645,13 @@ class UnifiedListProvider {
 
     // MARK: - Items
 
-    func fetchItems(for list: UnifiedList) async throws -> [ShoppingItem] {
+    func fetchItems(for list: UnifiedList) async throws -> [ListItem] {
         if list.summary.id == ExampleData.welcomeListId { return ExampleData.welcomeItems }
         let document = try await openDocument(for: list)
         return document.items
     }
 
-    func addItem(_ item: ShoppingItem, to list: UnifiedList) async throws {
+    func addItem(_ item: ListItem, to list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         document.items.append(item)
         await cacheDocument(document, for: list)
@@ -798,7 +798,7 @@ class UnifiedListProvider {
         }
     }
 
-    func updateItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
+    func updateItem(_ item: ListItem, in list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index] = item
@@ -806,7 +806,7 @@ class UnifiedListProvider {
         }
     }
 
-    func deleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
+    func deleteItem(_ item: ListItem, from list: UnifiedList) async throws {
         if item.reminderDate != nil { ReminderManager.cancelReminder(for: item) }
 
         var document = try await openDocument(for: list)
@@ -819,12 +819,12 @@ class UnifiedListProvider {
         }
     }
 
-    func fetchDeletedItems(for list: UnifiedList) async throws -> [ShoppingItem] {
+    func fetchDeletedItems(for list: UnifiedList) async throws -> [ListItem] {
         let document = try await openDocument(for: list)
         return document.items.filter { $0.isDeleted }
     }
 
-    func restoreItem(_ item: ShoppingItem, in list: UnifiedList) async throws {
+    func restoreItem(_ item: ListItem, in list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index].isDeleted = false
@@ -834,7 +834,7 @@ class UnifiedListProvider {
         }
     }
 
-    func permanentlyDeleteItem(_ item: ShoppingItem, from list: UnifiedList) async throws {
+    func permanentlyDeleteItem(_ item: ListItem, from list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         document.items.removeAll { $0.id == item.id }
         await cacheDocument(document, for: list)
@@ -842,7 +842,7 @@ class UnifiedListProvider {
 
     // MARK: - Labels
 
-    func fetchLabels(for list: UnifiedList) async throws -> [ShoppingLabel] {
+    func fetchLabels(for list: UnifiedList) async throws -> [ListLabel] {
         if list.summary.id == ExampleData.welcomeListId { return ExampleData.welcomeLabels }
 
         // Return cached labels if available
@@ -858,7 +858,7 @@ class UnifiedListProvider {
         return document.labels
     }
 
-    func createLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
+    func createLabel(_ label: ListLabel, for list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         document.labels.append(label)
         document.deletedLabelIDs.removeAll { $0 == label.id }
@@ -867,7 +867,7 @@ class UnifiedListProvider {
         await cacheDocument(document, for: list)
     }
 
-    func updateLabel(_ label: ShoppingLabel, for list: UnifiedList) async throws {
+    func updateLabel(_ label: ListLabel, for list: UnifiedList) async throws {
         AppLogger.labels.debug("[updateLabel] Starting update for label: \(label.name, privacy: .public)")
 
         var document = try await openDocument(for: list)
@@ -887,7 +887,7 @@ class UnifiedListProvider {
         }
     }
 
-    func deleteLabel(_ label: ShoppingLabel, from list: UnifiedList) async throws {
+    func deleteLabel(_ label: ListLabel, from list: UnifiedList) async throws {
         AppLogger.labels.debug("[deleteLabel] Starting delete for label: \(label.name, privacy: .public)")
 
         var document = try await openDocument(for: list)

@@ -60,7 +60,7 @@ class EventKitManager {
 
     // MARK: - Event Mapping (UserDefaults-persisted)
 
-    /// Maps ShoppingItem.id.uuidString → EKEvent.calendarItemExternalIdentifier.
+    /// Maps ListItem.id.uuidString → EKEvent.calendarItemExternalIdentifier.
     /// calendarItemExternalIdentifier is identical on every device for the same iCloud event,
     /// unlike eventIdentifier which is device-local. Storing the external ID means Device B
     /// can look up an event created by Device A without a second reconciliation pass.
@@ -231,7 +231,7 @@ class EventKitManager {
         calendarExists = true
 
         // Collect all active items with reminders across all lists
-        var activeItems: [(item: ShoppingItem, listName: String)] = []
+        var activeItems: [(item: ListItem, listName: String)] = []
         for list in provider.allLists where !list.isUnavailable && !list.isReadOnly {
             if let items = try? await provider.fetchItems(for: list) {
                 for item in items where !item.isDeleted && !item.checked && item.reminderDate != nil {
@@ -342,10 +342,10 @@ class EventKitManager {
 
     // MARK: - Event Management
 
-    /// Creates or updates an EKEvent for the given ShoppingItem. Returns the event on success.
+    /// Creates or updates an EKEvent for the given ListItem. Returns the event on success.
     /// Includes a dirty check — skips the save if no fields have changed.
     @discardableResult
-    private func upsertEvent(for item: ShoppingItem, listName: String,
+    private func upsertEvent(for item: ListItem, listName: String,
                               calendar: EKCalendar, existing: EKEvent?) -> EKEvent? {
         guard let reminderDate = item.reminderDate else { return nil }
 

@@ -122,7 +122,7 @@ extension Notification.Name {
 }
 
 @main
-struct ShoppingListApp: App {
+struct ListieApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow
     @FocusedBinding(\.newListSheet) private var newListSheet: Bool?

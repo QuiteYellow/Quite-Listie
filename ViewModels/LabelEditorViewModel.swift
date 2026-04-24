@@ -6,7 +6,7 @@ class LabelEditorViewModel {
     var color: Color
     var symbol: String?
 
-    let label: ShoppingLabel?
+    let label: ListLabel?
 
     var isNameValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -23,7 +23,7 @@ class LabelEditorViewModel {
         self.label = nil
     }
 
-    init(from label: ShoppingLabel) {
+    init(from label: ListLabel) {
         self.name = label.name
         self.color = Color(hex: label.color)
         self.symbol = label.symbol

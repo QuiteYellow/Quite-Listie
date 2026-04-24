@@ -52,9 +52,9 @@ struct ListDocumentFile: FileDocument {
 extension ListDocumentFile {
     /// Creates a file document from a list summary with items and labels
     static func from(
-        list: ShoppingListSummary,
-        items: [ShoppingItem],
-        labels: [ShoppingLabel]
+        list: ListSummary,
+        items: [ListItem],
+        labels: [ListLabel]
     ) -> ListDocumentFile {
         let document = ListDocument(
             list: list,
