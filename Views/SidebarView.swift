@@ -243,7 +243,16 @@ struct SidebarView: View {
             }
 
             // MARK: - Unavailable Lists
-            let unavailableLists = unifiedProvider.allLists.filter { $0.isUnavailable }
+            // While recovering the NC session after deep sleep, hide transient unavailable lists
+            // so the user sees the loading banner instead of flickering error rows.
+            let unavailableLists = unifiedProvider.allLists.filter { list in
+                guard list.isUnavailable else { return false }
+                if unifiedProvider.isRecoveringSession, list.isNextcloud,
+                   let reason = list.unavailableBookmark?.reason,
+                   case .fileNotFound = reason { return true }  // truly gone — always show
+                else if unifiedProvider.isRecoveringSession, list.isNextcloud { return false }
+                return true
+            }
             if !unavailableLists.isEmpty {
                 Section(header: Label("Unavailable", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)) {
                     ForEach(unavailableLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
@@ -278,9 +287,22 @@ struct SidebarView: View {
                 .padding(.vertical, 8)
                 .background(.bar)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if unifiedProvider.isRecoveringSession {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Reconnecting to Nextcloud...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(.bar)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.25), value: unifiedProvider.isInitialLoad)
+        .animation(.easeInOut(duration: 0.25), value: unifiedProvider.isRecoveringSession)
 
         .alert("Delete List?", isPresented: $showingDeleteConfirmation, presenting: listToDelete) { list in
             Button("Delete", role: .destructive) {
@@ -323,7 +345,13 @@ struct SidebarView: View {
     @ViewBuilder
     private func listRow(for list: UnifiedList) -> some View {
         let isFavourited = favouriteListIDs.contains(list.summary.id)
-        let saveStatus = unifiedProvider.saveStatus[list.id] ?? .saved
+        // Suppress transient error icons for NC lists while session is recovering
+        let rawStatus = unifiedProvider.saveStatus[list.id] ?? .saved
+        let saveStatus: UnifiedListProvider.SaveStatus = {
+            if unifiedProvider.isRecoveringSession, list.isNextcloud,
+               case .failed = rawStatus { return .saving }
+            return rawStatus
+        }()
         
         HStack {
             // Icon

@@ -106,6 +106,10 @@ class UnifiedListProvider {
     /// Cleared automatically when sync succeeds.
     var syncPendingListIDs: Set<String> = []
 
+    /// True while recovering NC credentials/session after deep sleep.
+    /// The sidebar shows a loading banner instead of transient errors during this phase.
+    var isRecoveringSession: Bool = false
+
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
     private var activeSyncs: Set<String> = []
 
@@ -747,11 +751,16 @@ class UnifiedListProvider {
     func syncAllLists() async {
         // Re-establish the NextcloudKit URLSession — iOS may have invalidated it
         // during extended suspension (deep sleep). This is a no-op if not connected.
+        let hasNCLists = allLists.contains { $0.isNextcloud }
+        if hasNCLists { isRecoveringSession = true }
+
         await NextcloudManager.shared.reactivateSession()
 
         // First, retry any unavailable Nextcloud lists — they may have been marked unavailable
         // due to transient errors (network down, app killed while offline, etc.)
         await retryUnavailableNextcloudLists()
+
+        if hasNCLists { isRecoveringSession = false }
 
         for list in allLists where !list.isReadOnly {
             do { try await syncIfNeeded(for: list) }
