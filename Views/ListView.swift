@@ -278,6 +278,7 @@ struct ListView: View {
     
     @State private var isPerformingBulkAction = false
     @State private var showingRecycleBin = false
+    @State private var showingRecentChanges = false
     @State private var showingListSettings = false
     @State private var beatenToItMessage: String? = nil
     @State private var mapLabelFilter: Set<String> = []
@@ -915,6 +916,7 @@ struct ListView: View {
             mapAddLocation: $mapAddLocation,
             editingItem: $editingItem,
             showingRecycleBin: $showingRecycleBin,
+            showingRecentChanges: $showingRecentChanges,
             showingMarkdownImport: $showingMarkdownImport,
             markdownToExport: $markdownToExport,
             shareLinkExport: $shareLinkExport,
@@ -1126,6 +1128,12 @@ struct ListView: View {
             Label("Recycle Bin", systemImage: "trash")
         }
         .disabled(unifiedList.isReadOnly)
+
+        Button {
+            showingRecentChanges = true
+        } label: {
+            Label("Recent Changes", systemImage: "clock.arrow.circlepath")
+        }
     }
 
     private func toggleMapFocus() {
@@ -1191,6 +1199,7 @@ private struct ListSheetsModifier: ViewModifier {
     @Binding var mapAddLocation: Coordinate?
     @Binding var editingItem: ListItem?
     @Binding var showingRecycleBin: Bool
+    @Binding var showingRecentChanges: Bool
     @Binding var showingMarkdownImport: Bool
     @Binding var markdownToExport: MarkdownExport?
     @Binding var shareLinkExport: MarkdownExport?
@@ -1226,6 +1235,11 @@ private struct ListSheetsModifier: ViewModifier {
             }
             .sheet(isPresented: $showingRecycleBin) {
                 RecycleBinView(list: unifiedList, provider: unifiedProvider) {
+                    Task { await viewModel.loadItems() }
+                }
+            }
+            .sheet(isPresented: $showingRecentChanges) {
+                RecentChangesView(list: unifiedList, provider: unifiedProvider, viewModel: viewModel) {
                     Task { await viewModel.loadItems() }
                 }
             }

@@ -823,6 +823,7 @@ class UnifiedListProvider {
             document.items[index].isDeleted = true
             document.items[index].deletedAt = Date()
             document.items[index].modifiedAt = Date()
+            document.items[index].lastChangeField = "deleted"
             document.items[index].reminderDate = nil
             await cacheDocument(document, for: list)
         }
@@ -839,6 +840,7 @@ class UnifiedListProvider {
             document.items[index].isDeleted = false
             document.items[index].deletedAt = nil
             document.items[index].modifiedAt = Date()
+            document.items[index].lastChangeField = "restored"
             await cacheDocument(document, for: list)
         }
     }

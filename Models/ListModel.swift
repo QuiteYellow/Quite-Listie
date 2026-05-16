@@ -209,17 +209,20 @@ struct ListItem: Identifiable, Codable {
     var reminderRepeatMode: ReminderRepeatMode?  // fixed or after-completion
     var location: Coordinate?  // optional pinned map coordinate
     var sourceURL: String?  // original maps URL used to set the location
+    var checkedAt: Date?  // when the item was last checked/unchecked
+    var lastChangeField: String?  // what was last changed: "checked", "note", "quantity", "label", "reminder", "location", "subitems", "added", "deleted", "restored"
 
 
     enum CodingKeys: String, CodingKey {
-            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode, location, sourceURL
+            case id, note, quantity, checked, labelId, modifiedAt, markdownNotes, isDeleted, deletedAt, reminderDate, reminderRepeatRule, reminderRepeatMode, location, sourceURL, checkedAt, lastChangeField
         }
 
     init(id: UUID = UUID(), note: String, quantity: Double = 1, checked: Bool = false,
              labelId: String? = nil, markdownNotes: String? = nil, modifiedAt: Date = Date(),
              isDeleted: Bool = false, deletedAt: Date? = nil, reminderDate: Date? = nil,
              reminderRepeatRule: ReminderRepeatRule? = nil, reminderRepeatMode: ReminderRepeatMode? = nil,
-             location: Coordinate? = nil, sourceURL: String? = nil) {
+             location: Coordinate? = nil, sourceURL: String? = nil,
+             checkedAt: Date? = nil, lastChangeField: String? = nil) {
             self.id = id
             self.note = note
             self.quantity = quantity
@@ -234,6 +237,8 @@ struct ListItem: Identifiable, Codable {
             self.reminderRepeatMode = reminderRepeatMode
             self.location = location
             self.sourceURL = sourceURL
+            self.checkedAt = checkedAt
+            self.lastChangeField = lastChangeField
         }
     }
 
