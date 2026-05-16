@@ -180,6 +180,8 @@ class ListViewModel {
             sourceURL: sourceURL
         )
 
+        newItem.lastChangeField = "added"
+
         // Handle recurrence when adding a checked item with a repeat rule
         if checked && newItem.reminderDate != nil {
             let mode = newItem.reminderRepeatMode ?? .fixed
@@ -244,7 +246,9 @@ class ListViewModel {
     func toggleChecked(for item: ListItem, didUpdate: @escaping (Int) async -> Void) async {
         var updated = item
         updated.checked.toggle()
-        updated.modifiedAt = Date()  // Update timestamp
+        updated.modifiedAt = Date()
+        updated.checkedAt = Date()
+        updated.lastChangeField = "checked"
 
         // Handle reminder when checking off an item
         if updated.checked && updated.reminderDate != nil {
@@ -286,6 +290,8 @@ class ListViewModel {
             if item.checked != completed {
                 item.checked = completed
                 item.modifiedAt = Date()
+                item.checkedAt = Date()
+                item.lastChangeField = "checked"
 
                 // Handle reminders when checking off items
                 if completed && item.reminderDate != nil {
@@ -350,7 +356,25 @@ class ListViewModel {
         updatedItem.reminderRepeatMode = reminderRepeatMode
         updatedItem.location = location
         updatedItem.sourceURL = sourceURL
-        updatedItem.modifiedAt = Date()  // Update timestamp
+        updatedItem.modifiedAt = Date()
+
+        // Track what changed
+        if item.checked != checked {
+            updatedItem.lastChangeField = "checked"
+            updatedItem.checkedAt = Date()
+        } else if item.note != note {
+            updatedItem.lastChangeField = "note"
+        } else if item.quantity != (quantity ?? 1) {
+            updatedItem.lastChangeField = "quantity"
+        } else if item.labelId != labelId {
+            updatedItem.lastChangeField = "label"
+        } else if item.reminderDate != reminderDate {
+            updatedItem.lastChangeField = "reminder"
+        } else if item.location != location {
+            updatedItem.lastChangeField = "location"
+        } else if item.markdownNotes != markdownNotes {
+            updatedItem.lastChangeField = "subitems"
+        }
 
         // Handle recurrence when checking off an item with a repeat rule
         if !item.checked && checked && updatedItem.reminderDate != nil {
