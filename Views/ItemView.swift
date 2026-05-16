@@ -1012,6 +1012,11 @@ struct MarkdownEditorView: View {
                 .onChange(of: attributedText) { _, newVal in
                     let str = String(newVal.characters)
                     if str != text { text = str }
+                    // Strip any rich-text formatting that came in via paste.
+                    let plain = AttributedString(str)
+                    if newVal != plain {
+                        attributedText = plain
+                    }
                 }
                 .navigationTitle("Notes")
                 .navigationBarTitleDisplayMode(.inline)
@@ -1031,6 +1036,11 @@ struct MarkdownEditorView: View {
                 .onChange(of: attributedText) { _, newVal in
                     let str = String(newVal.characters)
                     if str != text { text = str }
+                    // Strip any rich-text formatting that came in via paste.
+                    let plain = AttributedString(str)
+                    if newVal != plain {
+                        attributedText = plain
+                    }
                 }
                 .navigationTitle("Notes")
                 .navigationBarTitleDisplayMode(.inline)
