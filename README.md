@@ -1,4 +1,7 @@
 # Quite Listie — iOS, iPadOS and macOS
+
+[![TestFlight Beta](https://img.shields.io/badge/TestFlight-Join%20Beta-blue?style=for-the-badge&logo=apple)](https://testflight.apple.com/join/XCUw3f3Y)
+
 A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and Nextcloud sync.
 
 <img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 45 07" src="https://github.com/user-attachments/assets/ff491cdb-ada5-4b6c-8e10-dae242c8f29f" />
