@@ -52,6 +52,21 @@ struct UnifiedList: Identifiable, Hashable {
     var unavailableBookmark: UnavailableBookmark?
     var isUnavailable: Bool { unavailableBookmark != nil }
 
+    /// True when the list has a bookmark whose underlying error is confirmed-permanent
+    /// (file deleted, in trash). These lists belong in the "Unavailable" sidebar section
+    /// and are correctly read-only. Compare with `hasTransientSyncError` which represents
+    /// recoverable network/session/download issues — those lists stay usable from cache.
+    var isPermanentlyUnavailable: Bool {
+        unavailableBookmark?.reason.severity == .permanent
+    }
+
+    /// True when the list has a transient sync issue (network down, NC session stale,
+    /// iCloud file not yet downloaded). The list should still display its cached items
+    /// and accept edits — the issue surfaces as a small sync chip, not a blocking banner.
+    var hasTransientSyncError: Bool {
+        unavailableBookmark?.reason.severity == .transient
+    }
+
     var externalURL: URL? {
         if case .external(let url) = source { return url }
         return nil
@@ -113,7 +128,45 @@ class UnifiedListProvider {
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
     private var activeSyncs: Set<String> = []
 
-    enum SaveStatus { case saved, saving, unsaved, failed(String) }
+    /// Per-list save/sync state. Five user-meaningful cases:
+    /// - `.saved`        — local cache and server agree
+    /// - `.saving`       — write in progress
+    /// - `.unsaved`      — user has typed something the autosave hasn't picked up yet
+    /// - `.pendingSync`  — saved locally; upload queued (network down / unreachable)
+    /// - `.syncFailed`   — server rejected the write (auth, permission, conflict). Won't auto-recover.
+    /// - `.saveFailed`   — couldn't write to local cache (extremely rare; real data risk)
+    enum SaveStatus: Equatable {
+        case saved
+        case saving
+        case unsaved
+        case pendingSync
+        case syncFailed(String)
+        case saveFailed(String)
+
+        /// Backwards-compat alias. Old call sites that emit `.failed(message)` continue to
+        /// compile; treated identically to `.syncFailed` at every consumer.
+        static func failed(_ message: String) -> SaveStatus { .syncFailed(message) }
+    }
+
+    /// Classifies an error thrown during a save into the appropriate `SaveStatus` case.
+    /// Network failures map to `.pendingSync` (data is safe in cache, retry queued).
+    /// Anything else maps to `.syncFailed` (won't auto-recover; needs attention).
+    nonisolated static func classifySaveError(_ error: Error) -> SaveStatus {
+        if let nc = error as? NCError {
+            switch nc {
+            case .notConnected, .networkError:
+                return .pendingSync
+            case .notFound:
+                return .syncFailed(nc.localizedDescription)
+            }
+        }
+        // URLError covers transport-level issues from any backend
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return .pendingSync
+        }
+        return .syncFailed(error.localizedDescription)
+    }
 
     // MARK: - Document helpers
 
@@ -131,6 +184,20 @@ class UnifiedListProvider {
         }
     }
 
+    /// Cache-first read for write operations. Returns the cached document immediately
+    /// when available, falling through to the network/disk path only as a last resort.
+    /// Use for write flows (updateItem/addItem/etc.) so an offline notification "Complete"
+    /// action can still advance a repeating reminder when the server is unreachable.
+    /// Layer 4: writes downstream go through the existing `pendingUploads` retry queue
+    /// (NextcloudManager) and NSFileCoordinator queueing (iCloud), so the write itself
+    /// never blocks on network either.
+    private func openDocumentForMutation(for list: UnifiedList) async throws -> ListDocument {
+        if let cached = await openDocumentForDisplay(for: list) {
+            return cached
+        }
+        return try await openDocument(for: list)
+    }
+
     /// Writes a document to the appropriate backend cache and triggers autosave.
     private func cacheDocument(_ doc: ListDocument, for list: UnifiedList) async {
         switch list.source {
@@ -145,6 +212,27 @@ class UnifiedListProvider {
             await NextcloudManager.shared.updateCache(doc, remotePath: remotePath)
             triggerAutosave(for: list, document: doc)
         }
+        await enqueueMutationIfEnabled(doc, for: list)
+    }
+
+    /// Layer 4: durable record of edits, complementary to the existing autosave path.
+    /// Default off via `MutationLog.isEnabled`. When on, every mutation appends a
+    /// `persistDocument` entry; replay runs alongside the existing pendingUploads
+    /// retry queue. Failure modes are independent — both layers must fail to lose data.
+    private func enqueueMutationIfEnabled(_ doc: ListDocument, for list: UnifiedList) async {
+        guard MutationLog.isEnabled else { return }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let payload = try? encoder.encode(doc) else {
+            AppLogger.sync.warning("[MutationLog] Failed to encode document for list \(list.id, privacy: .public)")
+            return
+        }
+        let entry = MutationEntry(
+            listId: list.id,
+            listSource: .from(list.source),
+            op: .persistDocument(payload: payload)
+        )
+        await MutationLog.shared.enqueue(entry)
     }
 
     /// Updates the document cache for the appropriate backend without triggering autosave.
@@ -213,8 +301,8 @@ class UnifiedListProvider {
             let privateListURLs = try await FileStore.shared.getPrivateListURLs()
 
             for url in privateListURLs {
+                let listId = url.deletingPathExtension().lastPathComponent
                 do {
-                    let listId = url.deletingPathExtension().lastPathComponent
                     let source = FileSource.privateList(listId)
                     let document = try await FileStore.shared.openFile(from: source)
 
@@ -226,7 +314,30 @@ class UnifiedListProvider {
                         isReadOnly: false
                     ))
                 } catch {
+                    // Don't silently drop iCloud lists that fail to load — that's how repeating
+                    // reminders disappear after deep sleep. Surface them as transient-unavailable
+                    // so the UI shows a "downloading…" placeholder and Layer 2's cache fallback
+                    // serves any last-known content. Layer 1's ScenePhase hook retries on activate.
                     AppLogger.fileStore.error("Failed to load private list \(url, privacy: .public): \(error, privacy: .public)")
+                    let fileName = url.deletingPathExtension().lastPathComponent
+                    let bookmark = UnavailableBookmark(
+                        id: listId, originalPath: url.path,
+                        reason: .iCloudNotDownloaded,
+                        fileName: fileName, folderName: "iCloud"
+                    )
+                    unified.append(UnifiedList(
+                        id: listId,
+                        source: .privateICloud(listId),
+                        summary: ListSummary(id: listId, name: fileName, modifiedAt: Date(), icon: "icloud.and.arrow.down"),
+                        originalFileId: nil,
+                        isReadOnly: false,           // transient — Layer 2's cache + retry keep it usable
+                        unavailableBookmark: bookmark
+                    ))
+                    // Kick off an async re-download so the list rehydrates without user action
+                    Task {
+                        _ = try? await FileStore.shared.openFile(from: .privateList(listId))
+                        NotificationCenter.default.post(name: .externalListChanged, object: listId)
+                    }
                 }
             }
         } catch {
@@ -284,14 +395,17 @@ class UnifiedListProvider {
                 let placeholderSummary = ListSummary(
                     id: runtimeId, name: fileName, modifiedAt: Date(), icon: "exclamationmark.triangle"
                 )
-                let unavailableBookmark = UnavailableBookmark(
+                let bookmark = UnavailableBookmark(
                     id: url.path, originalPath: url.path,
                     reason: .bookmarkInvalid(error), fileName: fileName, folderName: folderName
                 )
+                // Transient errors don't lock the list — Layer 2's cache-first read and
+                // Layer 4's mutation log keep it usable. Only permanent reasons set isReadOnly.
+                let readOnly = bookmark.reason.severity == .permanent
                 unified.append(UnifiedList(
                     id: runtimeId, source: .external(url),
                     summary: placeholderSummary, originalFileId: nil,
-                    isReadOnly: true, unavailableBookmark: unavailableBookmark
+                    isReadOnly: readOnly, unavailableBookmark: bookmark
                 ))
             }
         }
@@ -308,10 +422,13 @@ class UnifiedListProvider {
                 id: runtimeId, name: bookmark.fileName, modifiedAt: Date(),
                 icon: bookmark.reason.icon
             )
+            // Same rule: transient errors don't force read-only — the user may still
+            // want to interact, and the cache layer plus mutation log keep things safe.
+            let readOnly = bookmark.reason.severity == .permanent
             unified.append(UnifiedList(
                 id: runtimeId, source: .privateICloud(runtimeId),
                 summary: placeholderSummary, originalFileId: nil,
-                isReadOnly: true, unavailableBookmark: bookmark
+                isReadOnly: readOnly, unavailableBookmark: bookmark
             ))
         }
 
@@ -423,12 +540,16 @@ class UnifiedListProvider {
                     id: runtimeId, originalPath: remotePath, reason: reason,
                     fileName: displayName, folderName: serverHost
                 )
+                // Only permanent failures (confirmed 404 etc.) lock the list. Transient errors
+                // — network down, session stale, server returning 5xx — leave the list editable
+                // so Layer 4's mutation log can queue offline writes.
+                let readOnly = bookmark.reason.severity == .permanent
                 newEntry = UnifiedList(
                     id: runtimeId,
                     source: .nextcloud(accountId: accountId, remotePath: remotePath),
                     summary: ListSummary(id: runtimeId, name: displayName, modifiedAt: Date(), icon: "cloud"),
                     originalFileId: nil,
-                    isReadOnly: true,
+                    isReadOnly: readOnly,
                     unavailableBookmark: bookmark
                 )
             }
@@ -488,7 +609,7 @@ class UnifiedListProvider {
         }
 
         if let existing = allLists.first(where: {
-            guard !$0.isPrivate, !$0.isUnavailable, let origId = $0.originalFileId else { return false }
+            guard !$0.isPrivate, !$0.isPermanentlyUnavailable, let origId = $0.originalFileId else { return false }
             return origId == doc.list.id
         }) {
             throw NSError(domain: "UnifiedListProvider", code: 3, userInfo: [
@@ -618,7 +739,7 @@ class UnifiedListProvider {
         }
 
         if let existing = allLists.first(where: {
-            guard !$0.isPrivate, !$0.isUnavailable, let origId = $0.originalFileId else { return false }
+            guard !$0.isPrivate, !$0.isPermanentlyUnavailable, let origId = $0.originalFileId else { return false }
             return origId == document.list.id
         }) {
             AppLogger.general.warning("Duplicate list ID detected for: \(document.list.name, privacy: .public)")
@@ -655,8 +776,83 @@ class UnifiedListProvider {
         return document.items
     }
 
+    /// Cache-first read for display purposes. Never blocks on network or sync, never
+    /// throws. Returns whatever the local cache has; if no cache, kicks off an async
+    /// load and returns an empty array. The Today view and reminder enumeration must
+    /// use this — they need to keep working even when the server is unreachable or
+    /// a list is in transient-unavailable state.
+    func fetchItemsForDisplay(for list: UnifiedList) async -> [ListItem] {
+        if list.summary.id == ExampleData.welcomeListId { return ExampleData.welcomeItems }
+        return await openDocumentForDisplay(for: list)?.items ?? []
+    }
+
+    /// Cache-first label read. Non-throwing companion to `fetchItemsForDisplay`.
+    func fetchLabelsForDisplay(for list: UnifiedList) async -> [ListLabel] {
+        if list.summary.id == ExampleData.welcomeListId { return ExampleData.welcomeLabels }
+        if case .external(let url) = list.source, let cached = externalLabels[url] {
+            return cached
+        }
+        if case .nextcloud(_, let remotePath) = list.source, let cached = nextcloudLabels[remotePath] {
+            return cached
+        }
+        guard let doc = await openDocumentForDisplay(for: list) else { return [] }
+        cacheLabels(doc.labels, for: list)
+        return doc.labels
+    }
+
+    /// Sync-then-read for edit flows. Use when the caller needs the freshest version
+    /// available (e.g. about to write). Falls back to whatever's cached if sync fails,
+    /// so editors don't refuse to open lists during transient errors.
+    func fetchItemsForEdit(for list: UnifiedList) async throws -> [ListItem] {
+        try? await syncIfNeeded(for: list)
+        return try await fetchItems(for: list)
+    }
+
+    /// Returns a document from local caches only (in-memory → on-disk → nil).
+    /// Schedules an async refresh in the background; UI observers receive an
+    /// `externalListChanged` notification when the refresh completes.
+    private func openDocumentForDisplay(for list: UnifiedList) async -> ListDocument? {
+        switch list.source {
+        case .nextcloud(_, let remotePath):
+            if let doc = await NextcloudManager.shared.openFileFromAnyCache(remotePath: remotePath) {
+                Task { try? await self.syncIfNeeded(for: list) }
+                return doc
+            }
+            // No cache yet — schedule a load, return empty for this read
+            Task { try? await self.syncIfNeeded(for: list) }
+            return nil
+
+        case .privateICloud(let listId):
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            if let cached = await FileStore.shared.getLastKnownDocument(at: url) {
+                return cached
+            }
+            if let onDisk = await FileStore.shared.openFileFromDisk(at: url) {
+                return onDisk
+            }
+            Task {
+                _ = try? await FileStore.shared.openFile(from: .privateList(listId))
+                NotificationCenter.default.post(name: .externalListChanged, object: list.id)
+            }
+            return nil
+
+        case .external(let url):
+            if let cached = await FileStore.shared.getLastKnownDocument(at: url) {
+                return cached
+            }
+            if let onDisk = await FileStore.shared.openFileFromDisk(at: url) {
+                return onDisk
+            }
+            Task {
+                _ = try? await FileStore.shared.openFile(from: .externalFile(url))
+                NotificationCenter.default.post(name: .externalListChanged, object: list.id)
+            }
+            return nil
+        }
+    }
+
     func addItem(_ item: ListItem, to list: UnifiedList) async throws {
-        var document = try await openDocument(for: list)
+        var document = try await openDocumentForMutation(for: list)
         document.items.append(item)
         await cacheDocument(document, for: list)
     }
@@ -762,9 +958,55 @@ class UnifiedListProvider {
 
         if hasNCLists { isRecoveringSession = false }
 
+        // Layer 4: replay any pending mutations that were captured offline. Runs alongside
+        // the existing pendingUploads retry queue (NextcloudManager) — both layers can
+        // attempt the same upload independently; whichever succeeds first wins.
+        await drainMutationLogIfEnabled()
+
         for list in allLists where !list.isReadOnly {
             do { try await syncIfNeeded(for: list) }
             catch { AppLogger.sync.warning("Sync skipped for \(list.id, privacy: .public): \(error, privacy: .public)") }
+        }
+    }
+
+    /// Layer 4: replay queued mutations. Called from `syncAllLists` when the app foregrounds
+    /// or sync is explicitly triggered. Default-off via the feature flag; safe to leave on
+    /// because each entry's `persistDocument` op goes through the same merge logic as a
+    /// direct edit (NextcloudManager.saveFile / FileStore.saveFile both perform ETag/version
+    /// merges before writing).
+    func drainMutationLogIfEnabled() async {
+        guard MutationLog.isEnabled else { return }
+        let pending = await MutationLog.shared.snapshot()
+        guard !pending.isEmpty else { return }
+        AppLogger.sync.info("[MutationLog] Replaying \(pending.count) pending mutation(s)")
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        for entry in pending {
+            guard let list = allLists.first(where: { $0.id == entry.listId }) else {
+                // The list is gone (user deleted or it became permanently unavailable).
+                // Drop the entry — no destination to replay to.
+                await MutationLog.shared.markCompleted(entry.id)
+                continue
+            }
+            switch entry.op {
+            case .persistDocument(let payload):
+                guard let doc = try? decoder.decode(ListDocument.self, from: payload) else {
+                    AppLogger.sync.warning("[MutationLog] Failed to decode payload for \(entry.id, privacy: .public)")
+                    await MutationLog.shared.recordAttempt(for: entry.id, error: NSError(domain: "MutationLog", code: 1))
+                    continue
+                }
+                do {
+                    try await saveFile(doc, for: list)
+                    await MutationLog.shared.markCompleted(entry.id)
+                } catch {
+                    await MutationLog.shared.recordAttempt(for: entry.id, error: error)
+                }
+            case .advanceReminder:
+                // Sentinel — the document-level persist already covers this path for now.
+                await MutationLog.shared.markCompleted(entry.id)
+            }
         }
     }
 
@@ -808,7 +1050,7 @@ class UnifiedListProvider {
     }
 
     func updateItem(_ item: ListItem, in list: UnifiedList) async throws {
-        var document = try await openDocument(for: list)
+        var document = try await openDocumentForMutation(for: list)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index] = item
             await cacheDocument(document, for: list)
@@ -818,7 +1060,7 @@ class UnifiedListProvider {
     func deleteItem(_ item: ListItem, from list: UnifiedList) async throws {
         if item.reminderDate != nil { ReminderManager.cancelReminder(for: item) }
 
-        var document = try await openDocument(for: list)
+        var document = try await openDocumentForMutation(for: list)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index].isDeleted = true
             document.items[index].deletedAt = Date()
@@ -830,12 +1072,12 @@ class UnifiedListProvider {
     }
 
     func fetchDeletedItems(for list: UnifiedList) async throws -> [ListItem] {
-        let document = try await openDocument(for: list)
+        let document = try await openDocumentForMutation(for: list)
         return document.items.filter { $0.isDeleted }
     }
 
     func restoreItem(_ item: ListItem, in list: UnifiedList) async throws {
-        var document = try await openDocument(for: list)
+        var document = try await openDocumentForMutation(for: list)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index].isDeleted = false
             document.items[index].deletedAt = nil
@@ -846,7 +1088,7 @@ class UnifiedListProvider {
     }
 
     func permanentlyDeleteItem(_ item: ListItem, from list: UnifiedList) async throws {
-        var document = try await openDocument(for: list)
+        var document = try await openDocumentForMutation(for: list)
         document.items.removeAll { $0.id == item.id }
         await cacheDocument(document, for: list)
     }
@@ -1001,7 +1243,10 @@ class UnifiedListProvider {
             do {
                 try await saveFile(document, for: list)
             } catch {
-                await MainActor.run { saveStatus[list.id] = .failed(error.localizedDescription) }
+                // `saveFile` has already classified the error and set the right status
+                // (pendingSync / syncFailed / saveFailed). Just log here — overwriting
+                // would lose the classification.
+                AppLogger.fileStore.warning("[autosave] save threw: \(error, privacy: .public)")
             }
         }
     }
@@ -1018,14 +1263,18 @@ class UnifiedListProvider {
         // Nextcloud: delegate to NextcloudManager (offline-first)
         if case .nextcloud(_, let remotePath) = list.source {
             do {
-                try await NextcloudManager.shared.saveFile(docToSave, to: remotePath)
-                await MainActor.run { saveStatus[list.id] = .saved }
-                AppLogger.nextcloud.info("[NC] Save successful: \(remotePath, privacy: .public)")
+                let outcome = try await NextcloudManager.shared.saveFile(docToSave, to: remotePath)
+                let resolved: SaveStatus = (outcome == .uploaded) ? .saved : .pendingSync
+                await MainActor.run { saveStatus[list.id] = resolved }
+                AppLogger.nextcloud.info("[NC] Save \(outcome == .uploaded ? "uploaded" : "queued", privacy: .public): \(remotePath, privacy: .public)")
                 // Reload the list view in case saveFile merged in server-side changes
                 NotificationCenter.default.post(name: .externalListChanged, object: list.id)
                 Task { await EventKitManager.shared.syncIfEnabled(provider: self) }
             } catch {
-                await MainActor.run { saveStatus[list.id] = .failed(error.localizedDescription) }
+                // Classify: network/transient → pendingSync (data safe in cache),
+                // anything else → syncFailed (won't auto-recover; needs attention).
+                let status = Self.classifySaveError(error)
+                await MainActor.run { saveStatus[list.id] = status }
                 throw error
             }
             return
@@ -1063,17 +1312,22 @@ class UnifiedListProvider {
                             allLists[index] = updatedList
                         }
                         await MainActor.run {
-                            saveStatus[list.id] = .failed("File is read-only. Changes discarded.")
+                            // Actual data loss — the user's edit was discarded because the file
+                            // became read-only mid-flight. This is the strongest error state.
+                            saveStatus[list.id] = .saveFailed("File is read-only. Changes discarded.")
                         }
                         NotificationCenter.default.post(name: .externalListChanged, object: list.id)
                     } catch {
                         AppLogger.fileStore.error("Failed to reload clean version: \(error, privacy: .public)")
                     }
                 } else {
-                    await MainActor.run { saveStatus[list.id] = .failed(error.localizedDescription) }
+                    // FileStore (iCloud / external) write threw: local write didn't succeed.
+                    // This is genuinely data-at-risk because there's no NC-style pendingUploads
+                    // queue to retry from — NSFileCoordinator handles iCloud transport opaquely.
+                    await MainActor.run { saveStatus[list.id] = .saveFailed(error.localizedDescription) }
                 }
             } else {
-                await MainActor.run { saveStatus[list.id] = .failed(error.localizedDescription) }
+                await MainActor.run { saveStatus[list.id] = .saveFailed(error.localizedDescription) }
             }
             throw error
         }
@@ -1097,6 +1351,81 @@ class UnifiedListProvider {
     }
 
     func checkExternalFilesForChanges() async { await syncAllExternalLists() }
+
+    /// Returns true when the list has local edits that haven't been pushed to the
+    /// remote yet — used by the per-list sync chip to distinguish "synced" from
+    /// "pending sync" (e.g. user edited in airplane mode).
+    /// - For NextCloud: checks `NextcloudManager.pendingUploads`
+    /// - For all sources: checks the Layer 4 mutation log
+    func hasPendingSync(for list: UnifiedList) async -> Bool {
+        // NC: the upload retry queue is the source of truth for offline writes
+        if case .nextcloud(_, let remotePath) = list.source {
+            if await NextcloudManager.shared.hasPendingUpload(remotePath: remotePath) {
+                return true
+            }
+        }
+        // Mutation log (when enabled): per-source pending writes for any backend
+        if MutationLog.isEnabled,
+           await MutationLog.shared.depth(for: list.id) > 0 {
+            return true
+        }
+        // Save-status set during a save attempt may also indicate work in flight
+        switch saveStatus[list.id] ?? .saved {
+        case .saving, .unsaved, .pendingSync, .syncFailed, .saveFailed:
+            return true
+        case .saved:
+            return false
+        }
+    }
+
+    /// Layer 5: lightweight health snapshot. Counts lists by state, mutation log depth,
+    /// and per-source availability. Logged as a structured event so Console.app filters
+    /// can answer "after the user backgrounded the app for X hours, what did state look
+    /// like on resume?" without an attached debugger.
+    func runHealthCheck() async {
+        let total = allLists.count
+        let nc = allLists.filter { $0.isNextcloud }.count
+        let iCloud = allLists.filter { $0.isPrivate }.count
+        let external = allLists.filter { $0.isExternal }.count
+        let permanent = allLists.filter { $0.isPermanentlyUnavailable }.count
+        let transient = allLists.filter { $0.hasTransientSyncError }.count
+        let mutationDepth = await MutationLog.shared.depth()
+
+        AppLogger.background.info(
+            "event=\(SyncEvent.healthCheckRan, privacy: .public) total=\(total) nextcloud=\(nc) icloud=\(iCloud) external=\(external) permanent_unavailable=\(permanent) transient_unavailable=\(transient) mutation_log_depth=\(mutationDepth)"
+        )
+    }
+
+    /// Layer 5: combined state snapshot from all managers. Used by the long-press debug
+    /// action on a list's sync chip — copies a single multi-line string to the pasteboard
+    /// for the user to paste into a bug report. Cheap; safe to call from main thread.
+    func combinedStateSnapshot() async -> String {
+        let nc = await NextcloudManager.shared.stateSnapshot()
+        let iCloud = await iCloudContainerManager.shared.stateSnapshot()
+        let listsSummary = allLists.map { list -> String in
+            let kind: String
+            switch list.source {
+            case .nextcloud: kind = "NC"
+            case .privateICloud: kind = "iCloud"
+            case .external: kind = "external"
+            }
+            let state: String
+            if list.isPermanentlyUnavailable { state = "permanent_unavailable" }
+            else if list.hasTransientSyncError { state = "transient_sync_error" }
+            else if list.isReadOnly { state = "read_only" }
+            else { state = "ok" }
+            return "  - [\(kind)] \(list.summary.name) — \(state)"
+        }.joined(separator: "\n")
+
+        return """
+        \(nc)
+
+        \(iCloud)
+
+        [Lists] \(allLists.count) total
+        \(listsSummary)
+        """
+    }
 
     func prepareExport(for list: UnifiedList) async throws -> ListDocument {
         let items = try await fetchItems(for: list)

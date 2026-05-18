@@ -532,6 +532,7 @@ struct WelcomeView: View {
 
     private func syncAndReconcileReminders() async {
         AppLogger.sync.debug("Starting foreground reminder sync")
+        await unifiedProvider.runHealthCheck()
         await unifiedProvider.syncAllExternalLists()
 
         // Fetch pending notifications once (not per-list)
@@ -541,19 +542,20 @@ struct WelcomeView: View {
         // Collect all items and cancel stale notifications per-list
         var allReminderItems: [(item: ListItem, listName: String, listId: String)] = []
 
-        for list in unifiedProvider.allLists where !list.isReadOnly {
-            do {
-                let items = try await unifiedProvider.fetchItems(for: list)
+        // Iterate every list — including read-only/transient-unavailable ones — and read
+        // from cache. A NextCloud list with a stale session or a server hiccup must still
+        // contribute its reminders to the schedule, otherwise repeat reminders silently die
+        // after deep sleep. `syncAllExternalLists()` above triggered refreshes; here we just
+        // harvest whatever cache has at this moment.
+        for list in unifiedProvider.allLists {
+            let items = await unifiedProvider.fetchItemsForDisplay(for: list)
 
-                // Cancel notifications for checked/deleted items in this list
-                ReminderManager.reconcileCancellations(items: items, listId: list.id, pendingIds: pendingIds)
+            // Cancel notifications for checked/deleted items in this list
+            ReminderManager.reconcileCancellations(items: items, listId: list.id, pendingIds: pendingIds)
 
-                // Collect active items with reminders for the budget pass
-                for item in items where !item.checked && !item.isDeleted && item.reminderDate != nil {
-                    allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
-                }
-            } catch {
-                AppLogger.sync.error("Failed to fetch items for \(list.summary.name, privacy: .public): \(error, privacy: .public)")
+            // Collect active items with reminders for the budget pass
+            for item in items where !item.checked && !item.isDeleted && item.reminderDate != nil {
+                allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
             }
         }
 

@@ -16,10 +16,69 @@ struct RecentChangesView: View {
 
     @State private var recentItems: [ListItem] = []
     @State private var selectedItem: ListItem?
+    @State private var syncSnapshot: String? = nil
+    @State private var pendingMutations: Int = 0
+
+    private var sourceDescription: String {
+        switch list.source {
+        case .nextcloud(let accountId, _): return "NextCloud · \(accountId)"
+        case .privateICloud: return "iCloud / On Device"
+        case .external: return "Files"
+        }
+    }
+
+    /// Resolves the displayed state from the same `SaveStatus` enum the toolbar and
+    /// sidebar use. Single source of truth — no separate "hasPendingSync" boolean to
+    /// keep in sync.
+    private var syncStateDescription: String {
+        if list.isPermanentlyUnavailable { return "Unavailable (file gone)" }
+        if list.hasTransientSyncError { return "Syncing (last attempt failed)" }
+        switch provider.saveStatus[list.id] ?? .saved {
+        case .saved:
+            return list.isReadOnly ? "Read-only" : "Synced"
+        case .saving:
+            return "Saving…"
+        case .unsaved:
+            return "Unsaved changes"
+        case .pendingSync:
+            return "Pending sync (offline)"
+        case .syncFailed(let msg):
+            return "Sync failed — \(msg)"
+        case .saveFailed(let msg):
+            return "Save failed — \(msg)"
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                // Layer 5: sync activity at the top of Recent Changes. Gives the user
+                // ground truth about the list's connection state without a separate sheet.
+                Section("Sync Activity") {
+                    LabeledContent("Source", value: sourceDescription)
+                    LabeledContent("State", value: syncStateDescription)
+                    if pendingMutations > 0 {
+                        LabeledContent("Pending Mutations", value: "\(pendingMutations)")
+                    }
+                    Button {
+                        Task {
+                            let dump = await provider.combinedStateSnapshot()
+                            syncSnapshot = dump
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = dump
+                            #endif
+                        }
+                    } label: {
+                        Label("Copy Debug Snapshot", systemImage: "doc.on.clipboard")
+                    }
+                    if let syncSnapshot {
+                        Text(syncSnapshot)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(20)
+                    }
+                }
+
                 if recentItems.isEmpty {
                     ContentUnavailableView(
                         "No Recent Changes",
@@ -74,6 +133,7 @@ struct RecentChangesView: View {
             }
             .task {
                 await loadRecentItems()
+                pendingMutations = await MutationLog.shared.depth()
             }
             .fullScreenCover(item: $selectedItem, onDismiss: {
                 Task { await loadRecentItems() }

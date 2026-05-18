@@ -94,10 +94,12 @@ struct SidebarView: View {
 
     /// All non-favourite, non-special lists grouped by folder and sorted alphabetically by display name.
     private var folderSections: [FolderSection] {
+        // Transient sync errors don't disqualify a list from the active sidebar —
+        // those lists keep showing their cached content with a small sync chip.
         let regularLists = unifiedProvider.allLists.filter {
             !favouriteListIDs.contains($0.summary.id) &&
             !$0.isReadOnly &&
-            !$0.isUnavailable &&
+            !$0.isPermanentlyUnavailable &&
             $0.id != "example-welcome-list"
         }
 
@@ -233,7 +235,7 @@ struct SidebarView: View {
             }
 
             // MARK: - Temporary Read-Only Lists
-            let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && !$0.isUnavailable && $0.id != "example-welcome-list" }
+            let readOnlyLists = unifiedProvider.allLists.filter { !favouriteListIDs.contains($0.summary.id) && $0.isReadOnly && !$0.isPermanentlyUnavailable && $0.id != "example-welcome-list" }
             if !readOnlyLists.isEmpty {
                 Section(header: Text("Temporary (Read Only)")) {
                     ForEach(readOnlyLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
@@ -243,16 +245,11 @@ struct SidebarView: View {
             }
 
             // MARK: - Unavailable Lists
-            // While recovering the NC session after deep sleep, hide transient unavailable lists
-            // so the user sees the loading banner instead of flickering error rows.
-            let unavailableLists = unifiedProvider.allLists.filter { list in
-                guard list.isUnavailable else { return false }
-                if unifiedProvider.isRecoveringSession, list.isNextcloud,
-                   let reason = list.unavailableBookmark?.reason,
-                   case .fileNotFound = reason { return true }  // truly gone — always show
-                else if unifiedProvider.isRecoveringSession, list.isNextcloud { return false }
-                return true
-            }
+            // Only confirmed-permanent failures appear here (file deleted, in trash). Transient
+            // sync errors live alongside their normal sidebar row with a small chip — they're
+            // still usable from cache. The legacy `isRecoveringSession` banner suppression is
+            // no longer needed because Layer 3 routes those errors as transient.
+            let unavailableLists = unifiedProvider.allLists.filter { $0.isPermanentlyUnavailable }
             if !unavailableLists.isEmpty {
                 Section(header: Label("Unavailable", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)) {
                     ForEach(unavailableLists.sorted(by: { $0.summary.name.localizedCaseInsensitiveCompare($1.summary.name) == .orderedAscending }), id: \.id) { list in
@@ -345,11 +342,17 @@ struct SidebarView: View {
     @ViewBuilder
     private func listRow(for list: UnifiedList) -> some View {
         let isFavourited = favouriteListIDs.contains(list.summary.id)
-        // Suppress transient error icons for NC lists while session is recovering
+        // Suppress transient error icons for NC lists while session is recovering.
+        // Both syncFailed and saveFailed are masked so the user sees the "recovering"
+        // banner rather than a red triangle that will probably clear on its own.
         let rawStatus = unifiedProvider.saveStatus[list.id] ?? .saved
         let saveStatus: UnifiedListProvider.SaveStatus = {
-            if unifiedProvider.isRecoveringSession, list.isNextcloud,
-               case .failed = rawStatus { return .saving }
+            if unifiedProvider.isRecoveringSession, list.isNextcloud {
+                switch rawStatus {
+                case .syncFailed, .saveFailed: return .saving
+                default: return rawStatus
+                }
+            }
             return rawStatus
         }()
         
@@ -455,18 +458,30 @@ struct SidebarView: View {
     @ViewBuilder
     private func saveStatusView(for status: UnifiedListProvider.SaveStatus) -> some View {
         switch status {
-        case .saved:
-            EmptyView()
-        case .saving:
+        case .saved, .saving:
             EmptyView()
         case .unsaved:
             Image(systemName: "circle.fill")
                 .foregroundStyle(.orange)
                 .imageScale(.small)
-        case .failed:
+                .help("Saving…")
+        case .pendingSync:
+            // Saved locally; upload queued. Grey cloud-slash so the user knows their
+            // data is safe but hasn't reached the server yet.
+            Image(systemName: "icloud.slash")
+                .foregroundStyle(.secondary)
+                .imageScale(.small)
+                .help("Saved locally — will sync when connection returns")
+        case .syncFailed(let msg):
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
                 .imageScale(.small)
+                .help(msg)
+        case .saveFailed(let msg):
+            Image(systemName: "exclamationmark.octagon.fill")
+                .foregroundStyle(.red)
+                .imageScale(.small)
+                .help(msg)
         }
     }
 

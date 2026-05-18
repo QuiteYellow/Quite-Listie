@@ -138,24 +138,19 @@ enum BackgroundRefreshManager {
 
         // Collect all reminder items across selected lists
         var allReminderItems: [(item: ListItem, listName: String, listId: String)] = []
-        var listsScanned = 0
-        var listsFailed = 0
 
         for list in listsToScan {
-            do {
-                let items = try await provider.fetchItems(for: list)
-                let activeWithReminders = items.filter { !$0.checked && !$0.isDeleted && $0.reminderDate != nil }
-                for item in activeWithReminders {
-                    allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
-                }
-                listsScanned += 1
-            } catch {
-                listsFailed += 1
-                AppLogger.background.warning("Failed to fetch items for \(list.summary.name): \(error)")
+            // Cache-first: a stale URLSession or transient unavailable state must NOT cause
+            // repeating reminders to fall off the schedule in background reconciliation.
+            // `fetchItemsForDisplay` never throws and returns whatever's locally available.
+            let items = await provider.fetchItemsForDisplay(for: list)
+            let activeWithReminders = items.filter { !$0.checked && !$0.isDeleted && $0.reminderDate != nil }
+            for item in activeWithReminders {
+                allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
             }
         }
 
-        AppLogger.background.info("Scanned \(listsScanned) lists (\(listsFailed) failed), found \(allReminderItems.count) reminder items")
+        AppLogger.background.info("Scanned \(listsToScan.count) lists, found \(allReminderItems.count) reminder items")
 
         // Reconcile with notification budget
         await ReminderManager.reconcileWithBudget(allItems: allReminderItems, trigger: "background")

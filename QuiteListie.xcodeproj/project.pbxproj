@@ -11,6 +11,7 @@
 		379DF6462F01885B00475782 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6452F01885B00475782 /* MarkdownView */; };
 		37DE9A5A2F5B1B460067D1AB /* NextcloudKit in Frameworks */ = {isa = PBXBuildFile; productRef = 37DE9A592F5B1B460067D1AB /* NextcloudKit */; };
 		CB001A012F100000002F4B13 /* ListieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A002F100000002F4B13 /* ListieTests.swift */; };
+		CB001A052F100000002F4B14 /* SyncResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A042F100000002F4B14 /* SyncResilienceTests.swift */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
 /* End PBXBuildFile section */
@@ -36,6 +37,7 @@
 		377036572F6495BE00811E99 /* QuiteListie.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = QuiteListie.icon; sourceTree = "<group>"; };
 		37F742762EF8531900C4EEF4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = QuiteListie/Info.plist; sourceTree = "<group>"; };
 		CB001A002F100000002F4B13 /* ListieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListieTests.swift; sourceTree = "<group>"; };
+		CB001A042F100000002F4B14 /* SyncResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncResilienceTests.swift; sourceTree = "<group>"; };
 		CBEFA7AB2DE31318002F4B13 /* QuiteListie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiteListie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7B92DE3131A002F4B13 /* QuiteListieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiteListieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7C32DE3131A002F4B13 /* QuiteListieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiteListieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -120,6 +122,7 @@
 			isa = PBXGroup;
 			children = (
 				CB001A002F100000002F4B13 /* ListieTests.swift */,
+				CB001A042F100000002F4B14 /* SyncResilienceTests.swift */,
 			);
 			path = QuiteListieTests;
 			sourceTree = "<group>";
@@ -320,6 +323,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CB001A012F100000002F4B13 /* ListieTests.swift in Sources */,
+				CB001A052F100000002F4B14 /* SyncResilienceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -474,7 +478,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 62;
+				CURRENT_PROJECT_VERSION = 65;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -540,7 +544,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 62;
+				CURRENT_PROJECT_VERSION = 65;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -603,7 +607,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 62;
+				CURRENT_PROJECT_VERSION = 65;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -625,7 +629,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 62;
+				CURRENT_PROJECT_VERSION = 65;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -646,7 +650,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 62;
+				CURRENT_PROJECT_VERSION = 65;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -669,7 +673,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 62;
+				CURRENT_PROJECT_VERSION = 65;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -125,6 +125,7 @@ extension Notification.Name {
 struct ListieApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.scenePhase) private var scenePhase
     @FocusedBinding(\.newListSheet) private var newListSheet: Bool?
     @FocusedBinding(\.fileImporter) private var fileImporter: Bool?
     @FocusedBinding(\.newConnectedExporter) private var newConnectedExporter: Bool?
@@ -142,6 +143,20 @@ struct ListieApp: App {
 #if targetEnvironment(macCatalyst)
                     configureMacWindow()
 #endif
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        // iOS may have invalidated the NextcloudKit URLSession during suspension
+                        // and the user may have toggled iCloud Drive while the app slept.
+                        // Mark both for refresh; the next read/sync re-establishes them lazily.
+                        Task {
+                            await NextcloudManager.shared.markNeedsReactivation()
+                            await iCloudContainerManager.shared.resetAvailabilityCheck()
+                            AppLogger.background.info(
+                                "event=\(SyncEvent.sessionRefreshDeferred, privacy: .public) trigger=scene_active"
+                            )
+                        }
+                    }
                 }
         }
         .commands {

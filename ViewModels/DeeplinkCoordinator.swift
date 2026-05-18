@@ -181,9 +181,11 @@ class DeeplinkCoordinator {
         }
 
         // Scan all lists for the item UUID — no listId needed since item UUIDs are globally unique
-        for list in provider.allLists where !list.isUnavailable {
-            if let items = try? await provider.fetchItems(for: list),
-               items.contains(where: { $0.id.uuidString == itemId }) {
+        // Transient sync errors still have a usable local cache — search them too.
+        // Only permanent unavailability (file deleted) is worth skipping.
+        for list in provider.allLists where !list.isPermanentlyUnavailable {
+            let items = await provider.fetchItemsForDisplay(for: list)
+            if items.contains(where: { $0.id.uuidString == itemId }) {
                 AppLogger.deeplinks.info("[Deeplink] Found item in list \(list.summary.name, privacy: .public)")
                 pendingItemNavigation = ItemNavigation(listId: list.id, itemId: itemId)
                 return
