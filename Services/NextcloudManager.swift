@@ -91,6 +91,20 @@ actor NextcloudManager {
         }
     }
 
+    /// Single drain point. Use this everywhere a successful upload completes so the
+    /// reactive UI hooks fire from one place — UnifiedListProvider observes the
+    /// posted notification and clears the per-list "Pending sync" indicator.
+    private func markUploadDrained(_ remotePath: String) {
+        if pendingUploads.remove(remotePath) != nil {
+            savePendingUploads()
+        }
+        NotificationCenter.default.post(
+            name: .nextcloudPendingUploadDrained,
+            object: nil,
+            userInfo: ["remotePath": remotePath]
+        )
+    }
+
     // MARK: - Session lifecycle
 
     /// Returns current credentials, refreshing the session if needed and retrying the
@@ -321,8 +335,7 @@ actor NextcloudManager {
             }
 
             try await uploadFile(creds: creds, doc: docToUpload, remotePath: remotePath)
-            pendingUploads.remove(remotePath)
-            savePendingUploads()
+            markUploadDrained(remotePath)
             return .uploaded
         } catch {
             AppLogger.nextcloud.warning("[NC] Upload failed, queued for retry: \(remotePath, privacy: .public) — \(error, privacy: .public)")
@@ -482,8 +495,7 @@ actor NextcloudManager {
             }
             let mergedDoc = mergeDocuments(local: localDoc, server: serverDoc)
             try await uploadFile(creds: creds, doc: mergedDoc, remotePath: remotePath)
-            pendingUploads.remove(remotePath)
-            savePendingUploads()
+            markUploadDrained(remotePath)
             memCache[key] = mergedDoc
             try? saveToDisk(mergedDoc, at: localCacheURL(creds: creds, remotePath: remotePath))
             AppLogger.nextcloud.info("[NC] Conflict resolved for \(remotePath, privacy: .public)")
@@ -494,12 +506,10 @@ actor NextcloudManager {
             let doc = memCache[key] ?? (try? loadFromDisk(at: localCacheURL(creds: creds, remotePath: remotePath)))
             if let doc {
                 try await uploadFile(creds: creds, doc: doc, remotePath: remotePath)
-                pendingUploads.remove(remotePath)
-                savePendingUploads()
+                markUploadDrained(remotePath)
                 return doc
             }
-            pendingUploads.remove(remotePath)
-            savePendingUploads()
+            markUploadDrained(remotePath)
 
         } else if serverChanged {
             // Server changes only — download
@@ -601,6 +611,11 @@ actor NextcloudManager {
     }
 
     /// Retries all pending uploads (call when network becomes available).
+    /// Posts `.nextcloudPendingUploadDrained` for each successful upload so the UI's
+    /// per-list "Pending sync" indicator clears reactively, without waiting for a
+    /// manual refresh. This is the background-resilience hook — NWPathMonitor calls
+    /// us when the network returns, and the cloud-slash chip turns into "Synced"
+    /// the moment the upload succeeds.
     func retryPendingUploads() async {
         guard let creds = credentials, !pendingUploads.isEmpty else { return }
         var succeeded: Set<String> = []
@@ -623,6 +638,14 @@ actor NextcloudManager {
         if !succeeded.isEmpty {
             pendingUploads.subtract(succeeded)
             savePendingUploads()
+            // Notify observers per file so the UI can clear "Pending sync" reactively.
+            for remotePath in succeeded {
+                NotificationCenter.default.post(
+                    name: .nextcloudPendingUploadDrained,
+                    object: nil,
+                    userInfo: ["remotePath": remotePath]
+                )
+            }
         }
     }
 

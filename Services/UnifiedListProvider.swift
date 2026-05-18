@@ -37,6 +37,11 @@ extension Notification.Name {
     /// Posted by NextcloudManager when a background sync discovers a file no longer exists on the server.
     /// userInfo: ["remotePath": String]
     static let nextcloudFileNotFound    = Notification.Name("nextcloudFileNotFound")
+    /// Posted by NextcloudManager when a previously-queued upload succeeds (e.g. retried
+    /// by NWPathMonitor after the network came back). Lets UI reactively clear the
+    /// "Pending sync" cloud-slash without waiting for a manual refresh.
+    /// userInfo: ["remotePath": String]
+    static let nextcloudPendingUploadDrained = Notification.Name("nextcloudPendingUploadDrained")
 }
 
 
@@ -127,6 +132,42 @@ class UnifiedListProvider {
 
     private var autosaveTasks: [String: Task<Void, Never>] = [:]
     private var activeSyncs: Set<String> = []
+
+    init() {
+        // Listen for background-drain notifications so the per-list "Pending sync"
+        // indicator clears reactively when NWPathMonitor (or a background sync)
+        // successfully uploads a previously-queued file. Without this hook, the
+        // cloud-slash chip stayed on until the user manually refreshed.
+        //
+        // The Task self-terminates when this provider deallocates (weak self), so
+        // we don't need a deinit-hosted cancel — the next notification breaks the loop.
+        Task { @MainActor [weak self] in
+            let stream = NotificationCenter.default.notifications(
+                named: .nextcloudPendingUploadDrained
+            )
+            for await note in stream {
+                guard let self else { break }
+                guard let remotePath = note.userInfo?["remotePath"] as? String else { continue }
+                self.handlePendingUploadDrained(remotePath: remotePath)
+            }
+        }
+    }
+
+    private func handlePendingUploadDrained(remotePath: String) {
+        guard let list = allLists.first(where: {
+            if case .nextcloud(_, let path) = $0.source { return path == remotePath }
+            return false
+        }) else { return }
+        // Clear pending/syncFailed but never touch saveFailed (real local-write loss)
+        // or `.saving`/`.unsaved` (an active edit in flight).
+        switch saveStatus[list.id] ?? .saved {
+        case .pendingSync, .syncFailed:
+            saveStatus[list.id] = .saved
+            AppLogger.nextcloud.info("[NC] Cleared pending status for \(list.summary.name, privacy: .public) — background upload succeeded")
+        case .saved, .saving, .unsaved, .saveFailed:
+            break
+        }
+    }
 
     /// Per-list save/sync state. Five user-meaningful cases:
     /// - `.saved`        — local cache and server agree
