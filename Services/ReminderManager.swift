@@ -309,6 +309,11 @@ enum ReminderManager {
 
     /// Completes an item directly from a notification action.
     /// Handles repeating reminders (advance to next date) and one-off reminders (check off + clear).
+    ///
+    /// Layer 4: cache-first end to end. Read from local cache, advance the next occurrence,
+    /// schedule the next `UNNotificationRequest` immediately, then enqueue the write. If the
+    /// server is unreachable (deep sleep, offline) the next notification still fires on time —
+    /// the server catches up via `NextcloudManager.pendingUploads` when network returns.
     @MainActor
     static func completeItemFromNotification(itemId: String, listId: String, scheduledDate: TimeInterval? = nil) async {
         AppLogger.reminders.info("[Notification] Complete action for item \(itemId, privacy: .public) in list \(listId, privacy: .public)")
@@ -321,52 +326,67 @@ enum ReminderManager {
             return
         }
 
-        do {
-            let items = try await provider.fetchItems(for: unifiedList)
-            guard let itemUUID = UUID(uuidString: itemId),
-                  var item = items.first(where: { $0.id == itemUUID }) else {
-                AppLogger.reminders.error("[Notification] Item not found: \(itemId, privacy: .public)")
+        // Cache-first: fetchItemsForDisplay never throws. If the list has transient
+        // sync issues (deep-sleep stale session, server unreachable), we still get
+        // the last-known items from disk cache and the action proceeds.
+        let items = await provider.fetchItemsForDisplay(for: unifiedList)
+        guard let itemUUID = UUID(uuidString: itemId),
+              var item = items.first(where: { $0.id == itemUUID }) else {
+            AppLogger.reminders.error("[Notification] Item not found: \(itemId, privacy: .public)")
+            return
+        }
+
+        // Guard against double-advance on shared/recurring items:
+        // If another device already completed this occurrence, the item's reminderDate
+        // will have advanced. Bail out so we don't skip an occurrence.
+        if let scheduledDate {
+            let notificationWasFor = Date(timeIntervalSince1970: scheduledDate)
+            guard let currentDate = item.reminderDate,
+                  abs(currentDate.timeIntervalSince(notificationWasFor)) <= 60 else {
+                AppLogger.reminders.info("[Notification] Skipping stale notification for '\(item.note, privacy: .public)' — item already advanced by another device")
                 return
             }
+            AppLogger.reminders.info("[Notification] Proceeding — notification date matches current reminder date for '\(item.note, privacy: .public)'")
+        }
 
-            // Guard against double-advance on shared/recurring items:
-            // If another device already completed this occurrence, the item's reminderDate
-            // will have advanced. Bail out so we don't skip an occurrence.
-            if let scheduledDate {
-                let notificationWasFor = Date(timeIntervalSince1970: scheduledDate)
-                guard let currentDate = item.reminderDate,
-                      abs(currentDate.timeIntervalSince(notificationWasFor)) <= 60 else {
-                    AppLogger.reminders.info("[Notification] Skipping stale notification for '\(item.note, privacy: .public)' — item already advanced by another device")
-                    return
-                }
-                AppLogger.reminders.info("[Notification] Proceeding — notification date matches current reminder date for '\(item.note, privacy: .public)'")
-            }
+        item.modifiedAt = Date()
 
-            item.modifiedAt = Date()
+        if let rule = item.reminderRepeatRule,
+           let nextDate = nextReminderDate(
+               from: item.reminderDate,
+               rule: rule,
+               mode: item.reminderRepeatMode ?? .fixed
+           ) {
+            // Repeating: keep unchecked, advance to next date, reschedule.
+            // Schedule the NEXT notification BEFORE the write so the user is covered
+            // even if the write step somehow fails.
+            item.checked = false
+            item.reminderDate = nextDate
+            item.checkedAt = Date()
+            item.lastChangeField = "reminder"
+            cancelReminder(for: item)
+            scheduleReminder(for: item, listName: unifiedList.summary.name, listId: listId)
+            AppLogger.reminders.info("[Notification] Repeating reminder advanced to \(nextDate, privacy: .public)")
+        } else {
+            // One-off: check off and clear reminder
+            item.checked = true
+            item.reminderDate = nil
+            item.checkedAt = Date()
+            item.lastChangeField = "checked"
+            cancelReminder(for: item)
+            AppLogger.reminders.info("[Notification] Item checked off")
+        }
 
-            if let rule = item.reminderRepeatRule,
-               let nextDate = nextReminderDate(
-                   from: item.reminderDate,
-                   rule: rule,
-                   mode: item.reminderRepeatMode ?? .fixed
-               ) {
-                // Repeating: keep unchecked, advance to next date, reschedule
-                item.checked = false
-                item.reminderDate = nextDate
-                cancelReminder(for: item)
-                scheduleReminder(for: item, listName: unifiedList.summary.name, listId: listId)
-                AppLogger.reminders.info("[Notification] Repeating reminder advanced to \(nextDate, privacy: .public)")
-            } else {
-                // One-off: check off and clear reminder
-                item.checked = true
-                item.reminderDate = nil
-                cancelReminder(for: item)
-                AppLogger.reminders.info("[Notification] Item checked off")
-            }
-
+        // Persist via cache-first write. updateItem now uses openDocumentForMutation
+        // which reads from cache; the downstream NextcloudManager.saveFile / FileStore
+        // already queue offline writes for retry on network return.
+        do {
             try await provider.updateItem(item, in: unifiedList)
         } catch {
-            AppLogger.reminders.error("[Notification] Failed to complete item: \(error, privacy: .public)")
+            AppLogger.reminders.error("[Notification] Failed to persist item update: \(error, privacy: .public)")
+            // The next notification is already scheduled — the user won't miss the next
+            // occurrence even if the write didn't land. The mutation will be retried
+            // when the app foregrounds and reaches the network.
         }
     }
 

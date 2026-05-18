@@ -23,7 +23,7 @@ struct ImportListPickerSheet: View {
     }
 
     private var externalLists: [UnifiedList] {
-        lists.filter { $0.isExternal && !$0.isReadOnly && !$0.isUnavailable }
+        lists.filter { $0.isExternal && !$0.isReadOnly && !$0.isPermanentlyUnavailable }
     }
 
     private var externalGrouped: [(folder: String, lists: [UnifiedList])] {

@@ -76,6 +76,20 @@ extension NextcloudCredentials {
         return creds
     }
 
+    /// iOS can transiently refuse keychain access right after deep sleep or app prewarming,
+    /// even with `kSecAttrAccessibleAfterFirstUnlock`. Bounded retry with backoff gives the
+    /// keychain a moment to become available before we conclude the user isn't connected.
+    static func loadWithRetry(attempts: Int = 3, baseDelayMs: UInt64 = 50) async -> NextcloudCredentials? {
+        for attempt in 0..<attempts {
+            if let creds = load() { return creds }
+            if attempt < attempts - 1 {
+                let delay = baseDelayMs << UInt64(attempt)  // 50ms, 100ms, 200ms
+                try? await Task.sleep(nanoseconds: delay * 1_000_000)
+            }
+        }
+        return nil
+    }
+
     // MARK: Delete
 
     static func delete() {

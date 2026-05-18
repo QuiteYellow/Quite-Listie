@@ -94,57 +94,54 @@ class WelcomeViewModel {
         var labelsDict: [String: ListLabel] = [:]
 
         for list in lists {
-            do {
-                let items = try await provider.fetchItems(for: list)
-                let active = items.filter { !$0.checked && !$0.isDeleted }
-                result[list.id] = active.count
+            // Cache-first reads: never throw, never block on network. A list with no
+            // cache yet returns empty arrays here — the provider schedules an async
+            // load in the background and posts a change notification when it arrives.
+            let items = await provider.fetchItemsForDisplay(for: list)
+            let labels = await provider.fetchLabelsForDisplay(for: list)
+            let active = items.filter { !$0.checked && !$0.isDeleted }
+            result[list.id] = active.count
 
-                // Fetch labels once per list for label resolution
-                let labels = try await provider.fetchLabels(for: list)
-
-                // Collect items with reminders
-                for item in active where item.reminderDate != nil {
-                    var labelName: String? = nil
-                    var labelColor: String? = nil
-                    if let labelId = item.labelId,
-                       let label = labels.first(where: { $0.id == labelId }) {
-                        labelName = label.name
-                        labelColor = label.color
-                    }
-                    entries.append(ReminderEntry(
-                        item: item,
-                        list: list,
-                        labelName: labelName,
-                        labelColor: labelColor
-                    ))
+            // Collect items with reminders
+            for item in active where item.reminderDate != nil {
+                var labelName: String? = nil
+                var labelColor: String? = nil
+                if let labelId = item.labelId,
+                   let label = labels.first(where: { $0.id == labelId }) {
+                    labelName = label.name
+                    labelColor = label.color
                 }
+                entries.append(ReminderEntry(
+                    item: item,
+                    list: list,
+                    labelName: labelName,
+                    labelColor: labelColor
+                ))
+            }
 
-                // Collect all non-deleted items with pinned locations
-                for item in items where item.location != nil && !item.isDeleted {
-                    var labelName: String? = nil
-                    var labelColor: String? = nil
-                    var labelSymbol: String? = nil
-                    if let labelId = item.labelId,
-                       let label = labels.first(where: { $0.id == labelId }) {
-                        labelName = label.name
-                        labelColor = label.color
-                        labelSymbol = label.symbol
-                    }
-                    locEntries.append(LocationEntry(
-                        item: item,
-                        list: list,
-                        labelName: labelName,
-                        labelColor: labelColor,
-                        labelSymbol: labelSymbol
-                    ))
+            // Collect all non-deleted items with pinned locations
+            for item in items where item.location != nil && !item.isDeleted {
+                var labelName: String? = nil
+                var labelColor: String? = nil
+                var labelSymbol: String? = nil
+                if let labelId = item.labelId,
+                   let label = labels.first(where: { $0.id == labelId }) {
+                    labelName = label.name
+                    labelColor = label.color
+                    labelSymbol = label.symbol
                 }
+                locEntries.append(LocationEntry(
+                    item: item,
+                    list: list,
+                    labelName: labelName,
+                    labelColor: labelColor,
+                    labelSymbol: labelSymbol
+                ))
+            }
 
-                // Accumulate labels (dedup by ID — first definition wins)
-                for label in labels where labelsDict[label.id] == nil {
-                    labelsDict[label.id] = label
-                }
-            } catch {
-                result[list.id] = 0
+            // Accumulate labels (dedup by ID — first definition wins)
+            for label in labels where labelsDict[label.id] == nil {
+                labelsDict[label.id] = label
             }
         }
 

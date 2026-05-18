@@ -35,6 +35,13 @@ actor iCloudContainerManager {
 
     // MARK: - Public Methods
 
+    /// Clears the cached availability result so the next `checkICloudAvailability` call
+    /// re-queries the system. Use after lifecycle events that may have changed iCloud state
+    /// (e.g. the user toggled iCloud Drive while the app was suspended).
+    func resetAvailabilityCheck() {
+        hasCheckedAvailability = false
+    }
+
     /// Checks if iCloud is available and caches the result
     func checkICloudAvailability() async -> Bool {
         // First, always check for iCloud container availability
@@ -269,6 +276,23 @@ actor iCloudContainerManager {
     func isInICloudContainer(_ url: URL) -> Bool {
         guard let containerURL = containerURL else { return false }
         return url.path.hasPrefix(containerURL.path)
+    }
+
+    /// Layer 5: human-readable snapshot for bug reports. Reports iCloud availability,
+    /// container URL, and whether the cached availability check is fresh.
+    func stateSnapshot() -> String {
+        let container = containerURL?.path ?? "(not resolved)"
+        let fallback = localFallbackURL?.path ?? "(not configured)"
+        let syncFlag = UserDefaults.standard.object(forKey: iCloudSyncEnabledKey) as? Bool
+        let syncFlagDesc = syncFlag.map(String.init) ?? "(unset)"
+        return """
+        [iCloud state snapshot]
+        isICloudAvailable: \(isICloudAvailable)
+        hasCheckedAvailability: \(hasCheckedAvailability)
+        containerURL: \(container)
+        localFallbackURL: \(fallback)
+        sync setting: \(syncFlagDesc)
+        """
     }
 
     // MARK: - Migration Support

@@ -89,6 +89,24 @@ struct UnavailableBookmark: Identifiable {
                 return "icloud.slash"
             }
         }
+
+        /// Whether the underlying condition can plausibly self-heal (transient: network
+        /// outage, stale session, file still downloading) or is confirmed-permanent
+        /// (the file is gone, the bookmark is invalid in a way that won't recover).
+        /// Only `permanent` should cause a list to be hidden as "Unavailable" or read-only.
+        var severity: Severity {
+            switch self {
+            case .fileNotFound:        return .permanent
+            case .inTrash:             return .permanent
+            case .bookmarkInvalid:     return .transient
+            case .iCloudNotDownloaded: return .transient
+            }
+        }
+    }
+
+    enum Severity {
+        case transient
+        case permanent
     }
 }
 
@@ -526,6 +544,31 @@ actor FileStore {
             return nil  // Cache expired
         }
         return openedFiles[url.path]?.document
+    }
+
+    /// Returns the last cached document for a URL, ignoring the cache TTL.
+    /// Used by cache-first reads where stale data is preferable to no data
+    /// (e.g. Today view, reminder enumeration).
+    func getLastKnownDocument(at url: URL) -> ListDocument? {
+        return openedFiles[url.path]?.document
+    }
+
+    /// Reads a document directly from disk if the file is readable and parseable.
+    /// Never triggers an iCloud download or NSFileCoordinator wait. Populates the
+    /// in-memory cache on success so subsequent reads are O(1).
+    /// Returns nil if the file isn't on disk (e.g. iCloud not downloaded yet).
+    func openFileFromDisk(at url: URL) -> ListDocument? {
+        if let existing = openedFiles[url.path]?.document {
+            return existing
+        }
+        guard FileManager.default.isReadableFile(atPath: url.path),
+              let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let doc = try? decoder.decode(ListDocument.self, from: data) else { return nil }
+        openedFiles[url.path] = (url, doc)
+        cacheTimestamps[url.path] = Date()
+        return doc
     }
     
     func getOpenedFiles() -> [(url: URL, document: ListDocument)] {

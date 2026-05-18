@@ -702,8 +702,21 @@ struct ListView: View {
                     case .unsaved:
                         Image(systemName: "circle.fill")
                             .foregroundStyle(.orange)
-                    case .failed(let message):
+                            .help("Saving…")
+                    case .pendingSync:
+                        // Saved locally; upload queued (network down). The data is safe in
+                        // the on-disk cache and `pendingUploads` retry queue.
+                        Image(systemName: "icloud.slash")
+                            .foregroundStyle(.secondary)
+                            .help("Saved locally — will sync when connection returns")
+                    case .syncFailed(let message):
+                        // Server rejected the write (auth, permission, conflict). Won't auto-recover.
                         Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .help(message)
+                    case .saveFailed(let message):
+                        // Local write itself failed — actual data risk. Strongest indicator.
+                        Image(systemName: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
                             .help(message)
                     }
@@ -718,11 +731,30 @@ struct ListView: View {
                     refreshState = .refreshing
                     Task {
                         let start = Date()
+                        var didSucceed = false
                         do {
                             try await unifiedProvider.syncIfNeeded(for: unifiedList)
+                            didSucceed = true
                         } catch {
                             AppLogger.sync.warning("Sync failed on refresh: \(error, privacy: .public)")
                             await MainActor.run { unifiedProvider.saveStatus[unifiedList.id] = .failed(error.localizedDescription) }
+                        }
+                        // Sidebar refresh clears stale .failed via loadNextcloudListsProgressively
+                        // (unconditional .saved write per list). The list-view refresh path didn't,
+                        // so a one-time network blip would leave the red triangle stuck until the
+                        // sidebar was used. Mirror the sidebar behaviour: a successful sync clears
+                        // any prior .failed state.
+                        if didSucceed {
+                            await MainActor.run {
+                                // A successful sync clears any stale error/pending status. Don't
+                                // clear an in-flight `.saving` or actively-typing `.unsaved`.
+                                switch unifiedProvider.saveStatus[unifiedList.id] ?? .saved {
+                                case .syncFailed, .saveFailed, .pendingSync:
+                                    unifiedProvider.saveStatus[unifiedList.id] = .saved
+                                case .saved, .saving, .unsaved:
+                                    break
+                                }
+                            }
                         }
                         if let updated = unifiedProvider.allLists.first(where: { $0.id == unifiedList.id }) {
                             viewModel.updateList(updated)
@@ -945,8 +977,16 @@ struct ListView: View {
             case .unsaved:
                 Image(systemName: "circle.fill")
                     .foregroundStyle(.orange)
-            case .failed(let message):
+            case .pendingSync:
+                Image(systemName: "icloud.slash")
+                    .foregroundStyle(.secondary)
+                    .help("Saved locally — will sync when connection returns")
+            case .syncFailed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .help(message)
+            case .saveFailed(let message):
+                Image(systemName: "exclamationmark.octagon.fill")
                     .foregroundStyle(.red)
                     .help(message)
             }
