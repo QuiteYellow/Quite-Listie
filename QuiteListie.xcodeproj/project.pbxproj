@@ -55,9 +55,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		CB0685102DF345D1006415E1 /* Local */ = {
+		CB0685102DF345D1006415E1 /* Storage */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Local;
+			path = Storage;
 			sourceTree = "<group>";
 		};
 		CB8EED9B2DF5E5BA0057124E /* QuiteListie */ = {
@@ -139,7 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				37F742762EF8531900C4EEF4 /* Info.plist */,
-				CB0685102DF345D1006415E1 /* Local */,
+				CB0685102DF345D1006415E1 /* Storage */,
 				CBEFABE52DE35848002F4B13 /* extensions.swift */,
 				CBEFA7D92DE313C2002F4B13 /* Views */,
 				CBEFA7D82DE313B7002F4B13 /* ViewModels */,
@@ -178,7 +178,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				CB0685102DF345D1006415E1 /* Local */,
+				CB0685102DF345D1006415E1 /* Storage */,
 				CB8EED9B2DF5E5BA0057124E /* QuiteListie */,
 				CBEFA7D62DE313A5002F4B13 /* Models */,
 				CBEFA7D72DE313B0002F4B13 /* Services */,
