@@ -245,7 +245,7 @@ enum ReminderManager {
 
     /// Calculates the next reminder date based on the repeat rule and mode.
     /// - `fixed` mode: advances from the original reminder date by the rule's interval
-    /// - `afterComplete` mode: advances from now by the rule's interval
+    /// - `afterComplete` mode: advances from today (completion date) by the rule's interval, preserving the original time-of-day
     /// For fixed mode, keeps advancing until the result is in the future.
     static func nextReminderDate(
         from currentDate: Date?,
@@ -260,7 +260,15 @@ enum ReminderManager {
         case .fixed:
             baseDate = currentDate ?? now
         case .afterComplete:
-            baseDate = now
+            if let original = currentDate {
+                let time = calendar.dateComponents([.hour, .minute, .second], from: original)
+                baseDate = calendar.date(bySettingHour: time.hour ?? 0,
+                                         minute: time.minute ?? 0,
+                                         second: time.second ?? 0,
+                                         of: now) ?? now
+            } else {
+                baseDate = now
+            }
         }
 
         /// Advances a date by the rule once
