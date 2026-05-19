@@ -421,17 +421,29 @@ final class ReminderManagerTests: XCTestCase {
         XCTAssertGreaterThan(next!, Date())
     }
 
-    func testNextDateAfterCompleteUsesNow() {
-        let pastDate = Date(timeIntervalSinceNow: -86400 * 365) // 1 year ago
+    func testNextDateAfterCompletePreservesOriginalTime() {
+        let calendar = Calendar.current
+        // Original reminder was set for 9:30:00 on some past date
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.year = (components.year ?? 2026) - 1
+        components.hour = 9
+        components.minute = 30
+        components.second = 0
+        let pastDate = calendar.date(from: components)!
+
         let rule = ReminderRepeatRule.daily
-        let before = Date()
         let next = ReminderManager.nextReminderDate(from: pastDate, rule: rule, mode: .afterComplete)
-        let after = Date()
         XCTAssertNotNil(next)
-        // afterComplete uses now as base, result should be ~1 day from now
-        let approxExpected = before.addingTimeInterval(86400)
-        XCTAssertLessThan(abs(next!.timeIntervalSince(approxExpected)), 5.0)
-        _ = after // suppress warning
+
+        // Date should be tomorrow (today + 1 day)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date())!
+        XCTAssertTrue(calendar.isDate(next!, inSameDayAs: tomorrow))
+
+        // Time-of-day should match the original (9:30)
+        let nextTime = calendar.dateComponents([.hour, .minute, .second], from: next!)
+        XCTAssertEqual(nextTime.hour, 9)
+        XCTAssertEqual(nextTime.minute, 30)
+        XCTAssertEqual(nextTime.second, 0)
     }
 
     func testNextDateWeekdaysSkipsWeekend() {
