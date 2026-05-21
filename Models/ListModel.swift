@@ -15,13 +15,15 @@ struct ListDocument: Codable {
     var items: [ListItem]
     var labels: [ListLabel]
     var deletedLabelIDs: [String] = []  // Tombstones: IDs of labels intentionally deleted
+    var sharePresets: [SharePreset]?    // Saved share/reload bookmarks; optional for backward compat
 
-    init(list: ListSummary, items: [ListItem] = [], labels: [ListLabel] = [], deletedLabelIDs: [String] = []) {
+    init(list: ListSummary, items: [ListItem] = [], labels: [ListLabel] = [], deletedLabelIDs: [String] = [], sharePresets: [SharePreset]? = nil) {
         self.version = 2
         self.list = list
         self.items = items
         self.labels = labels
         self.deletedLabelIDs = deletedLabelIDs
+        self.sharePresets = sharePresets
     }
 
     enum CodingKeys: String, CodingKey {
@@ -30,6 +32,7 @@ struct ListDocument: Codable {
         case items
         case labels
         case deletedLabelIDs
+        case sharePresets
     }
 
     // Custom decoder to handle missing version field (old withMealie files)
@@ -42,6 +45,119 @@ struct ListDocument: Codable {
         self.items = try container.decode([ListItem].self, forKey: .items)
         self.labels = try container.decode([ListLabel].self, forKey: .labels)
         self.deletedLabelIDs = try container.decodeIfPresent([String].self, forKey: .deletedLabelIDs) ?? []
+        self.sharePresets = try container.decodeIfPresent([SharePreset].self, forKey: .sharePresets)
+    }
+}
+
+// MARK: - Document Merge
+extension ListDocument {
+    /// Deterministic merge of two document versions for sync conflict resolution.
+    /// Used by Nextcloud's pre-upload merge and by the iCloud read-merge-write save path.
+    ///
+    /// Rules:
+    /// - Items: union by id, latest `modifiedAt` wins.
+    /// - Deleted-label tombstones: unioned; merged labels matching a tombstone are dropped.
+    /// - Labels: local wins on conflict (no `modifiedAt`); remote contributes new ids.
+    /// - List summary: latest `modifiedAt` wins.
+    /// - Share presets: union by id, latest `modifiedAt` wins; tombstones older than
+    ///   `SharePreset.tombstoneRetention` are purged from the output.
+    static func merge(local: ListDocument, remote: ListDocument) -> ListDocument {
+        var itemsById: [UUID: ListItem] = Dictionary(
+            uniqueKeysWithValues: remote.items.map { ($0.id, $0) }
+        )
+        for item in local.items {
+            if let existing = itemsById[item.id] {
+                if item.modifiedAt > existing.modifiedAt { itemsById[item.id] = item }
+            } else {
+                itemsById[item.id] = item
+            }
+        }
+
+        let deletedIDs = Set(local.deletedLabelIDs).union(remote.deletedLabelIDs)
+
+        var labelsById: [String: ListLabel] = Dictionary(
+            uniqueKeysWithValues: local.labels.map { ($0.id, $0) }
+        )
+        for label in remote.labels where labelsById[label.id] == nil {
+            labelsById[label.id] = label
+        }
+        for id in deletedIDs { labelsById.removeValue(forKey: id) }
+
+        let summary = local.list.modifiedAt > remote.list.modifiedAt ? local.list : remote.list
+
+        let mergedPresets = mergeSharePresets(local: local.sharePresets, remote: remote.sharePresets)
+
+        return ListDocument(
+            list: summary,
+            items: Array(itemsById.values),
+            labels: Array(labelsById.values),
+            deletedLabelIDs: Array(deletedIDs),
+            sharePresets: mergedPresets
+        )
+    }
+
+    private static func mergeSharePresets(local: [SharePreset]?, remote: [SharePreset]?) -> [SharePreset]? {
+        let localList = local ?? []
+        let remoteList = remote ?? []
+        if localList.isEmpty && remoteList.isEmpty { return nil }
+
+        var byId: [UUID: SharePreset] = Dictionary(
+            uniqueKeysWithValues: remoteList.map { ($0.id, $0) }
+        )
+        for preset in localList {
+            if let existing = byId[preset.id] {
+                if preset.modifiedAt > existing.modifiedAt { byId[preset.id] = preset }
+            } else {
+                byId[preset.id] = preset
+            }
+        }
+
+        let cutoff = Date().addingTimeInterval(-SharePreset.tombstoneRetention)
+        let alive = byId.values.filter { preset in
+            guard preset.isDeleted, let deletedAt = preset.deletedAt else { return true }
+            return deletedAt >= cutoff
+        }
+        return alive.isEmpty ? nil : Array(alive)
+    }
+}
+
+// MARK: - Share Preset
+/// A named bookmark of a curated subset of items + share options.
+/// Stored per-list and synced via the .listie file. Merged across devices by `modifiedAt`.
+struct SharePreset: Codable, Identifiable, Hashable {
+    var id: UUID
+    var name: String
+    var itemIds: [UUID]
+    var compress: Bool
+    var includeComments: Bool
+    var createdAt: Date
+    var modifiedAt: Date
+    var isDeleted: Bool
+    var deletedAt: Date?
+
+    /// Retention for soft-deleted preset tombstones before they're purged at merge time.
+    static let tombstoneRetention: TimeInterval = 30 * 24 * 3600
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        itemIds: [UUID],
+        compress: Bool = true,
+        includeComments: Bool = false,
+        createdAt: Date = Date(),
+        modifiedAt: Date = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.itemIds = itemIds
+        self.compress = compress
+        self.includeComments = includeComments
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
     }
 }
 

@@ -280,6 +280,8 @@ struct ListView: View {
     @State private var showingRecycleBin = false
     @State private var showingRecentChanges = false
     @State private var showingListSettings = false
+    @State private var showingManagePresets = false
+    @State private var presetReload: PresetReloadRequest? = nil
     @State private var beatenToItMessage: String? = nil
     @State private var mapLabelFilter: Set<String> = []
     @State private var mapShowCompleted: Bool = false
@@ -298,6 +300,19 @@ struct ListView: View {
 
     private enum RefreshState {
         case idle, refreshing, done
+    }
+
+    private func reloadPreset(_ preset: SharePreset) {
+        let presetItems = viewModel.items.filter { preset.itemIds.contains($0.id) }
+        let result = MarkdownListGenerator.generate(
+            listName: list.name,
+            items: presetItems,
+            labels: viewModel.labels,
+            labelOrder: list.labelOrder,
+            activeOnly: false,
+            includeNotes: preset.includeComments
+        )
+        presetReload = PresetReloadRequest(preset: preset, markdown: result.markdown)
     }
 
     @Binding var searchText: String
@@ -891,6 +906,8 @@ struct ListView: View {
             guard !Task.isCancelled else { return }
             await viewModel.loadItems()
             guard !Task.isCancelled else { return }
+            await viewModel.loadSharePresets()
+            guard !Task.isCancelled else { return }
             viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
 
             // Auto-fallback: revert to list mode if map mode was saved but there's nothing to show
@@ -928,6 +945,8 @@ struct ListView: View {
             guard !Task.isCancelled else { return }
             await viewModel.loadItems()
             guard !Task.isCancelled else { return }
+            await viewModel.loadSharePresets()
+            guard !Task.isCancelled else { return }
             viewModel.initializeExpandedSections(for: viewModel.filteredSortedLabelKeys)
 
             // Re-check fallback after fresh data in case sync changed the list
@@ -953,6 +972,8 @@ struct ListView: View {
             markdownToExport: $markdownToExport,
             shareLinkExport: $shareLinkExport,
             showingListSettings: $showingListSettings,
+            showingManagePresets: $showingManagePresets,
+            presetReload: $presetReload,
             itemToDelete: $itemToDelete,
             beatenToItMessage: $beatenToItMessage,
             triggerMarkdownExport: $triggerMarkdownExport,
@@ -1051,12 +1072,74 @@ struct ListView: View {
 
     @ViewBuilder
     private var overflowMenuContent: some View {
-        Button {
-            showingMarkdownImport = true
-        } label: {
-            Label("Import from Markdown", systemImage: "square.and.arrow.down")
+        Menu("Presets & Sharing") {
+            Button {
+                showingMarkdownImport = true
+            } label: {
+                Label("Import from Markdown", systemImage: "square.and.arrow.down")
+            }
+            .disabled(unifiedList.isReadOnly)
+
+            Divider()
+
+            if !viewModel.activeSharePresets.isEmpty {
+                Menu {
+                    ForEach(viewModel.activeSharePresets) { preset in
+                        Button {
+                            reloadPreset(preset)
+                        } label: {
+                            Label(preset.name, systemImage: "bookmark")
+                        }
+                    }
+                } label: {
+                    Label("Load preset", systemImage: "bookmark")
+                }
+                .disabled(unifiedList.isReadOnly)
+            }
+
+            Button {
+                showingManagePresets = true
+            } label: {
+                Label("Manage presets…", systemImage: "bookmark.square")
+            }
+
+            Divider()
+
+            Button {
+                markdownToExport = MarkdownExport(
+                    listName: list.name,
+                    listId: unifiedList.originalFileId ?? unifiedList.id,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    labelOrder: list.labelOrder,
+                    activeOnly: true
+                )
+            } label: {
+                Label("Export Markdown", systemImage: "doc.text")
+            }
+            .disabled(unifiedList.isReadOnly)
+
+            Button {
+                shareLinkExport = MarkdownExport(
+                    listName: list.name,
+                    listId: unifiedList.originalFileId ?? unifiedList.id,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    labelOrder: list.labelOrder,
+                    activeOnly: true
+                )
+            } label: {
+                Label("Share Link", systemImage: "link")
+            }
+            .disabled(unifiedList.isReadOnly)
+
+            Button {
+                onExportJSON?()
+            } label: {
+                Label("Save as File…", systemImage: "doc.badge.gearshape")
+            }
+            .disabled(unifiedList.isReadOnly)
         }
-        .disabled(unifiedList.isReadOnly)
 
         Divider()
 
@@ -1115,46 +1198,6 @@ struct ListView: View {
 
         Divider()
 
-        Menu("Export As…") {
-            Button {
-                markdownToExport = MarkdownExport(
-                    listName: list.name,
-                    listId: unifiedList.originalFileId ?? unifiedList.id,
-                    items: viewModel.items,
-                    labels: viewModel.labels,
-                    labelOrder: list.labelOrder,
-                    activeOnly: true
-                )
-            } label: {
-                Label("Markdown", systemImage: "doc.text")
-            }
-            .disabled(unifiedList.isReadOnly)
-
-            Button {
-                shareLinkExport = MarkdownExport(
-                    listName: list.name,
-                    listId: unifiedList.originalFileId ?? unifiedList.id,
-                    items: viewModel.items,
-                    labels: viewModel.labels,
-                    labelOrder: list.labelOrder,
-                    activeOnly: true
-                )
-            } label: {
-                Label("Share Link", systemImage: "link")
-            }
-            .disabled(unifiedList.isReadOnly)
-
-            Divider()
-
-            Button {
-                onExportJSON?()
-            } label: {
-                Label("Quite Listie File...", systemImage: "doc.badge.gearshape")
-            }
-            .disabled(unifiedList.isReadOnly)
-        }
-
-        Divider()
 
         Button {
             showingListSettings = true
@@ -1228,6 +1271,12 @@ struct ListView: View {
 
 // MARK: - Sheets, Alerts & Notification Handlers (extracted to reduce body complexity)
 
+fileprivate struct PresetReloadRequest: Identifiable {
+    let id = UUID()
+    let preset: SharePreset
+    let markdown: String
+}
+
 private struct ListSheetsModifier: ViewModifier {
     let list: ListSummary
     let unifiedList: UnifiedList
@@ -1244,6 +1293,8 @@ private struct ListSheetsModifier: ViewModifier {
     @Binding var markdownToExport: MarkdownExport?
     @Binding var shareLinkExport: MarkdownExport?
     @Binding var showingListSettings: Bool
+    @Binding var showingManagePresets: Bool
+    @Binding var presetReload: PresetReloadRequest?
     @Binding var itemToDelete: ListItem?
     @Binding var beatenToItMessage: String?
     @Binding var triggerMarkdownExport: Bool
@@ -1312,7 +1363,34 @@ private struct ListSheetsModifier: ViewModifier {
                     listId: export.listId,
                     items: export.items,
                     labels: export.labels,
-                    labelOrder: export.labelOrder
+                    labelOrder: export.labelOrder,
+                    activeOnly: export.activeOnly
+                )
+            }
+            .sheet(isPresented: $showingManagePresets, onDismiss: {
+                Task { await viewModel.loadSharePresets() }
+            }) {
+                ManagePresetsView(
+                    list: unifiedList,
+                    provider: unifiedProvider,
+                    items: viewModel.items,
+                    labels: viewModel.labels,
+                    labelOrder: list.labelOrder
+                )
+            }
+            .sheet(item: $presetReload, onDismiss: {
+                Task {
+                    await viewModel.loadItems()
+                    await viewModel.loadLabels()
+                }
+            }) { request in
+                MarkdownListImportView(
+                    list: unifiedList,
+                    provider: unifiedProvider,
+                    existingItems: viewModel.items,
+                    existingLabels: viewModel.labels,
+                    initialMarkdown: request.markdown,
+                    autoPreview: true
                 )
             }
             .sheet(isPresented: $showingListSettings, onDismiss: {

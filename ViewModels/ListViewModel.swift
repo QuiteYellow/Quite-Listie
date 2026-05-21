@@ -23,6 +23,8 @@ class ListViewModel {
     /// True once `loadItems` has completed at least one full fetch
     var hasLoaded = false
     var labels: [ListLabel] = []
+    /// Saved share-link presets for this list (including tombstones — filter for display).
+    var sharePresets: [SharePreset] = []
 
     var expandedSections: [String: Bool] = [:]
     /// Saved collapse state before a search began; nil when not searching.
@@ -105,6 +107,24 @@ class ListViewModel {
         } catch {
             AppLogger.labels.error("Error loading labels: \(error, privacy: .public)")
         }
+    }
+
+    func loadSharePresets() async {
+        guard !Task.isCancelled else { return }
+        do {
+            let fetched = try await provider.fetchSharePresets(for: list)
+            guard !Task.isCancelled else { return }
+            sharePresets = fetched
+        } catch is CancellationError {
+            // Task was cancelled — don't publish anything further
+        } catch {
+            AppLogger.general.error("Error loading share presets: \(error, privacy: .public)")
+        }
+    }
+
+    /// Active (non-tombstoned) presets, sorted by most recently modified first.
+    var activeSharePresets: [SharePreset] {
+        sharePresets.filter { !$0.isDeleted }.sorted { $0.modifiedAt > $1.modifiedAt }
     }
 
     /// Updates the list reference after a sync, so labelOrder and other metadata stay current.

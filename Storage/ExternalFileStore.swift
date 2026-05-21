@@ -476,24 +476,38 @@ actor FileStore {
         
         AppLogger.fileStore.debug("[DIRECT SAVE] Writing \(document.labels.count) labels to disk")
 
-        
+
         // Resolve any conflicts before saving
         try await resolveConflicts(at: url)
-        
+
         let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
-            
-        let data = try encoder.encode(document)
 
-        // Use NSFileCoordinator for iCloud-aware writes
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        // Read-merge-write inside the NSFileCoordinator block guarantees per-row
+        // merge against any concurrent writer in the gap between the optimistic-lock
+        // check above and the actual disk write. Merged outcome is also reflected
+        // in the in-memory cache so callers' subsequent reads see the same state.
         let coordinator = NSFileCoordinator()
         var coordinatorError: NSError?
         var writeError: Error?
+        var savedDocument = document
 
         coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinatorError) { writeURL in
             do {
+                let toWrite: ListDocument
+                if let existingData = try? Data(contentsOf: writeURL),
+                   let onDisk = try? decoder.decode(ListDocument.self, from: existingData) {
+                    toWrite = ListDocument.merge(local: document, remote: onDisk)
+                } else {
+                    toWrite = document
+                }
+                let data = try encoder.encode(toWrite)
                 try data.write(to: writeURL, options: .atomic)
+                savedDocument = toWrite
             } catch {
                 writeError = error
             }
@@ -503,11 +517,11 @@ actor FileStore {
             throw error
         }
 
-        // Update cache
-        openedFiles[url.path] = (url, document)
-        
+        // Update cache with the merged document so subsequent in-memory reads match disk
+        openedFiles[url.path] = (url, savedDocument)
+
         cacheTimestamps[url.path] = Date()
-        AppLogger.cache.info("Cached \(document.list.name) (expires in \(self.cacheTTL)s)")
+        AppLogger.cache.info("Cached \(savedDocument.list.name) (expires in \(self.cacheTTL)s)")
 
         // Update modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
