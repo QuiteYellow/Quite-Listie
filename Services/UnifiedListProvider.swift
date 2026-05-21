@@ -1152,6 +1152,14 @@ class UnifiedListProvider {
         return document.labels
     }
 
+    /// Returns all share presets stored on the list's document, including tombstones.
+    /// Callers that only want active presets should filter `!$0.isDeleted` themselves.
+    func fetchSharePresets(for list: UnifiedList) async throws -> [SharePreset] {
+        if list.summary.id == ExampleData.welcomeListId { return [] }
+        let document = try await openDocument(for: list)
+        return document.sharePresets ?? []
+    }
+
     func createLabel(_ label: ListLabel, for list: UnifiedList) async throws {
         var document = try await openDocument(for: list)
         document.labels.append(label)
@@ -1241,6 +1249,24 @@ class UnifiedListProvider {
             try await saveFile(document, for: list)
         }
         AppLogger.general.info("[updateList] List updated successfully")
+    }
+
+    /// Replace the saved share presets for a list and persist.
+    /// Does not bump `document.list.modifiedAt` — presets carry their own per-row
+    /// `modifiedAt` and merge independently of summary fields.
+    func updateSharePresets(_ list: UnifiedList, presets: [SharePreset]) async throws {
+        var document = try await openDocument(for: list)
+        document.sharePresets = presets.isEmpty ? nil : presets
+
+        if case .privateICloud = list.source {
+            let listId = list.privateListId!
+            let url = await iCloudContainerManager.shared.fileURL(for: listId)
+            await FileStore.shared.updateCache(document, at: url)
+            try await saveFile(document, for: list)
+        } else {
+            await cacheDocument(document, for: list)
+            try await saveFile(document, for: list)
+        }
     }
 
     func deleteList(_ list: UnifiedList) async throws {

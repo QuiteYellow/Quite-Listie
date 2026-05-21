@@ -522,44 +522,10 @@ actor NextcloudManager {
     }
 
     /// Merges a local document with a freshly downloaded server document.
-    /// Items: merge by ID, latest `modifiedAt` wins. Labels: union, server wins on conflict.
-    /// List summary: latest `modifiedAt` wins. Deleted-label tombstones are unioned and respected.
+    /// Delegates to the shared `ListDocument.merge(local:remote:)` so the iCloud
+    /// read-merge-write save path uses identical semantics.
     private func mergeDocuments(local: ListDocument, server: ListDocument) -> ListDocument {
-        // Items: latest modifiedAt wins per ID
-        var itemsById: [UUID: ListItem] = Dictionary(
-            uniqueKeysWithValues: server.items.map { ($0.id, $0) }
-        )
-        for item in local.items {
-            if let existing = itemsById[item.id] {
-                if item.modifiedAt > existing.modifiedAt { itemsById[item.id] = item }
-            } else {
-                itemsById[item.id] = item
-            }
-        }
-
-        // Union tombstones from both sides so deletions propagate across devices
-        let deletedIDs = Set(local.deletedLabelIDs).union(server.deletedLabelIDs)
-
-        // Labels: no modifiedAt — local wins on conflict (preserves edits just made),
-        // server adds any labels created on other devices that don't exist locally.
-        // Tombstoned labels are excluded so stale caches can't resurrect deleted labels.
-        var labelsById: [String: ListLabel] = Dictionary(
-            uniqueKeysWithValues: local.labels.map { ($0.id, $0) }
-        )
-        for label in server.labels where labelsById[label.id] == nil {
-            labelsById[label.id] = label
-        }
-        for id in deletedIDs { labelsById.removeValue(forKey: id) }
-
-        // List summary: latest modifiedAt wins
-        let summary = local.list.modifiedAt > server.list.modifiedAt ? local.list : server.list
-
-        return ListDocument(
-            list: summary,
-            items: Array(itemsById.values),
-            labels: Array(labelsById.values),
-            deletedLabelIDs: Array(deletedIDs)
-        )
+        ListDocument.merge(local: local, remote: server)
     }
 
     /// Removes a file from in-memory cache and pending uploads (does NOT delete disk cache).
