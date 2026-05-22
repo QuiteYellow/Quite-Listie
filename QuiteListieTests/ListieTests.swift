@@ -637,3 +637,342 @@ final class ListModelTests: XCTestCase {
     }
 }
 
+// MARK: - Resilient Decoding: preservation + lossy array
+
+/// Tests that opening a `.listie` file written by a hypothetical newer version
+/// of the app and saving it back doesn't lose JSON values this version doesn't
+/// understand. Also exercises the lossy-array layer that protects the document
+/// from a single structurally-broken element.
+final class ResilientDecodingTests: XCTestCase {
+
+    // MARK: - helpers
+
+    private func makeDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }
+
+    private func makeEncoder() -> JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        e.outputFormatting = [.sortedKeys]
+        return e
+    }
+
+    private func roundTrip<T: Codable>(_ value: T) throws -> [String: Any] {
+        let data = try makeEncoder().encode(value)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private func decodeDoc(_ json: String) throws -> ListDocument {
+        try makeDecoder().decode(ListDocument.self, from: Data(json.utf8))
+    }
+
+    private func decodeItem(_ json: String) throws -> ListItem {
+        try makeDecoder().decode(ListItem.self, from: Data(json.utf8))
+    }
+
+    private func validItemJSON(id: String = "11111111-1111-1111-1111-111111111111") -> String {
+        """
+        {
+          "id": "\(id)",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false
+        }
+        """
+    }
+
+    private func validDocumentJSON(extraTopLevel: String = "", items: String = "[]") -> String {
+        """
+        {
+          "version": 2,
+          "list": { "id": "list-1", "name": "Test", "modifiedAt": "2026-01-01T00:00:00Z" },
+          "items": \(items),
+          "labels": [],
+          "deletedLabelIDs": []\(extraTopLevel.isEmpty ? "" : ",\n  \(extraTopLevel)")
+        }
+        """
+    }
+
+    // MARK: - Unknown keys
+
+    func testUnknownTopLevelKeyRoundTrips() throws {
+        let json = validDocumentJSON(extraTopLevel: "\"experimentalFeature\": {\"foo\": 42, \"bar\": [1,2,3]}")
+        let doc = try decodeDoc(json)
+        let dict = try roundTrip(doc)
+        let extra = try XCTUnwrap(dict["experimentalFeature"] as? [String: Any])
+        XCTAssertEqual(extra["foo"] as? Double, 42)
+        XCTAssertEqual(extra["bar"] as? [Double], [1, 2, 3])
+    }
+
+    func testUnknownItemKeyRoundTrips() throws {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "futureField": "hello-from-the-future"
+        }
+        """
+        let item = try decodeItem(json)
+        let dict = try roundTrip(item)
+        XCTAssertEqual(dict["futureField"] as? String, "hello-from-the-future")
+    }
+
+    func testCoordinateAltitudeRoundTrips() throws {
+        let json = """
+        {"latitude": 51.5, "longitude": -0.12, "altitude": 100.0}
+        """
+        let coord = try makeDecoder().decode(Coordinate.self, from: Data(json.utf8))
+        let dict = try roundTrip(coord)
+        XCTAssertEqual(dict["altitude"] as? Double, 100.0)
+    }
+
+    // MARK: - Unknown values of known keys
+
+    func testUnknownEnumValueRoundTrips() throws {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "reminderRepeatMode": "afterDelay"
+        }
+        """
+        let item = try decodeItem(json)
+        XCTAssertNil(item.reminderRepeatMode, "Unknown enum value should leave the typed property nil")
+        let dict = try roundTrip(item)
+        XCTAssertEqual(dict["reminderRepeatMode"] as? String, "afterDelay",
+                       "Raw value should round-trip even though the typed enum couldn't represent it")
+    }
+
+    func testUnknownNestedFieldInRuleRoundTrips() throws {
+        // A v3-style rule with a known unit but a future "endDate" field.
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "reminderRepeatRule": { "unit": "week", "interval": 2, "endDate": "2027-01-01T00:00:00Z" }
+        }
+        """
+        let item = try decodeItem(json)
+        XCTAssertEqual(item.reminderRepeatRule?.unit, .week)
+        XCTAssertEqual(item.reminderRepeatRule?.interval, 2)
+        let dict = try roundTrip(item)
+        let rule = try XCTUnwrap(dict["reminderRepeatRule"] as? [String: Any])
+        XCTAssertEqual(rule["endDate"] as? String, "2027-01-01T00:00:00Z")
+    }
+
+    func testUnknownUnitInRuleStashesEntireRule() throws {
+        // Unknown unit makes the rule unparseable. Whole rule object survives
+        // in _preserved on the item so we don't strip the user's data.
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "reminderRepeatRule": { "unit": "fortnight", "interval": 2 }
+        }
+        """
+        let item = try decodeItem(json)
+        XCTAssertNil(item.reminderRepeatRule)
+        let dict = try roundTrip(item)
+        let rule = try XCTUnwrap(dict["reminderRepeatRule"] as? [String: Any])
+        XCTAssertEqual(rule["unit"] as? String, "fortnight")
+        XCTAssertEqual(rule["interval"] as? Double, 2)
+    }
+
+    // MARK: - Typed value overrides preserved raw
+
+    func testTypedFieldOverwritesPreservedRaw() throws {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "reminderRepeatMode": "afterDelay"
+        }
+        """
+        var item = try decodeItem(json)
+        // User picks a known mode, overriding the unknown stashed value.
+        item.reminderRepeatMode = .fixed
+        let dict = try roundTrip(item)
+        XCTAssertEqual(dict["reminderRepeatMode"] as? String, "fixed")
+    }
+
+    func testClearingTypedFieldRemovesKey() throws {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "reminderRepeatMode": "fixed"
+        }
+        """
+        var item = try decodeItem(json)
+        XCTAssertEqual(item.reminderRepeatMode, .fixed)
+        // Successfully-decoded value lands in the typed property, NOT in _preserved.
+        item.reminderRepeatMode = nil
+        let dict = try roundTrip(item)
+        XCTAssertNil(dict["reminderRepeatMode"], "Clearing a previously-set typed field should omit the key entirely")
+    }
+
+    func testExplicitNullInOptionalEnumStaysAbsent() throws {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "note": "Apples",
+          "quantity": 1,
+          "checked": false,
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false,
+          "reminderRepeatMode": null
+        }
+        """
+        let item = try decodeItem(json)
+        XCTAssertNil(item.reminderRepeatMode)
+        let dict = try roundTrip(item)
+        XCTAssertNil(dict["reminderRepeatMode"], "Explicit null should not be re-emitted (matches absent semantics)")
+    }
+
+    // MARK: - Lossy arrays
+
+    func testBadItemSkippedDocumentDecodes() throws {
+        // Middle item is missing required `note` — should be dropped, others kept.
+        let json = """
+        {
+          "version": 2,
+          "list": { "id": "L", "name": "T", "modifiedAt": "2026-01-01T00:00:00Z" },
+          "items": [
+            { "id": "11111111-1111-1111-1111-111111111111", "note": "A", "quantity": 1, "checked": false, "modifiedAt": "2026-01-01T00:00:00Z", "isDeleted": false },
+            { "id": "22222222-2222-2222-2222-222222222222", "quantity": 1, "checked": false, "modifiedAt": "2026-01-01T00:00:00Z", "isDeleted": false },
+            { "id": "33333333-3333-3333-3333-333333333333", "note": "C", "quantity": 1, "checked": false, "modifiedAt": "2026-01-01T00:00:00Z", "isDeleted": false }
+          ],
+          "labels": [],
+          "deletedLabelIDs": []
+        }
+        """
+        let doc = try decodeDoc(json)
+        XCTAssertEqual(doc.items.count, 2)
+        XCTAssertEqual(doc.items.map(\.note), ["A", "C"])
+    }
+
+    func testLossyArrayDoesNotInfiniteLoopOnBadElement() throws {
+        // The unkeyed container's index must advance even when an element
+        // fails to decode; otherwise the decoder spins forever. This is the
+        // single most common bug in hand-rolled lossy-array implementations.
+        let json = """
+        [
+          { "latitude": 1.0, "longitude": 2.0 },
+          "not-an-object",
+          { "latitude": 3.0, "longitude": 4.0 }
+        ]
+        """
+        let exp = expectation(description: "lossy array decode terminates")
+        DispatchQueue.global().async {
+            do {
+                let lossy = try self.makeDecoder().decode(LossyArray<Coordinate>.self, from: Data(json.utf8))
+                XCTAssertEqual(lossy.values.count, 2)
+                XCTAssertEqual(lossy.values[0].latitude, 1.0)
+                XCTAssertEqual(lossy.values[1].latitude, 3.0)
+                exp.fulfill()
+            } catch {
+                XCTFail("Decode threw: \(error)")
+                exp.fulfill()
+            }
+        }
+        wait(for: [exp], timeout: 2.0)
+    }
+
+    // MARK: - Equality ignores _preserved
+
+    func testSharePresetsWithDifferentExtrasAreEqual() throws {
+        let baseJSON: (String) -> String = { extra in """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "name": "P",
+          "itemIds": [],
+          "compress": true,
+          "includeComments": false,
+          "createdAt": "2026-01-01T00:00:00Z",
+          "modifiedAt": "2026-01-01T00:00:00Z",
+          "isDeleted": false\(extra)
+        }
+        """
+        }
+        let dec = makeDecoder()
+        let a = try dec.decode(SharePreset.self, from: Data(baseJSON("").utf8))
+        let b = try dec.decode(SharePreset.self, from: Data(baseJSON(", \"futureFlag\": true").utf8))
+        XCTAssertEqual(a, b, "Presets that differ only in preserved unknown fields should compare equal")
+        XCTAssertEqual(a.hashValue, b.hashValue, "...and hash the same")
+    }
+
+    // MARK: - Full document round-trip
+
+    func testFullDocumentRoundTripPreservesEverything() throws {
+        let json = """
+        {
+          "version": 99,
+          "futureToggle": true,
+          "list": {
+            "id": "list-1",
+            "name": "Groceries",
+            "modifiedAt": "2026-01-01T00:00:00Z",
+            "futureListField": "x"
+          },
+          "items": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "note": "Apples",
+              "quantity": 1,
+              "checked": false,
+              "modifiedAt": "2026-01-01T00:00:00Z",
+              "isDeleted": false,
+              "reminderRepeatMode": "afterDelay",
+              "subItems": [{"text": "Granny Smith"}]
+            }
+          ],
+          "labels": [
+            {"id": "fruit", "name": "Fruit", "color": "#ff0000", "futureLabelField": 42}
+          ],
+          "deletedLabelIDs": []
+        }
+        """
+        let doc = try decodeDoc(json)
+        XCTAssertEqual(doc.version, 99)
+        let dict = try roundTrip(doc)
+        XCTAssertEqual(dict["futureToggle"] as? Bool, true)
+        let list = try XCTUnwrap(dict["list"] as? [String: Any])
+        XCTAssertEqual(list["futureListField"] as? String, "x")
+        let items = try XCTUnwrap(dict["items"] as? [[String: Any]])
+        XCTAssertEqual(items[0]["reminderRepeatMode"] as? String, "afterDelay")
+        let subItems = try XCTUnwrap(items[0]["subItems"] as? [[String: Any]])
+        XCTAssertEqual(subItems[0]["text"] as? String, "Granny Smith")
+        let labels = try XCTUnwrap(dict["labels"] as? [[String: Any]])
+        XCTAssertEqual(labels[0]["futureLabelField"] as? Double, 42)
+    }
+}
+
