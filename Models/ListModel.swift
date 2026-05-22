@@ -128,6 +128,10 @@ struct SharePreset: Codable, Identifiable, Hashable {
     var id: UUID
     var name: String
     var itemIds: [UUID]
+    /// Per-item override quantities, keyed by UUID string. nil means "use whatever
+    /// the live list has at reload time." Stored at save / edit time so reloading
+    /// can override live quantities — see `reloadPreset` in ListView.
+    var quantities: [String: Double]?
     var compress: Bool
     var includeComments: Bool
     var createdAt: Date
@@ -142,6 +146,7 @@ struct SharePreset: Codable, Identifiable, Hashable {
         id: UUID = UUID(),
         name: String,
         itemIds: [UUID],
+        quantities: [String: Double]? = nil,
         compress: Bool = true,
         includeComments: Bool = false,
         createdAt: Date = Date(),
@@ -152,12 +157,19 @@ struct SharePreset: Codable, Identifiable, Hashable {
         self.id = id
         self.name = name
         self.itemIds = itemIds
+        self.quantities = quantities
         self.compress = compress
         self.includeComments = includeComments
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.isDeleted = isDeleted
         self.deletedAt = deletedAt
+    }
+
+    /// Returns the override quantity for the given item, or nil if the preset
+    /// doesn't specify one for that UUID.
+    func quantity(for itemId: UUID) -> Double? {
+        quantities?[itemId.uuidString]
     }
 }
 
