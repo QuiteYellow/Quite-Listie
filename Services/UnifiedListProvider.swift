@@ -1157,7 +1157,7 @@ class UnifiedListProvider {
     func fetchSharePresets(for list: UnifiedList) async throws -> [SharePreset] {
         if list.summary.id == ExampleData.welcomeListId { return [] }
         let document = try await openDocument(for: list)
-        return document.sharePresets ?? []
+        return document.sharePresets
     }
 
     func createLabel(_ label: ListLabel, for list: UnifiedList) async throws {
@@ -1256,7 +1256,7 @@ class UnifiedListProvider {
     /// `modifiedAt` and merge independently of summary fields.
     func updateSharePresets(_ list: UnifiedList, presets: [SharePreset]) async throws {
         var document = try await openDocument(for: list)
-        document.sharePresets = presets.isEmpty ? nil : presets
+        document.sharePresets = presets
 
         if case .privateICloud = list.source {
             let listId = list.privateListId!
