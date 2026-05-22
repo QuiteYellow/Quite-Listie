@@ -30,6 +30,9 @@ struct ShareLinkSheet: View {
     @State private var collapsedLabels: Set<String> = []
     @State private var showCopiedConfirmation = false
     @State private var presetName: String
+    /// Override quantities for preset modes, keyed by item UUID. Initialised from the
+    /// live item's current quantity on save, or from the preset's stored value on edit.
+    @State private var presetQuantities: [UUID: Double]
 
     init(
         listName: String,
@@ -56,7 +59,18 @@ struct ShareLinkSheet: View {
             self._compress = State(initialValue: preset.compress)
             self._includeComments = State(initialValue: preset.includeComments)
             self._presetName = State(initialValue: preset.name)
-        case .savePreset, .share:
+            // Seed quantities from the preset where stored; fall back to the live item's
+            // current quantity for entries the preset didn't override.
+            var qty: [UUID: Double] = [:]
+            for item in items where validIds.contains(item.id) {
+                if let stored = preset.quantity(for: item.id) {
+                    qty[item.id] = stored
+                } else {
+                    qty[item.id] = item.quantity
+                }
+            }
+            self._presetQuantities = State(initialValue: qty)
+        case .savePreset:
             let initial: Set<UUID> = activeOnly
                 ? Set(items.filter { !$0.checked }.map { $0.id })
                 : Set(items.map { $0.id })
@@ -64,6 +78,16 @@ struct ShareLinkSheet: View {
             self._compress = State(initialValue: true)
             self._includeComments = State(initialValue: false)
             self._presetName = State(initialValue: "")
+            self._presetQuantities = State(initialValue: Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.quantity) }))
+        case .share:
+            let initial: Set<UUID> = activeOnly
+                ? Set(items.filter { !$0.checked }.map { $0.id })
+                : Set(items.map { $0.id })
+            self._selectedItemIds = State(initialValue: initial)
+            self._compress = State(initialValue: true)
+            self._includeComments = State(initialValue: false)
+            self._presetName = State(initialValue: "")
+            self._presetQuantities = State(initialValue: [:])
         }
     }
 
@@ -94,6 +118,13 @@ struct ShareLinkSheet: View {
         let trimmed = presetName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, hasSelection else { return }
         let now = Date()
+        // Only record quantity overrides for the selected items.
+        var storedQuantities: [String: Double] = [:]
+        for id in selectedItemIds {
+            if let qty = presetQuantities[id] {
+                storedQuantities[id.uuidString] = qty
+            }
+        }
         let preset: SharePreset
         switch mode {
         case .editPreset(let existing):
@@ -101,6 +132,7 @@ struct ShareLinkSheet: View {
                 id: existing.id,
                 name: trimmed,
                 itemIds: Array(selectedItemIds),
+                quantities: storedQuantities.isEmpty ? nil : storedQuantities,
                 compress: compress,
                 includeComments: includeComments,
                 createdAt: existing.createdAt,
@@ -112,6 +144,7 @@ struct ShareLinkSheet: View {
             preset = SharePreset(
                 name: trimmed,
                 itemIds: Array(selectedItemIds),
+                quantities: storedQuantities.isEmpty ? nil : storedQuantities,
                 compress: compress,
                 includeComments: includeComments,
                 createdAt: now,
@@ -125,7 +158,14 @@ struct ShareLinkSheet: View {
     // MARK: - Computed Properties
 
     private var filteredItems: [ListItem] {
-        items.filter { selectedItemIds.contains($0.id) }
+        items
+            .filter { selectedItemIds.contains($0.id) }
+            .map { item in
+                guard isPresetMode, let qty = presetQuantities[item.id] else { return item }
+                var copy = item
+                copy.quantity = qty
+                return copy
+            }
     }
 
     private var hasSelection: Bool {
@@ -193,7 +233,7 @@ struct ShareLinkSheet: View {
                     } header: {
                         Text("Name")
                     } footer: {
-                        Text("Reload this preset later to re-activate the chosen items (un-checked) on this list.")
+                        Text("A preset remembers which items belong together, not whether they're currently checked off. Reloading always re-activates the chosen items on this list — matched by ID, falling back to name if you've renamed something. The default selection is whatever's currently active.")
                     }
                 } else {
                     Section {
@@ -379,42 +419,69 @@ struct ShareLinkSheet: View {
                 }
             }
         } header: {
-            Text("Items")
+            Text(isPresetMode ? "Items in this preset" : "Items")
+        } footer: {
+            if isPresetMode {
+                Text("Selected items belong to this preset. Unselected items are simply not part of it \u{2014} they won't be changed when you reload.")
+                    .font(.caption)
+            }
         }
     }
 
     private func itemRow(_ item: ListItem) -> some View {
         let isSelected = selectedItemIds.contains(item.id)
-        return Button {
-            if isSelected {
-                selectedItemIds.remove(item.id)
-            } else {
-                selectedItemIds.insert(item.id)
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .imageScale(.large)
+        let effectiveQty = (isPresetMode ? presetQuantities[item.id] : nil) ?? item.quantity
+        return HStack(spacing: 10) {
+            Button {
+                if isSelected {
+                    selectedItemIds.remove(item.id)
+                } else {
+                    selectedItemIds.insert(item.id)
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .imageScale(.large)
 
-                if item.quantity > 1 {
-                    Text("\(Int(item.quantity))")
+                    if !isPresetMode && item.quantity > 1 {
+                        Text("\(Int(item.quantity))")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                    }
+
+                    // In preset modes every item looks active: reloading a preset always
+                    // re-activates its items, so the live checked state isn't meaningful at
+                    // save / edit time. In .share mode we still dim checked items.
+                    Text(item.note)
+                        .strikethrough(!isPresetMode && item.checked)
+                        .foregroundStyle((!isPresetMode && item.checked) ? Color.secondary : Color.primary)
+                        .lineLimit(2)
+
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isPresetMode && isSelected {
+                HStack(spacing: 6) {
+                    Text("× \(Int(effectiveQty))")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                        .monospacedDigit()
+                        .frame(minWidth: 32, alignment: .trailing)
+                    Stepper("", value: Binding(
+                        get: { presetQuantities[item.id] ?? item.quantity },
+                        set: { presetQuantities[item.id] = max(1, $0) }
+                    ), in: 1...999, step: 1)
+                    .labelsHidden()
                 }
-
-                Text(item.note)
-                    .strikethrough(item.checked)
-                    .foregroundStyle(item.checked ? Color.secondary : Color.primary)
-                    .lineLimit(2)
-
-                Spacer(minLength: 0)
+                .fixedSize()
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Warning Color

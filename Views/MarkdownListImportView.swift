@@ -33,18 +33,42 @@ struct MarkdownListImportView: View {
     @State private var showPreview = false
     @State private var parsedList: ParsedList?
     @State private var createUnmatchedLabels = true
+    @State private var replaceQuantities: Bool
     @State private var isSaving = false
     
     @State private var selectedItemIndices: Set<Int> = []
     
     
+    /// When invoked from a preset reload, the original items that built the markdown.
+    /// Used to resolve UUID-first matching: a parsed item's name is looked up here to
+    /// recover the originating UUID, then the live list is queried by that UUID. Falls
+    /// back to name-only matching when nil or when the lookup misses.
+    let expectedItems: [ListItem]?
+
+    /// Why this view is being shown. Drives every visible string and the primary
+    /// action's label so a preset reload doesn't read as a foreign-import flow.
+    enum Intent: Equatable {
+        case `import`                    // paste markdown / open deeplink
+        case reloadPreset(name: String)  // reload a saved preset from this list
+
+        var isReload: Bool {
+            if case .reloadPreset = self { return true }
+            return false
+        }
+    }
+
+    let intent: Intent
+
     init(
         list: UnifiedList,
         provider: UnifiedListProvider,
         existingItems: [ListItem] = [],
         existingLabels: [ListLabel] = [],
         initialMarkdown: String? = nil,
-        autoPreview: Bool = false
+        autoPreview: Bool = false,
+        expectedItems: [ListItem]? = nil,
+        replaceQuantitiesDefault: Bool = false,
+        intent: Intent = .import
     ) {
         self.list = list
         self.provider = provider
@@ -52,8 +76,53 @@ struct MarkdownListImportView: View {
         self._existingLabels = State(initialValue: existingLabels)
         self.initialMarkdown = initialMarkdown
         self.autoPreview = autoPreview
+        self.expectedItems = expectedItems
+        self._replaceQuantities = State(initialValue: replaceQuantitiesDefault)
+        self.intent = intent
     }
-    
+
+    // MARK: - Intent-aware copy
+
+    private var navigationTitleText: String {
+        switch intent {
+        case .import:
+            return showPreview ? "Preview Import" : "Paste Shopping List"
+        case .reloadPreset(let name):
+            return "Reload \u{201C}\(name)\u{201D}"
+        }
+    }
+
+    private var confirmActionTitle: String {
+        if case .reloadPreset = intent {
+            return "Reload \(selectedItemIndices.count) item\(selectedItemIndices.count == 1 ? "" : "s")"
+        }
+        return "Import"
+    }
+
+    private var importingToHeader: String {
+        intent.isReload ? "Reloading on" : "Importing to"
+    }
+
+    private var unmatchedLabelToggleTitle: String {
+        intent.isReload ? "Re-create deleted labels" : "Create New Labels for Unmatched"
+    }
+
+    private var newItemsStatLabel: (Int) -> String {
+        { count in
+            self.intent.isReload
+                ? "\(count) item\(count == 1 ? "" : "s") new to this list (will be added)"
+                : "\(count) new items"
+        }
+    }
+
+    private var updatedItemsStatLabel: (Int) -> String {
+        { count in
+            self.intent.isReload
+                ? "\(count) item\(count == 1 ? "" : "s") will be re-activated"
+                : "\(count) existing items will be updated"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -63,7 +132,7 @@ struct MarkdownListImportView: View {
                     editorView
                 }
             }
-            .navigationTitle(showPreview ? "Preview Import" : "Paste Shopping List")
+            .navigationTitle(navigationTitleText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -79,7 +148,7 @@ struct MarkdownListImportView: View {
                 
                 ToolbarItem(placement: .confirmationAction) {
                     if showPreview {
-                        Button("Import") {
+                        Button(confirmActionTitle) {
                             Task { await importItems() }
                         }
                         .disabled(isSaving)
@@ -202,7 +271,7 @@ struct MarkdownListImportView: View {
     
     private func previewView(_ parsed: ParsedList) -> some View {
         List {
-            // Importing to section
+            // Importing/Reloading to section
             Section {
                 HStack {
                     Image(systemName: list.summary.icon ?? "list.bullet")
@@ -212,18 +281,30 @@ struct MarkdownListImportView: View {
                     Spacer()
                 }
             } header: {
-                Text("Importing to")
+                Text(importingToHeader)
+            } footer: {
+                if intent.isReload {
+                    Text("Only the items shown here are affected. Other items on this list stay as they are. Matched items are re-activated (unchecked) and their quantity is updated.")
+                        .font(.caption)
+                }
             }
-            
+
             // Options section
             Section {
-                Toggle("Create New Labels for Unmatched", isOn: $createUnmatchedLabels)
+                Toggle(unmatchedLabelToggleTitle, isOn: $createUnmatchedLabels)
+                    .toggleStyle(.switch)
+                Toggle("Replace Quantities", isOn: $replaceQuantities)
                     .toggleStyle(.switch)
             } footer: {
-                Text(createUnmatchedLabels ?
-                     "Existing labels will be matched by name. New labels will be created for unmatched names." :
-                     "Existing labels will be matched by name. Items with unmatched labels will have no label.")
-                    .font(.caption)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(createUnmatchedLabels ?
+                         "Existing labels will be matched by name. New labels will be created for unmatched names." :
+                         "Existing labels will be matched by name. Items with unmatched labels will have no label.")
+                    Text(replaceQuantities ?
+                         "Matched items will be set to the imported quantity (overwriting the live value)." :
+                         "Matched items that are currently active will have the imported quantity added to their existing one. Checked items will be set to the imported quantity.")
+                }
+                .font(.caption)
             }
             
             // Summary section
@@ -235,12 +316,12 @@ struct MarkdownListImportView: View {
                     .font(.headline)
                 
                 if stats.newItems > 0 {
-                    Label("\(stats.newItems) new items", systemImage: "plus.circle.fill")
+                    Label(newItemsStatLabel(stats.newItems), systemImage: "plus.circle.fill")
                         .foregroundStyle(.green)
                 }
-                
+
                 if stats.updatedItems > 0 {
-                    Label("\(stats.updatedItems) existing items will be updated", systemImage: "arrow.triangle.2.circlepath")
+                    Label(updatedItemsStatLabel(stats.updatedItems), systemImage: "arrow.triangle.2.circlepath")
                         .foregroundStyle(.blue)
                 }
                 
@@ -414,19 +495,17 @@ struct MarkdownListImportView: View {
                     .foregroundStyle(isSelected ? .primary : .secondary)
                     .strikethrough(!isSelected, color: .gray)
                 
-                // Show if this will update an existing item
+                // Show if this will update an existing item — preview mirrors the same
+                // rule the actual import uses (`replaceQuantities || existing.checked`).
                 if let existing = existingItems.first(where: { $0.note.lowercased() == item.note.lowercased() }) {
+                    let newQty: Double = (replaceQuantities || existing.checked)
+                        ? item.quantity
+                        : existing.quantity + item.quantity
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .foregroundStyle(.blue)
                             .imageScale(.small)
-                        
-                        if existing.checked {
-                                    Text("Quantity from \(Int(existing.quantity)) to \(Int(item.quantity))")
-                                } else {
-                                    let newQty = existing.quantity + item.quantity
-                                    Text("Quantity from \(Int(existing.quantity)) to \(Int(newQty))")
-                                }
+                        Text("Quantity from \(Int(existing.quantity)) to \(Int(newQty))")
                     }
                     .font(.caption2)
                     .foregroundStyle(.blue)
@@ -497,13 +576,24 @@ struct MarkdownListImportView: View {
             
             // Step 2: Import selected items
             for parsedItem in itemsToImport {
-                // [Rest of the import logic stays the same]
-                if let existingItem = existingItems.first(where: {
+                // Match by UUID first (preset reload path), fall back to case-insensitive name.
+                // UUID-first survives item renames: the preset stores the UUID, expectedItems
+                // carries the current ListItem (with its post-rename name), so we recover
+                // the UUID even when the live item has since been renamed again.
+                let uuidMatch: ListItem? = expectedItems
+                    .flatMap { expected in
+                        expected.first(where: { $0.note.lowercased() == parsedItem.note.lowercased() })
+                    }
+                    .flatMap { expectedItem in
+                        existingItems.first(where: { $0.id == expectedItem.id })
+                    }
+                let nameMatch = existingItems.first(where: {
                     $0.note.lowercased() == parsedItem.note.lowercased()
-                }) {
+                })
+                if let existingItem = uuidMatch ?? nameMatch {
                     var updated = existingItem
-                    
-                    if existingItem.checked {
+
+                    if replaceQuantities || existingItem.checked {
                         updated.quantity = parsedItem.quantity
                     } else {
                         updated.quantity = existingItem.quantity + parsedItem.quantity

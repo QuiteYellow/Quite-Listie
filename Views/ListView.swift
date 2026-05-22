@@ -303,7 +303,18 @@ struct ListView: View {
     }
 
     private func reloadPreset(_ preset: SharePreset) {
-        let presetItems = viewModel.items.filter { preset.itemIds.contains($0.id) }
+        // Override each item's quantity with the preset's stored value (falling back to
+        // the live quantity if the preset predates the quantities field). This makes the
+        // regenerated markdown carry preset quantities, so the import merge (with
+        // replaceQuantities=true) sets the live list to the preset's intended amounts.
+        let presetItems: [ListItem] = viewModel.items
+            .filter { preset.itemIds.contains($0.id) }
+            .map { item in
+                guard let qty = preset.quantity(for: item.id) else { return item }
+                var copy = item
+                copy.quantity = qty
+                return copy
+            }
         let result = MarkdownListGenerator.generate(
             listName: list.name,
             items: presetItems,
@@ -312,7 +323,7 @@ struct ListView: View {
             activeOnly: false,
             includeNotes: preset.includeComments
         )
-        presetReload = PresetReloadRequest(preset: preset, markdown: result.markdown)
+        presetReload = PresetReloadRequest(preset: preset, markdown: result.markdown, expectedItems: presetItems)
     }
 
     @Binding var searchText: String
@@ -1275,6 +1286,7 @@ fileprivate struct PresetReloadRequest: Identifiable {
     let id = UUID()
     let preset: SharePreset
     let markdown: String
+    let expectedItems: [ListItem]
 }
 
 private struct ListSheetsModifier: ViewModifier {
@@ -1390,7 +1402,10 @@ private struct ListSheetsModifier: ViewModifier {
                     existingItems: viewModel.items,
                     existingLabels: viewModel.labels,
                     initialMarkdown: request.markdown,
-                    autoPreview: true
+                    autoPreview: true,
+                    expectedItems: request.expectedItems,
+                    replaceQuantitiesDefault: true,
+                    intent: .reloadPreset(name: request.preset.name)
                 )
             }
             .sheet(isPresented: $showingListSettings, onDismiss: {

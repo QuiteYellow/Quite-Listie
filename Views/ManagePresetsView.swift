@@ -58,7 +58,7 @@ struct ManagePresetsView: View {
                     } header: {
                         Text("Saved")
                     } footer: {
-                        Text("Tap a preset to edit. Reload it from the menu's “Load preset” submenu.")
+                        Text("Tap a preset to edit. Reloading re-activates the preset's items on this list (matched by ID, then name) and updates their quantities. Other items on your list stay as they are.")
                     }
                 }
 
