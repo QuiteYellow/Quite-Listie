@@ -78,7 +78,7 @@ struct GlobalMapView: View {
 
     var body: some View {
         Group {
-            if !welcomeViewModel.hasLoadedLocations {
+            if !welcomeViewModel.hasLoadedCounts {
                 Color.clear
             } else if welcomeViewModel.locationEntries.isEmpty {
                 emptyState
