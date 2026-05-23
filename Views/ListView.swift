@@ -1353,10 +1353,12 @@ private struct ListSheetsModifier: ViewModifier {
                 }
             } content: {
                 MarkdownListImportView(
+                    intent: .paste,
                     list: unifiedList,
-                    provider: unifiedProvider,
                     existingItems: viewModel.items,
-                    existingLabels: viewModel.labels
+                    existingLabels: viewModel.labels,
+                    allLists: unifiedProvider.allLists,
+                    provider: unifiedProvider
                 )
             }
             .sheet(item: $markdownToExport) { export in
@@ -1397,15 +1399,16 @@ private struct ListSheetsModifier: ViewModifier {
                 }
             }) { request in
                 MarkdownListImportView(
+                    intent: .preset(
+                        name: request.preset.name,
+                        markdown: request.markdown,
+                        expectedItems: request.expectedItems
+                    ),
                     list: unifiedList,
-                    provider: unifiedProvider,
                     existingItems: viewModel.items,
                     existingLabels: viewModel.labels,
-                    initialMarkdown: request.markdown,
-                    autoPreview: true,
-                    expectedItems: request.expectedItems,
-                    replaceQuantitiesDefault: true,
-                    intent: .reloadPreset(name: request.preset.name)
+                    allLists: unifiedProvider.allLists,
+                    provider: unifiedProvider
                 )
             }
             .sheet(isPresented: $showingListSettings, onDismiss: {

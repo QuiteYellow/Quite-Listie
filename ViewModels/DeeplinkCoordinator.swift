@@ -15,8 +15,10 @@ import Compression
 @MainActor
 class DeeplinkCoordinator {
     var fileToOpen: URL?
+    /// Single source of truth for "user is being shown the markdown import sheet."
+    /// `preloadedList` is nil when the URL didn't specify a list or the specified
+    /// list wasn't found — the import view shows its built-in picker step.
     var markdownImport: MarkdownImportRequest?
-    var pendingImport: PendingImport?
     var errorMessage: String?
     var showError = false
 
@@ -32,16 +34,15 @@ class DeeplinkCoordinator {
     struct MarkdownImportRequest: Identifiable, Equatable {
         let id = UUID()
         let markdown: String
-        let listId: String
         let shouldPreview: Bool
-    }
+        /// nil ⇒ import view starts at its list-picker step.
+        let preloadedList: UnifiedList?
+        let preloadedItems: [ListItem]
+        let preloadedLabels: [ListLabel]
 
-    /// Holds decoded markdown when the target list is missing or not found,
-    /// so the user can pick or create a list before importing.
-    struct PendingImport: Identifiable {
-        let id = UUID()
-        let markdown: String
-        let shouldPreview: Bool
+        // Identity-only equality so .onChange fires per-request even when the
+        // payload types ([ListItem]) aren't Equatable on their own.
+        static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     }
 
     func handle(_ url: URL, provider: UnifiedListProvider) async {
@@ -67,17 +68,6 @@ class DeeplinkCoordinator {
         } else {
             AppLogger.deeplinks.warning("[Deeplink] Unknown host: \(url.host ?? "nil", privacy: .public)")
         }
-    }
-
-    /// Called when the user picks a list from the list picker for a pending import.
-    func completePendingImport(with listId: String) {
-        guard let pending = pendingImport else { return }
-        markdownImport = MarkdownImportRequest(
-            markdown: pending.markdown,
-            listId: listId,
-            shouldPreview: pending.shouldPreview
-        )
-        pendingImport = nil
     }
 
     private func handleMarkdownImport(_ url: URL, provider: UnifiedListProvider) async {
@@ -148,20 +138,41 @@ class DeeplinkCoordinator {
             await provider.loadAllLists()
         }
 
-        // Try to find target list by ID
+        // Try to find target list by ID and preload its contents so the import
+        // sheet opens with stats ready — no in-sheet async race, no "0 items
+        // selected" flash on first paint.
         if let listId = listId,
-           let _ = provider.allLists.first(where: { $0.id == listId || $0.originalFileId == listId }) {
-            // Direct match found
-            markdownImport = MarkdownImportRequest(
-                markdown: markdown,
-                listId: listId,
-                shouldPreview: shouldPreview
-            )
+           let matched = provider.allLists.first(where: { $0.id == listId || $0.originalFileId == listId }) {
+            do {
+                let items = try await provider.fetchItems(for: matched)
+                let labels = try await provider.fetchLabels(for: matched)
+                markdownImport = MarkdownImportRequest(
+                    markdown: markdown,
+                    shouldPreview: shouldPreview,
+                    preloadedList: matched,
+                    preloadedItems: items,
+                    preloadedLabels: labels
+                )
+            } catch {
+                AppLogger.deeplinks.error("Failed to preload list for import: \(error, privacy: .public)")
+                // Fall through to picker step so the user can pick a different target.
+                markdownImport = MarkdownImportRequest(
+                    markdown: markdown,
+                    shouldPreview: shouldPreview,
+                    preloadedList: nil,
+                    preloadedItems: [],
+                    preloadedLabels: []
+                )
+            }
         } else {
             // No list ID provided, or no matching list found — let user pick
-            pendingImport = PendingImport(
+            // inside the import view's first step.
+            markdownImport = MarkdownImportRequest(
                 markdown: markdown,
-                shouldPreview: shouldPreview
+                shouldPreview: shouldPreview,
+                preloadedList: nil,
+                preloadedItems: [],
+                preloadedLabels: []
             )
         }
     }

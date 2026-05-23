@@ -92,14 +92,15 @@ struct WelcomeView: View {
             }
         }
         .sheet(item: $deeplinkCoordinator.markdownImport) { request in
-            makeMarkdownImportSheet(request)
-        }
-        .sheet(item: $deeplinkCoordinator.pendingImport) { pending in
-            ImportListPickerSheet(
-                pending: pending,
-                lists: unifiedProvider.allLists,
-                onSelect: { listId in
-                    deeplinkCoordinator.completePendingImport(with: listId)
+            MarkdownListImportView(
+                intent: .link(markdown: request.markdown, autoPreview: request.shouldPreview),
+                list: request.preloadedList,
+                existingItems: request.preloadedItems,
+                existingLabels: request.preloadedLabels,
+                allLists: unifiedProvider.allLists,
+                provider: unifiedProvider,
+                onComplete: { list in
+                    selectedListID = list.id
                 }
             )
         }
@@ -505,23 +506,6 @@ struct WelcomeView: View {
         }
     }
     
-    @ViewBuilder
-    private func makeMarkdownImportSheet(_ request: DeeplinkCoordinator.MarkdownImportRequest) -> some View {
-        Group {
-            if let listID = selectedListID,
-               let unifiedList = unifiedProvider.allLists.first(where: { $0.id == listID }) {
-                MarkdownListImportView(
-                    list: unifiedList,
-                    provider: unifiedProvider,
-                    existingItems: [],
-                    existingLabels: [],
-                    initialMarkdown: request.markdown,
-                    autoPreview: request.shouldPreview
-                )
-            }
-        }
-    }
-    
     // MARK: - Actions
     
     private func refreshLists() async {
@@ -736,15 +720,12 @@ struct WelcomeView: View {
     }
     
     private func handleMarkdownImportRequest(_ request: DeeplinkCoordinator.MarkdownImportRequest?) {
-        guard let request = request else { return }
-
-        // Find list by runtime ID or original file ID and select it
-        let targetList = unifiedProvider.allLists.first { list in
-            list.id == request.listId || list.originalFileId == request.listId
-        }
-
-        if let targetList = targetList {
-            selectedListID = targetList.id
+        // Select the sidebar list ahead of presentation so when the import sheet
+        // dismisses, the underlying ListView is already the right one.
+        // When `preloadedList` is nil the user will pick inside the sheet —
+        // `onComplete` updates selection after they finish.
+        if let preloaded = request?.preloadedList {
+            selectedListID = preloaded.id
         }
     }
 }
