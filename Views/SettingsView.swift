@@ -20,6 +20,9 @@ struct SettingsView: View {
     @AppStorage("navShowGoogleMaps") private var navShowGoogleMaps: Bool = true
     @AppStorage("navShowTomTomGo") private var navShowTomTomGo: Bool = true
     @AppStorage("mapStyleMuted") private var mapStyleMuted: Bool = true
+    @AppStorage("hideTodayCard") private var hideTodayCard: Bool = false
+    @AppStorage("hideScheduledCard") private var hideScheduledCard: Bool = false
+    @AppStorage("hideLocationsCard") private var hideLocationsCard: Bool = false
 
     @State private var showQuickAddInfo = false
     @State private var showEmptyLabelsInfo = false
@@ -170,6 +173,30 @@ struct SettingsView: View {
                     Label("Calendar", systemImage: "calendar")
                 } footer: {
                     Text("Reminder items are added to a 'Listie Schedule' calendar in Calendar.app. Share that calendar to subscribe from any device — the sharing URL works on iOS, Mac, and Google Calendar.")
+                }
+
+                Section {
+                    Toggle("Today", isOn: Binding(
+                        get: { !hideTodayCard },
+                        set: { hideTodayCard = !$0 }
+                    ))
+                    .toggleStyle(.switch)
+
+                    Toggle("Scheduled", isOn: Binding(
+                        get: { !hideScheduledCard },
+                        set: { hideScheduledCard = !$0 }
+                    ))
+                    .toggleStyle(.switch)
+
+                    Toggle("Locations", isOn: Binding(
+                        get: { !hideLocationsCard },
+                        set: { hideLocationsCard = !$0 }
+                    ))
+                    .toggleStyle(.switch)
+                } header: {
+                    Label("Sidebar Cards", systemImage: "rectangle.grid.2x2")
+                } footer: {
+                    Text("Quick-access cards shown at the top of the sidebar. Each card always appears when enabled, even if the count is zero.")
                 }
 
                 Section {

@@ -50,8 +50,10 @@ class WelcomeViewModel {
     /// All non-deleted items with pinned locations across every list
     var locationEntries: [LocationEntry] = []
 
-    /// True once `loadUnifiedCounts` has completed at least one full fetch
-    var hasLoadedLocations = false
+    /// True once `loadUnifiedCounts` has completed at least one full fetch.
+    /// Covers reminders, locations, and unchecked counts — they're all populated
+    /// in the same pass, so a single flag tells UI "we know the real numbers now."
+    var hasLoadedCounts = false
 
     /// All labels referenced by items with locations (deduplicated by ID)
     var allLocationLabels: [ListLabel] = []
@@ -150,7 +152,7 @@ class WelcomeViewModel {
             reminderEntries = entries
             locationEntries = locEntries
             allLocationLabels = Array(labelsDict.values)
-            hasLoadedLocations = true
+            hasLoadedCounts = true
         }
     }
 }

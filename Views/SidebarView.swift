@@ -31,7 +31,12 @@ struct SidebarView: View {
     @State private var showFavouritesWarning: Bool = !UserDefaults.standard.bool(forKey: "hideFavouritesWarning")
     @State private var iCloudSyncEnabled: Bool = true
     var onOpenNextcloud: () -> Void
-    
+
+    // Per-card visibility — opt-out, default on. Toggled from Settings or each card's context menu.
+    @AppStorage("hideTodayCard") private var hideTodayCard: Bool = false
+    @AppStorage("hideScheduledCard") private var hideScheduledCard: Bool = false
+    @AppStorage("hideLocationsCard") private var hideLocationsCard: Bool = false
+
     // Favorites stored in UserDefaults
     @AppStorage("favouriteListIDs") private var favouriteListIDsData: Data = Data()
     
@@ -136,37 +141,63 @@ struct SidebarView: View {
         }
     }
     
+    /// Today + Scheduled cards, shared between the HStack and VStack fallback
+    /// inside `ViewThatFits` so we declare the children exactly once.
+    @ViewBuilder
+    private var todayScheduledCards: some View {
+        let todayCount = welcomeViewModel.todayReminderCount
+        let scheduledCount = welcomeViewModel.scheduledReminderCount
+        let isLoadingCounts = !welcomeViewModel.hasLoadedCounts
+
+        if !hideTodayCard {
+            ReminderSmartBox(
+                title: "Today",
+                count: todayCount,
+                icon: "calendar.circle.fill",
+                color: .orange,
+                isSelected: selectedListID == "__reminders_today",
+                isLoading: isLoadingCounts,
+                onTap: { selectedListID = "__reminders_today" },
+                onHide: { hideTodayCard = true }
+            )
+        }
+        if !hideScheduledCard {
+            ReminderSmartBox(
+                title: "Scheduled",
+                count: scheduledCount,
+                icon: "calendar.badge.clock",
+                color: .blue,
+                isSelected: selectedListID == "__reminders_scheduled",
+                isLoading: isLoadingCounts,
+                onTap: { selectedListID = "__reminders_scheduled" },
+                onHide: { hideScheduledCard = true }
+            )
+        }
+    }
+
     var body: some View {
         List(selection: $selectedListID) {
 
             // MARK: - Smart Boxes (Reminders + Locations)
+            // Always rendered (unless explicitly hidden in Settings) so the user has
+            // a stable entry point regardless of whether anything is currently due.
+            // The cards self-style for zero/loading states.
             let todayCount = welcomeViewModel.todayReminderCount
             let scheduledCount = welcomeViewModel.scheduledReminderCount
             let locationCount = welcomeViewModel.activeLocationCount
+            let isLoadingCounts = !welcomeViewModel.hasLoadedCounts
+            let showTodayOrScheduled = !hideTodayCard || !hideScheduledCard
+            let showAnyCard = showTodayOrScheduled || !hideLocationsCard
 
-            if todayCount > 0 || scheduledCount > 0 || locationCount > 0 {
+            if showAnyCard {
                 Section {
-                    // Today + Scheduled row (shown when either has items)
-                    if todayCount > 0 || scheduledCount > 0 {
-                        HStack(spacing: 12) {
-                            ReminderSmartBox(
-                                title: "Today",
-                                count: todayCount,
-                                icon: "calendar.circle.fill",
-                                color: .orange,
-                                isSelected: selectedListID == "__reminders_today"
-                            ) {
-                                selectedListID = "__reminders_today"
+                    if showTodayOrScheduled {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 12) {
+                                todayScheduledCards
                             }
-
-                            ReminderSmartBox(
-                                title: "Scheduled",
-                                count: scheduledCount,
-                                icon: "calendar.badge.clock",
-                                color: .blue,
-                                isSelected: selectedListID == "__reminders_scheduled"
-                            ) {
-                                selectedListID = "__reminders_scheduled"
+                            VStack(spacing: 12) {
+                                todayScheduledCards
                             }
                         }
                         .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -174,24 +205,25 @@ struct SidebarView: View {
                         .listRowSeparator(.hidden)
                     }
 
-                    // Locations card (shown when any list has pinned items)
-                    if locationCount > 0 {
+                    if !hideLocationsCard {
                         ReminderSmartBox(
                             title: "Locations",
                             count: locationCount,
                             icon: "mappin.circle.fill",
                             color: .green,
-                            isSelected: selectedListID == "__map"
-                        ) {
-                            selectedListID = "__map"
-                        }
+                            isSelected: selectedListID == "__map",
+                            isLoading: isLoadingCounts,
+                            onTap: { selectedListID = "__map" },
+                            onHide: { hideLocationsCard = true }
+                        )
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 4, trailing: 0))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                     }
                 }
             }
-                
+
+
 
             // MARK: - Welcome Section (at the top)
             if !hideWelcomeList {
@@ -538,7 +570,11 @@ struct ReminderSmartBox: View {
     let icon: String
     let color: Color
     let isSelected: Bool
+    var isLoading: Bool = false
     let onTap: () -> Void
+    var onHide: (() -> Void)? = nil
+
+    private var isEmpty: Bool { count == 0 && !isLoading }
 
     var body: some View {
         Button(action: onTap) {
@@ -546,13 +582,9 @@ struct ReminderSmartBox: View {
                 HStack {
                     Image(systemName: icon)
                         .font(.title2)
-                        .foregroundStyle(color)
+                        .foregroundStyle(isEmpty ? color.opacity(0.55) : color)
                     Spacer()
-                    Text("\(count)")
-                        .font(.title2.bold())
-                        .foregroundStyle(.primary)
-                        .contentTransition(.numericText())
-                        .animation(.easeInOut(duration: 0.25), value: count)
+                    countView
                 }
 
                 Text(title)
@@ -560,6 +592,7 @@ struct ReminderSmartBox: View {
                     .foregroundStyle(.secondary)
             }
             .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(isSelected ? color.opacity(0.15) : Color(.secondarySystemGroupedBackground))
@@ -568,7 +601,54 @@ struct ReminderSmartBox: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(isSelected ? color.opacity(0.4) : Color.clear, lineWidth: 1.5)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 20))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SmartBoxPressStyle())
+        .sensoryFeedback(.selection, trigger: isSelected) { old, new in !old && new }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(accessibilityValueText)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .contextMenu {
+            if let onHide {
+                Button {
+                    onHide()
+                } label: {
+                    Label("Hide from Sidebar", systemImage: "eye.slash")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var countView: some View {
+        if isLoading {
+            ProgressView()
+                .controlSize(.small)
+                .frame(minWidth: 24, alignment: .trailing)
+        } else {
+            Text("\(count)")
+                .font(.title2.weight(isEmpty ? .regular : .bold))
+                .foregroundStyle(isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.25), value: count)
+        }
+    }
+
+    private var accessibilityValueText: String {
+        if isLoading { return "Loading" }
+        if count == 0 { return "Nothing scheduled" }
+        return "\(count) " + (count == 1 ? "item" : "items")
+    }
+}
+
+/// Subtle press feedback for smart boxes — the default `.plain` style strips
+/// all visual response, which makes the cards feel inert on tap.
+private struct SmartBoxPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
