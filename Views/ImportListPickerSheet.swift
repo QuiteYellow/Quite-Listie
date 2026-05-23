@@ -2,18 +2,18 @@
 //  ImportListPickerSheet.swift
 //  Listie-md
 //
-//  Picker sheet shown when a deeplink import has no matching list.
-//  Lets the user choose an existing list to import into.
+//  Inline list picker used as the first step of MarkdownListImportView when
+//  the target list isn't yet known (e.g. a deeplink with no list parameter).
+//  No sheet chrome — the parent supplies NavigationStack, toolbar, dismiss.
 //
 
 import SwiftUI
 
-struct ImportListPickerSheet: View {
-    let pending: DeeplinkCoordinator.PendingImport
+struct ImportListPicker: View {
     let lists: [UnifiedList]
-    let onSelect: (String) -> Void
-
-    @Environment(\.dismiss) var dismiss
+    /// Optional copy shown above the picker (e.g. "The link doesn't specify a list…").
+    let header: String?
+    let onSelect: (UnifiedList) -> Void
 
     // MARK: - Filtered & grouped lists
 
@@ -39,47 +39,32 @@ struct ImportListPickerSheet: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
+            if let header {
                 Section {
-                    Text("The link doesn't specify a list, or the original list wasn't found. Choose where to import the items.")
+                    Text(header)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+            }
 
-                // Private lists
-                if !privateLists.isEmpty {
-                    Section {
-                        ForEach(privateLists) { list in
-                            listButton(for: list)
-                        }
-                    } header: {
-                        Label("Private", systemImage: "lock.icloud.fill")
+            if !privateLists.isEmpty {
+                Section {
+                    ForEach(privateLists) { list in
+                        listButton(for: list)
                     }
-                }
-
-                // External lists grouped by folder
-                ForEach(externalGrouped, id: \.folder) { group in
-                    Section {
-                        ForEach(group.lists) { list in
-                            listButton(for: list)
-                        }
-                    } header: {
-                        Label(group.folder, systemImage: "folder")
-                    }
+                } header: {
+                    Label("Private", systemImage: "lock.icloud.fill")
                 }
             }
-            .navigationTitle("Import To...")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .symbolRenderingMode(.hierarchical)
+
+            ForEach(externalGrouped, id: \.folder) { group in
+                Section {
+                    ForEach(group.lists) { list in
+                        listButton(for: list)
                     }
-                    .help("Close")
+                } header: {
+                    Label(group.folder, systemImage: "folder")
                 }
             }
         }
@@ -90,9 +75,7 @@ struct ImportListPickerSheet: View {
     @ViewBuilder
     private func listButton(for list: UnifiedList) -> some View {
         Button {
-            let targetId = list.originalFileId ?? list.id
-            onSelect(targetId)
-            dismiss()
+            onSelect(list)
         } label: {
             Label(list.summary.name, systemImage: list.summary.icon ?? "checklist")
                 .foregroundStyle(.primary)

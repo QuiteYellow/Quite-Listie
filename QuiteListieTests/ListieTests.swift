@@ -637,6 +637,169 @@ final class ListModelTests: XCTestCase {
     }
 }
 
+// MARK: - Markdown Import Logic
+
+/// Tests for the pure-Swift logic extracted from MarkdownListImportView.
+/// Covers merge stats and per-row diff lines for both fresh-import and preset-reload
+/// scenarios. Snapshot/view-level testing is not in the project's test toolchain.
+final class MarkdownImportLogicTests: XCTestCase {
+
+    private func parsed(_ note: String, qty: Double = 1, label: String? = nil) -> ParsedListItem {
+        ParsedListItem(note: note, quantity: qty, checked: false, labelName: label, markdownNotes: nil)
+    }
+
+    private func existing(_ note: String, qty: Double = 1, checked: Bool = false,
+                          labelId: String? = nil, id: UUID = UUID()) -> ListItem {
+        ListItem(id: id, note: note, quantity: qty, checked: checked, labelId: labelId, modifiedAt: Date(), isDeleted: false)
+    }
+
+    private func label(_ id: String, _ name: String) -> ListLabel {
+        ListLabel(id: id, name: name, color: "#FF0000")
+    }
+
+    // MARK: - matchExisting
+
+    func testMatchByNameWhenNoExpected() {
+        let parsedItem = parsed("Apples")
+        let result = MarkdownImportLogic.matchExisting(
+            parsed: parsedItem,
+            in: [existing("apples"), existing("Bananas")],
+            expectedItems: []
+        )
+        XCTAssertEqual(result?.note.lowercased(), "apples")
+    }
+
+    func testMatchByUUIDSurvivesRename() {
+        // Preset captured "Apples", item has since been renamed to "Granny Smiths".
+        let stableId = UUID()
+        let parsedItem = parsed("Apples")  // markdown still says Apples (preset-generated)
+        let expectedSnapshot = [existing("Apples", id: stableId)]  // preset-time snapshot
+        let liveItems = [existing("Granny Smiths", id: stableId)]  // current name
+        let result = MarkdownImportLogic.matchExisting(
+            parsed: parsedItem,
+            in: liveItems,
+            expectedItems: expectedSnapshot
+        )
+        XCTAssertEqual(result?.id, stableId)
+        XCTAssertEqual(result?.note, "Granny Smiths")
+    }
+
+    // MARK: - mergeStats
+
+    func testCheckedItemMatchedCountsAsUpdatedNotNew() {
+        let stats = MarkdownImportLogic.mergeStats(
+            for: [parsed("Apples")],
+            existingItems: [existing("Apples", checked: true)],
+            existingLabels: [],
+            expectedItems: [],
+            createUnmatchedLabels: true
+        )
+        XCTAssertEqual(stats.updatedItems, 1)
+        XCTAssertEqual(stats.newItems, 0)
+    }
+
+    func testCreateUnmatchedLabelsOffGivesZeroNewLabels() {
+        let stats = MarkdownImportLogic.mergeStats(
+            for: [parsed("Apples", label: "Fruit"), parsed("Bread", label: "Bakery")],
+            existingItems: [],
+            existingLabels: [label("fruit", "Fruit")],  // only Fruit exists, Bakery is unmatched
+            expectedItems: [],
+            createUnmatchedLabels: false
+        )
+        XCTAssertEqual(stats.matchedLabels, 1)
+        XCTAssertEqual(stats.unmatchedLabels, 1)
+        XCTAssertEqual(stats.newLabels, 0)
+    }
+
+    func testCreateUnmatchedLabelsOnGivesNewLabels() {
+        let stats = MarkdownImportLogic.mergeStats(
+            for: [parsed("Apples", label: "Fruit"), parsed("Bread", label: "Bakery")],
+            existingItems: [],
+            existingLabels: [label("fruit", "Fruit")],
+            expectedItems: [],
+            createUnmatchedLabels: true
+        )
+        XCTAssertEqual(stats.newLabels, 1)
+    }
+
+    // MARK: - diffLines
+
+    func testReactivationDiffShownEvenWhenQuantityUnchanged() {
+        // Critical signal for preset reload: matched item is currently checked.
+        // Even if the quantity doesn't change, the user needs to know "this is
+        // being brought back to life."
+        let item = existing("Apples", qty: 3, checked: true)
+        let lines = MarkdownImportLogic.diffLines(
+            existing: item,
+            parsed: parsed("Apples", qty: 3),
+            existingLabels: [],
+            replaceQuantities: true
+        )
+        XCTAssertTrue(lines.contains { $0.kind == .reactivate })
+    }
+
+    func testQuantityNoOpHidden() {
+        // replaceQuantities=true; parsed qty equals existing qty → no diff line.
+        let item = existing("Apples", qty: 3)
+        let lines = MarkdownImportLogic.diffLines(
+            existing: item,
+            parsed: parsed("Apples", qty: 3),
+            existingLabels: [],
+            replaceQuantities: true
+        )
+        XCTAssertFalse(lines.contains { $0.kind == .quantity })
+    }
+
+    func testQuantityAddMode() {
+        // replaceQuantities=false, item not checked → quantity adds.
+        let item = existing("Apples", qty: 3)
+        let lines = MarkdownImportLogic.diffLines(
+            existing: item,
+            parsed: parsed("Apples", qty: 2),
+            existingLabels: [],
+            replaceQuantities: false
+        )
+        let qtyLine = lines.first { $0.kind == .quantity }
+        XCTAssertNotNil(qtyLine)
+        XCTAssertTrue(qtyLine?.text.contains("3") == true)
+        XCTAssertTrue(qtyLine?.text.contains("5") == true)
+    }
+
+    func testLabelChangeRendered() {
+        let lines = MarkdownImportLogic.diffLines(
+            existing: existing("Apples", labelId: "fruit"),
+            parsed: parsed("Apples", label: "Snacks"),
+            existingLabels: [label("fruit", "Fruit")],
+            replaceQuantities: true
+        )
+        let labelLine = lines.first { $0.kind == .label }
+        XCTAssertNotNil(labelLine)
+        XCTAssertTrue(labelLine?.text.contains("Fruit") == true)
+        XCTAssertTrue(labelLine?.text.contains("Snacks") == true)
+    }
+
+    func testNoLabelChangeWhenLabelsMatchCaseInsensitively() {
+        let lines = MarkdownImportLogic.diffLines(
+            existing: existing("Apples", labelId: "fruit"),
+            parsed: parsed("Apples", label: "fruit"),  // same name, different case
+            existingLabels: [label("fruit", "Fruit")],
+            replaceQuantities: true
+        )
+        XCTAssertFalse(lines.contains { $0.kind == .label })
+    }
+
+    func testFullyUnchangedItemHasNoDiffLines() {
+        // Active item with matching name, label, and quantity (in replace mode).
+        let lines = MarkdownImportLogic.diffLines(
+            existing: existing("Apples", qty: 3, labelId: "fruit"),
+            parsed: parsed("Apples", qty: 3, label: "Fruit"),
+            existingLabels: [label("fruit", "Fruit")],
+            replaceQuantities: true
+        )
+        XCTAssertTrue(lines.isEmpty)
+    }
+}
+
 // MARK: - Resilient Decoding: preservation + lossy array
 
 /// Tests that opening a `.listie` file written by a hypothetical newer version
