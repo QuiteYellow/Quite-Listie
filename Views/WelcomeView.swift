@@ -206,6 +206,12 @@ struct WelcomeView: View {
 
             // Reconcile reminders on cold launch (catches changes made on other devices while app was killed)
             await syncAndReconcileReminders()
+
+            // Re-snapshot reminder/location entries from the freshly synced cache.
+            // The first loadUnifiedCounts above ran against whatever cache existed
+            // pre-sync (possibly empty/stale for NC lists), so Today/Scheduled would
+            // otherwise stay blank until the user navigated into a list.
+            await welcomeViewModel.loadUnifiedCounts(for: unifiedProvider.allLists, provider: unifiedProvider)
         }
         .focusedSceneValue(\.newListSheet, $isPresentingNewList)
         .focusedSceneValue(\.fileImporter, $showFileImporter)
@@ -525,17 +531,31 @@ struct WelcomeView: View {
 
         // Collect all items and cancel stale notifications per-list
         var allReminderItems: [(item: ListItem, listName: String, listId: String)] = []
+        var liveListIds: Set<String> = []
 
         // Iterate every list — including read-only/transient-unavailable ones — and read
         // from cache. A NextCloud list with a stale session or a server hiccup must still
         // contribute its reminders to the schedule, otherwise repeat reminders silently die
         // after deep sleep. `syncAllExternalLists()` above triggered refreshes; here we just
         // harvest whatever cache has at this moment.
+        //
+        // Liveness is the gate for *cancellations*: only lists whose cache is verified
+        // live (`isCacheLive`) drive notification removal. A non-live cache may be lagging
+        // behind a reminder the user just set (disk write in flight, server hadn't been
+        // probed, pending upload queued), and reconcileCancellations would happily nuke
+        // the OS notification based on that stale snapshot. For non-live lists we still
+        // *harvest* items into the budget pass (so existing reminders count toward the
+        // schedule), we just don't let them mutate pending notifications.
         for list in unifiedProvider.allLists {
-            let items = await unifiedProvider.fetchItemsForDisplay(for: list)
-
-            // Cancel notifications for checked/deleted items in this list
-            ReminderManager.reconcileCancellations(items: items, listId: list.id, pendingIds: pendingIds)
+            guard let items = await unifiedProvider.fetchItemsForReconcile(for: list) else { continue }
+            let live = await unifiedProvider.isCacheLive(for: list)
+            if live {
+                liveListIds.insert(list.id)
+                // Only cancel notifications for items in a live cache. Otherwise a stale
+                // read with reminderDate=nil would kill the OS notification the user just
+                // scheduled.
+                ReminderManager.reconcileCancellations(items: items, listId: list.id, pendingIds: pendingIds)
+            }
 
             // Collect active items with reminders for the budget pass
             for item in items where !item.checked && !item.isDeleted && item.reminderDate != nil {
@@ -544,7 +564,11 @@ struct WelcomeView: View {
         }
 
         // Budget-aware pass: schedule the top 60 soonest reminders
-        await ReminderManager.reconcileWithBudget(allItems: allReminderItems, trigger: "foreground")
+        await ReminderManager.reconcileWithBudget(
+            allItems: allReminderItems,
+            liveListIds: liveListIds,
+            trigger: "foreground"
+        )
 
         // Schedule next background refresh
         BackgroundRefreshManager.scheduleNextRefresh()
@@ -753,6 +777,17 @@ private struct WelcomeNotificationObservers: ViewModifier {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .reminderCompleted)) { _ in
+                Task { await refreshCounts() }
+            }
+            // Background sync of any external/NC list eventually posts this once the
+            // freshest payload lands. Without it, the Today/Scheduled cards and the
+            // ReminderListView keep showing the pre-sync snapshot until the user
+            // navigates into a list (which separately triggers a count refresh).
+            // Debounced so a burst of N list-finishes coalesces into one O(N) pass.
+            .onReceive(
+                NotificationCenter.default.publisher(for: .externalListChanged)
+                    .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            ) { _ in
                 Task { await refreshCounts() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in

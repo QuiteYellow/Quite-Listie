@@ -136,24 +136,36 @@ enum BackgroundRefreshManager {
         let listsToScan = await selectListsToScan(from: allLists)
         AppLogger.background.debug("Scanning \(listsToScan.count) of \(allLists.count) lists")
 
-        // Collect all reminder items across selected lists
+        // Collect all reminder items across selected lists. Track which lists are "live"
+        // — verified against source of truth and free of pending local mutations — so
+        // `reconcileWithBudget` only cancels pending notifications it has trustworthy
+        // evidence for. Non-live and cache-miss lists still *contribute* their cached
+        // reminders to the budget pass but can't drive cancellations.
         var allReminderItems: [(item: ListItem, listName: String, listId: String)] = []
+        var liveListIds: Set<String> = []
 
         for list in listsToScan {
             // Cache-first: a stale URLSession or transient unavailable state must NOT cause
             // repeating reminders to fall off the schedule in background reconciliation.
-            // `fetchItemsForDisplay` never throws and returns whatever's locally available.
-            let items = await provider.fetchItemsForDisplay(for: list)
+            // `fetchItemsForReconcile` returns nil on cache miss vs [] on confirmed-empty.
+            guard let items = await provider.fetchItemsForReconcile(for: list) else { continue }
+            if await provider.isCacheLive(for: list) {
+                liveListIds.insert(list.id)
+            }
             let activeWithReminders = items.filter { !$0.checked && !$0.isDeleted && $0.reminderDate != nil }
             for item in activeWithReminders {
                 allReminderItems.append((item: item, listName: list.summary.name, listId: list.id))
             }
         }
 
-        AppLogger.background.info("Scanned \(listsToScan.count) lists, found \(allReminderItems.count) reminder items")
+        AppLogger.background.info("Scanned \(listsToScan.count) lists, found \(allReminderItems.count) reminder items (\(liveListIds.count) live)")
 
         // Reconcile with notification budget
-        await ReminderManager.reconcileWithBudget(allItems: allReminderItems, trigger: "background")
+        await ReminderManager.reconcileWithBudget(
+            allItems: allReminderItems,
+            liveListIds: liveListIds,
+            trigger: "background"
+        )
     }
 
     // MARK: - List Selection

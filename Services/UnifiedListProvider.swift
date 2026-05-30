@@ -827,6 +827,37 @@ class UnifiedListProvider {
         return await openDocumentForDisplay(for: list)?.items ?? []
     }
 
+    /// Like `fetchItemsForDisplay` but distinguishes "cache exists and is empty" from
+    /// "cache miss (couldn't read)". Returns `nil` on cache miss. Reminder reconciliation
+    /// uses this signal to avoid cancelling pending notifications for lists whose
+    /// state we don't actually know (see `ReminderManager.reconcileWithBudget`).
+    func fetchItemsForReconcile(for list: UnifiedList) async -> [ListItem]? {
+        if list.summary.id == ExampleData.welcomeListId { return ExampleData.welcomeItems }
+        return await openDocumentForDisplay(for: list)?.items
+    }
+
+    /// Whether the list's local cache is "live" — verified against the source of truth
+    /// and not lagging behind any pending local mutation.
+    ///
+    /// A list is live iff:
+    ///   - it isn't in `syncPendingListIDs` (the last server probe succeeded), AND
+    ///   - for Nextcloud lists, there's no pending upload waiting to drain.
+    ///
+    /// Reminder reconciliation uses this signal to decide which lists' cached state
+    /// is trustworthy enough to drive cancellation. A non-live cache may still be
+    /// missing a reminder the user just set (disk write in flight, server roundtrip
+    /// not yet completed, fresh process with empty memCache), so cancelling pending
+    /// notifications based on it can silently drop a reminder the OS has scheduled.
+    func isCacheLive(for list: UnifiedList) async -> Bool {
+        if syncPendingListIDs.contains(list.id) { return false }
+        if case .nextcloud(_, let remotePath) = list.source {
+            if await NextcloudManager.shared.hasPendingUpload(remotePath: remotePath) {
+                return false
+            }
+        }
+        return true
+    }
+
     /// Cache-first label read. Non-throwing companion to `fetchItemsForDisplay`.
     func fetchLabelsForDisplay(for list: UnifiedList) async -> [ListLabel] {
         if list.summary.id == ExampleData.welcomeListId { return ExampleData.welcomeLabels }
