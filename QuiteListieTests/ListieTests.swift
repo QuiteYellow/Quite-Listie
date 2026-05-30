@@ -435,7 +435,10 @@ final class ReminderManagerTests: XCTestCase {
         let next = ReminderManager.nextReminderDate(from: pastDate, rule: rule, mode: .afterComplete)
         XCTAssertNotNil(next)
 
-        // Date should be tomorrow (today + 1 day)
+        // Date should be tomorrow (today + 1 day), regardless of what time
+        // of day the test runs at. This used to silently skip a day when run
+        // after the target TOD because `calendar.date(bySettingHour:of:)`
+        // defaults to forward-search semantics.
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date())!
         XCTAssertTrue(calendar.isDate(next!, inSameDayAs: tomorrow))
 
@@ -444,6 +447,38 @@ final class ReminderManagerTests: XCTestCase {
         XCTAssertEqual(nextTime.hour, 9)
         XCTAssertEqual(nextTime.minute, 30)
         XCTAssertEqual(nextTime.second, 0)
+    }
+
+    /// Regression: when "now" is past the original TOD, the previous implementation
+    /// rolled baseDate to tomorrow-at-TOD via `bySettingHour`, then advanced by the
+    /// rule — landing two days out. Verifies the next reminder is exactly +1 day.
+    func testNextDateAfterCompleteDailyNoExtraDayWhenPastTOD() {
+        let calendar = Calendar.current
+        let now = Date()
+        // Build an original-TOD that is guaranteed to be in the past relative to now.
+        // Subtract 1 hour from now and snap to the start of that minute, so the TOD
+        // we feed in is always earlier-today than the moment the test runs.
+        let oneHourAgo = calendar.date(byAdding: .hour, value: -1, to: now)!
+        var origComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: oneHourAgo)
+        origComponents.second = 0
+        // Shift the original BACK by a couple of days so currentDate is clearly historical
+        origComponents.day = (origComponents.day ?? 1) - 2
+        let original = calendar.date(from: origComponents)!
+
+        let next = ReminderManager.nextReminderDate(from: original, rule: .daily, mode: .afterComplete)
+        XCTAssertNotNil(next)
+
+        // Must land on tomorrow (not the day after) at the original TOD
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
+        XCTAssertTrue(
+            calendar.isDate(next!, inSameDayAs: tomorrow),
+            "Expected next reminder on tomorrow's date, got \(next!)"
+        )
+
+        let nextTOD = calendar.dateComponents([.hour, .minute], from: next!)
+        let origTOD = calendar.dateComponents([.hour, .minute], from: original)
+        XCTAssertEqual(nextTOD.hour, origTOD.hour)
+        XCTAssertEqual(nextTOD.minute, origTOD.minute)
     }
 
     func testNextDateWeekdaysSkipsWeekend() {

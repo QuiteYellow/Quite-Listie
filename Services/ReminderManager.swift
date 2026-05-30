@@ -169,8 +169,20 @@ enum ReminderManager {
     /// 2. Sorts all valid reminder items by date (soonest first)
     /// 3. Schedules the top 60, cancels any beyond that
     /// 4. Logs a complete summary
+    ///
+    /// `liveListIds` lists every list whose cache is verified live this pass
+    /// (synced with source of truth, no pending local mutations — see
+    /// `UnifiedListProvider.isCacheLive(for:)`). Pending notifications whose
+    /// `listId` isn't in the set are LEFT ALONE: a non-live cache may be missing
+    /// a reminder the user just set (disk write in flight, fresh process with
+    /// empty memCache, server unreachable). Cancelling speculatively against
+    /// that stale snapshot was silently dropping NC reminders after deep sleep
+    /// and cold launches. Pass `nil` to fall back to the old behaviour (cancel
+    /// anything not in the budget window — only safe when the caller has
+    /// already guaranteed liveness another way).
     static func reconcileWithBudget(
         allItems: [(item: ListItem, listName: String, listId: String)],
+        liveListIds: Set<String>? = nil,
         trigger: String
     ) async {
         AppLogger.reminders.debug("[Reconcile] Starting budget reconciliation (trigger: \(trigger, privacy: .public))")
@@ -206,10 +218,30 @@ enum ReminderManager {
         let itemsToSchedule = Array(validItems.prefix(notificationBudget))
         let idsToSchedule = Set(itemsToSchedule.map { notificationId(for: $0.item) })
 
-        // 1. Cancel any reminder notifications NOT in the budget window
-        let idsToCancel = pendingReminderIds.subtracting(idsToSchedule)
+        // 1. Cancel any reminder notifications NOT in the budget window — but only
+        //    for lists whose cache is verified live. A pending notification whose
+        //    listId belongs to a non-live list (sync-pending, server unreachable,
+        //    pending upload, or true cache miss) is left intact; cancelling against
+        //    a possibly-stale snapshot is exactly what was dropping NC reminders
+        //    silently after deep sleep / cold launches.
+        let outOfBudget = pendingReminderIds.subtracting(idsToSchedule)
+        let idsToCancel: Set<String>
+        var protectedFromCancel = 0
+        if let live = liveListIds {
+            idsToCancel = outOfBudget.filter { id in
+                let listId = pendingById[id]?.content.userInfo["listId"] as? String
+                if let listId, live.contains(listId) { return true }
+                protectedFromCancel += 1
+                return false
+            }
+        } else {
+            idsToCancel = outOfBudget
+        }
         if !idsToCancel.isEmpty {
             center.removePendingNotificationRequests(withIdentifiers: Array(idsToCancel))
+        }
+        if protectedFromCancel > 0 {
+            AppLogger.reminders.info("[Reconcile] Protected \(protectedFromCancel, privacy: .public) pending notification(s) from cancellation — owning list(s) not live this pass")
         }
 
         // 2. Schedule items that are in the budget but not yet pending (and in the future),
@@ -260,12 +292,19 @@ enum ReminderManager {
         case .fixed:
             baseDate = currentDate ?? now
         case .afterComplete:
+            // Anchor to today's calendar date at the original time-of-day. We build
+            // this from DateComponents instead of `calendar.date(bySettingHour:...,of:)`
+            // because that API defaults to `.nextTime` + `.forward` — when `now` is
+            // already past the target hour today, it silently rolls to TOMORROW at
+            // that hour. The subsequent `advance(baseDate)` then added a second day,
+            // landing the next reminder ~48h out instead of the intended ~24h.
             if let original = currentDate {
+                var components = calendar.dateComponents([.year, .month, .day], from: now)
                 let time = calendar.dateComponents([.hour, .minute, .second], from: original)
-                baseDate = calendar.date(bySettingHour: time.hour ?? 0,
-                                         minute: time.minute ?? 0,
-                                         second: time.second ?? 0,
-                                         of: now) ?? now
+                components.hour = time.hour ?? 0
+                components.minute = time.minute ?? 0
+                components.second = time.second ?? 0
+                baseDate = calendar.date(from: components) ?? now
             } else {
                 baseDate = now
             }
