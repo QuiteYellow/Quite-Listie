@@ -242,18 +242,20 @@ class UnifiedListProvider {
     }
 
     /// Writes a document to the appropriate backend cache and triggers autosave.
-    private func cacheDocument(_ doc: ListDocument, for list: UnifiedList) async {
+    /// Pass `immediate: true` to skip the 500ms debounce — used by notification-action
+    /// flows where the app may be suspended before the debounce timer fires.
+    private func cacheDocument(_ doc: ListDocument, for list: UnifiedList, immediate: Bool = false) async {
         switch list.source {
         case .privateICloud(let listId):
             let url = await iCloudContainerManager.shared.fileURL(for: listId)
             await FileStore.shared.updateCache(doc, at: url)
-            triggerAutosave(for: list, document: doc)
+            triggerAutosave(for: list, document: doc, immediate: immediate)
         case .external(let url):
             await FileStore.shared.updateCache(doc, at: url)
-            triggerAutosave(for: list, document: doc)
+            triggerAutosave(for: list, document: doc, immediate: immediate)
         case .nextcloud(_, let remotePath):
             await NextcloudManager.shared.updateCache(doc, remotePath: remotePath)
-            triggerAutosave(for: list, document: doc)
+            triggerAutosave(for: list, document: doc, immediate: immediate)
         }
         await enqueueMutationIfEnabled(doc, for: list)
     }
@@ -1123,12 +1125,20 @@ class UnifiedListProvider {
         }
     }
 
-    func updateItem(_ item: ListItem, in list: UnifiedList) async throws {
+    func updateItem(_ item: ListItem, in list: UnifiedList, immediate: Bool = false) async throws {
         var document = try await openDocumentForMutation(for: list)
         if let index = document.items.firstIndex(where: { $0.id == item.id }) {
             document.items[index] = item
-            await cacheDocument(document, for: list)
+            await cacheDocument(document, for: list, immediate: immediate)
         }
+    }
+
+    /// Awaits the most recent autosave Task for this list, blocking until the save
+    /// (or queue-for-retry) completes. Notification-action flows call this after
+    /// `updateItem(..., immediate: true)` to ensure the upload is attempted — or at
+    /// minimum landed in `pendingUploads` — before iOS suspends the process.
+    func awaitPendingSave(for list: UnifiedList) async {
+        await autosaveTasks[list.id]?.value
     }
 
     func deleteItem(_ item: ListItem, from list: UnifiedList) async throws {
@@ -1332,12 +1342,14 @@ class UnifiedListProvider {
 
     // MARK: - Autosave
 
-    private func triggerAutosave(for list: UnifiedList, document: ListDocument) {
+    private func triggerAutosave(for list: UnifiedList, document: ListDocument, immediate: Bool = false) {
         autosaveTasks[list.id]?.cancel()
 
         autosaveTasks[list.id] = Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard !Task.isCancelled else { return }
+            if !immediate {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+            }
             await MainActor.run { saveStatus[list.id] = .saving }
 
             do {

@@ -427,8 +427,14 @@ enum ReminderManager {
         // Persist via cache-first write. updateItem now uses openDocumentForMutation
         // which reads from cache; the downstream NextcloudManager.saveFile / FileStore
         // already queue offline writes for retry on network return.
+        //
+        // `immediate: true` skips the 500ms autosave debounce, and `awaitPendingSave`
+        // blocks until the save (or queue-for-retry on `pendingUploads`) lands. Without
+        // these, iOS could suspend the app between cache write and upload after a
+        // deep-sleep wake — leaving NC unaware of the completion until next foreground.
         do {
-            try await provider.updateItem(item, in: unifiedList)
+            try await provider.updateItem(item, in: unifiedList, immediate: true)
+            await provider.awaitPendingSave(for: unifiedList)
         } catch {
             AppLogger.reminders.error("[Notification] Failed to persist item update: \(error, privacy: .public)")
             // The next notification is already scheduled — the user won't miss the next
