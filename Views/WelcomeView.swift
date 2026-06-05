@@ -16,7 +16,7 @@ struct MapEditingContext: Identifiable {
 
 struct WelcomeView: View {
     @State private var welcomeViewModel = WelcomeViewModel()
-    @State private var unifiedProvider = UnifiedListProvider()
+    @State private var unifiedProvider = UnifiedListProvider.shared
     @State private var deeplinkCoordinator = DeeplinkCoordinator()
     
     @State private var selectedListID: String? = nil

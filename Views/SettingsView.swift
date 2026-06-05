@@ -19,6 +19,7 @@ struct SettingsView: View {
     @AppStorage("navShowAppleMaps") private var navShowAppleMaps: Bool = true
     @AppStorage("navShowGoogleMaps") private var navShowGoogleMaps: Bool = true
     @AppStorage("navShowTomTomGo") private var navShowTomTomGo: Bool = true
+    @AppStorage("defaultNavigationApp") private var defaultNavigationApp: String = "ask"
     @AppStorage("mapStyleMuted") private var mapStyleMuted: Bool = true
     @AppStorage("hideTodayCard") private var hideTodayCard: Bool = false
     @AppStorage("hideScheduledCard") private var hideScheduledCard: Bool = false
@@ -219,11 +220,26 @@ struct SettingsView: View {
                         #if !targetEnvironment(macCatalyst)
                         Toggle("TomTom Go", isOn: $navShowTomTomGo)
                         #endif
+                        Picker("CarPlay default", selection: $defaultNavigationApp) {
+                            Text("Ask each time").tag("ask")
+                            Text("Apple Maps").tag("appleMaps")
+                            Text("Google Maps").tag("googleMaps")
+                            #if !targetEnvironment(macCatalyst)
+                            Text("TomTom Go").tag("tomtom")
+                            #endif
+                        }
                     }
+                    #if !targetEnvironment(macCatalyst)
+                    NavigationLink {
+                        CarPlayPinsView()
+                    } label: {
+                        Label("CarPlay Pins", systemImage: "pin.fill")
+                    }
+                    #endif
                 } header: {
                     Label("Navigation", systemImage: "map")
                 } footer: {
-                    Text("Muted style de-emphasises the map background so your pins stand out. Choose which navigation apps appear on items with a pinned location.")
+                    Text("Muted style de-emphasises the map background so your pins stand out. Choose which navigation apps appear on items with a pinned location. The CarPlay default skips the in-car picker when set to a specific app (and that app is enabled above). CarPlay Pins manages which places and labels appear at the top of the in-car interface.")
                 }
 
                 Section {

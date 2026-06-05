@@ -122,24 +122,7 @@ class WelcomeViewModel {
             }
 
             // Collect all non-deleted items with pinned locations
-            for item in items where item.location != nil && !item.isDeleted {
-                var labelName: String? = nil
-                var labelColor: String? = nil
-                var labelSymbol: String? = nil
-                if let labelId = item.labelId,
-                   let label = labels.first(where: { $0.id == labelId }) {
-                    labelName = label.name
-                    labelColor = label.color
-                    labelSymbol = label.symbol
-                }
-                locEntries.append(LocationEntry(
-                    item: item,
-                    list: list,
-                    labelName: labelName,
-                    labelColor: labelColor,
-                    labelSymbol: labelSymbol
-                ))
-            }
+            locEntries.append(contentsOf: WelcomeViewModel.locationEntries(from: items, labels: labels, list: list))
 
             // Accumulate labels (dedup by ID — first definition wins)
             for label in labels where labelsDict[label.id] == nil {
@@ -153,6 +136,34 @@ class WelcomeViewModel {
             locationEntries = locEntries
             allLocationLabels = Array(labelsDict.values)
             hasLoadedCounts = true
+        }
+    }
+
+    /// Pure helper — turns already-fetched items + labels for one list into LocationEntry rows.
+    /// Used by both `loadUnifiedCounts` and the CarPlay scene's location aggregator.
+    static func locationEntries(
+        from items: [ListItem],
+        labels: [ListLabel],
+        list: UnifiedList
+    ) -> [LocationEntry] {
+        items.compactMap { item -> LocationEntry? in
+            guard item.location != nil, !item.isDeleted else { return nil }
+            var labelName: String?
+            var labelColor: String?
+            var labelSymbol: String?
+            if let labelId = item.labelId,
+               let label = labels.first(where: { $0.id == labelId }) {
+                labelName = label.name
+                labelColor = label.color
+                labelSymbol = label.symbol
+            }
+            return LocationEntry(
+                item: item,
+                list: list,
+                labelName: labelName,
+                labelColor: labelColor,
+                labelSymbol: labelSymbol
+            )
         }
     }
 }
