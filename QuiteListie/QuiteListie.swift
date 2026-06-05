@@ -84,8 +84,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         if response.actionIdentifier == ReminderManager.completeActionIdentifier,
            let listId, let itemId {
-            // "Complete" action — mark the item done in the background
+            // "Complete" action — mark the item done in the background.
+            //
+            // Claim a background task so iOS extends our execution window past the
+            // notification-action handler's default budget. Without this, a deep-sleep
+            // wake could be suspended mid-upload, leaving Nextcloud reminder lists
+            // stale until the next foreground sync.
             let scheduledDate = userInfo["scheduledDate"] as? TimeInterval
+            let app = UIApplication.shared
+            var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+            bgTaskId = app.beginBackgroundTask(withName: "reminder-complete") {
+                if bgTaskId != .invalid {
+                    app.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
             Task {
                 await ReminderManager.completeItemFromNotification(itemId: itemId, listId: listId, scheduledDate: scheduledDate)
                 // Post so UI refreshes if visible
@@ -94,6 +107,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     object: nil,
                     userInfo: ["listId": listId, "itemId": itemId]
                 )
+                completionHandler()
+                if bgTaskId != .invalid {
+                    app.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
             }
         } else if let listId, let itemId {
             // Default tap — navigate to the list
@@ -102,8 +120,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 object: nil,
                 userInfo: ["listId": listId, "itemId": itemId]
             )
+            completionHandler()
+        } else {
+            completionHandler()
         }
-        completionHandler()
     }
 
     /// Show notifications even when the app is in the foreground

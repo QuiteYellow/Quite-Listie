@@ -222,7 +222,7 @@ struct ItemFormView: View {
                 DatePicker(
                     "Date & Time",
                     selection: $reminderDate,
-                    in: Date()...,
+                    in: min(reminderDate, Date())...,
                     displayedComponents: [.date, .hourAndMinute]
                 )
 
