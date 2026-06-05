@@ -63,6 +63,17 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 - Long-press on the map to drop a new item at that coordinate
 - Open any pinned location in Apple Maps, Google Maps, or TomTom GO
 
+### CarPlay
+Drive-friendly access to items in your lists that have a pinned location, under Apple's Driving Task entitlement (`com.apple.developer.carplay-driving-task`).
+
+- **Map tab** — your pinned places (up to 12) shown as POIs on a system-rendered map, in the order you set on the phone
+- **List tab** — drill-down by label: tap a label to see its items, distance-sorted from your current location, then tap an item to choose a navigation app
+- **Pin management on the phone** — Settings → CarPlay Pins lets you choose, reorder, and remove pinned places and pinned labels with drag-to-reorder and swipe-to-delete; changes propagate to a live in-car session within a frame
+- **Navigation handoff** to Apple Maps, Google Maps, or TomTom GO via a modal action sheet; set a default app in Settings to skip the picker on every tap
+- Respects Apple's CarPlay driver-distraction rules: list refresh rate-limited to 10s, POI updates to 60s (when pins are unchanged), and per-section row caps so the most relevant items are always reachable
+
+> CarPlay text-input search is reserved for Apple's Navigation category, so the in-car UI is read-only — curate the pin set on the phone first and the driver picks from it.
+
 ### Smart Features
 - Recycle bin with 30-day auto-delete
 - Quantity tracking with increment/decrement
@@ -92,6 +103,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 
 ## Requirements
 - iOS 18+ / iPadOS 18+ / macOS 15+
+- CarPlay support requires iOS 26+ (head unit, in-dash factory, or aftermarket CarPlay receiver)
 
 ---
 

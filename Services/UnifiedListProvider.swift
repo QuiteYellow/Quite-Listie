@@ -110,6 +110,8 @@ struct UnifiedList: Identifiable, Hashable {
 @MainActor
 class UnifiedListProvider {
 
+    static let shared = UnifiedListProvider()
+
     var allLists: [UnifiedList] = []
     var saveStatus: [String: SaveStatus] = [:]
 
