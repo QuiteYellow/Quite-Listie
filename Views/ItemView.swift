@@ -17,7 +17,6 @@ struct ItemFormView: View {
     @Binding var selectedLabel: ListLabel?
     @Binding var checked: Bool
     @Binding var mdNotes: String
-    @Binding var showMarkdownEditor: Bool
     @Binding var reminderEnabled: Bool
     @Binding var reminderDate: Date
     @Binding var repeatRule: ReminderRepeatRule?
@@ -43,6 +42,13 @@ struct ItemFormView: View {
     @State private var pasteLocationFeedback: PasteLocationFeedback = .idle
     @State private var showRemoveLocationConfirm = false
     @State private var showLocationPicker = false
+    @State private var notesMode: NotesMode = .preview
+
+    private enum NotesMode: String, CaseIterable, Identifiable {
+        case edit = "Edit"
+        case preview = "Preview"
+        var id: Self { self }
+    }
 
     @AppStorage("navShowAppleMaps") private var navShowAppleMaps: Bool = true
     @AppStorage("navShowGoogleMaps") private var navShowGoogleMaps: Bool = true
@@ -74,9 +80,7 @@ struct ItemFormView: View {
                     formLeftContent
 
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Markdown Notes")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
+                        notesHeaderRow
                             .padding(.bottom, 8)
 
                         Divider()
@@ -102,33 +106,23 @@ struct ItemFormView: View {
     
     @ViewBuilder
     private var notesButtonRow: some View {
-        HStack(spacing: 10) {
-            if let itemID {
-                Button {
-                    UIPasteboard.general.string = "quitelistie://item?id=\(itemID.uuidString)"
-                    withAnimation(.easeInOut(duration: 0.15)) { linkCopied = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation(.easeInOut(duration: 0.3)) { linkCopied = false }
-                    }
-                } label: {
-                    Label(
-                        linkCopied ? "Copied!" : "Copy",
-                        systemImage: linkCopied ? "checkmark" : "link"
-                    )
-                }
-                .controlSize(.large)
-                .buttonStyle(.glass)
-                .tint(linkCopied ? .green : .primary)
-                .animation(.easeInOut(duration: 0.2), value: linkCopied)
-            }
-
+        if let itemID {
             Button {
-                showMarkdownEditor = true
+                UIPasteboard.general.string = "quitelistie://item?id=\(itemID.uuidString)"
+                withAnimation(.easeInOut(duration: 0.15)) { linkCopied = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation(.easeInOut(duration: 0.3)) { linkCopied = false }
+                }
             } label: {
-                Label("Edit Notes", systemImage: "square.and.pencil")
+                Label(
+                    linkCopied ? "Copied!" : "Copy",
+                    systemImage: linkCopied ? "checkmark" : "link"
+                )
             }
             .controlSize(.large)
             .buttonStyle(.glass)
+            .tint(linkCopied ? .green : .primary)
+            .animation(.easeInOut(duration: 0.2), value: linkCopied)
         }
     }
 
@@ -143,13 +137,40 @@ struct ItemFormView: View {
     
     private var formRight: some View {
         ZStack(alignment: .bottomTrailing) {
-            formRightContent
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 0) {
+                notesHeaderRow
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
+
+                Divider()
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+
+                formRightContent
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity)
+            }
 
             notesButtonRow
                 .padding(20)
+        }
+    }
+
+    private var notesHeaderRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Markdown Notes")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Picker("Notes mode", selection: $notesMode) {
+                ForEach(NotesMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 180)
         }
     }
     
@@ -423,21 +444,28 @@ struct ItemFormView: View {
         }
     }
 
+    @ViewBuilder
     private var formRightContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if mdNotes.isEmpty {
-                    Text("Click \"Edit Notes\" to add a note, use Markdown for Sublists, links, images and more. Sublists can be directly toggled here!")
-                        .foregroundStyle(.placeholder)
-                } else {
-                    CheckableMarkdownView(text: $mdNotes)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        switch notesMode {
+        case .preview:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if mdNotes.isEmpty {
+                        Text("Switch to Edit to add a note. Use Markdown for sublists, links, images and more — sublists can be toggled directly here.")
+                            .foregroundStyle(.placeholder)
+                    } else {
+                        CheckableMarkdownView(text: $mdNotes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.clear)
+            .frame(maxWidth: .infinity)
+        case .edit:
+            InlineMarkdownEditor(text: $mdNotes)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color.clear)
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -547,7 +575,6 @@ struct AddItemView: View {
     @State private var quantity: Int = 1
     @State private var showError = false
     @State private var mdNotes = ""
-    @State private var showMarkdownEditor = false
     @State private var reminderEnabled = false
     @State private var reminderDate = Date().addingTimeInterval(3600) // Default: 1 hour from now
     @State private var repeatRule: ReminderRepeatRule? = nil
@@ -569,7 +596,6 @@ struct AddItemView: View {
                 selectedLabel: $selectedLabel,
                 checked: $checked,
                 mdNotes: $mdNotes,
-                showMarkdownEditor: $showMarkdownEditor,
                 reminderEnabled: $reminderEnabled,
                 reminderDate: $reminderDate,
                 repeatRule: $repeatRule,
@@ -622,11 +648,6 @@ struct AddItemView: View {
             } message: {
                 Text("Please check your internet connection or try again.")
             }
-            .sheet(isPresented: $showMarkdownEditor) {
-                MarkdownEditorView(text: $mdNotes)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.hidden)
-            }
             .task {
                 do {
                     let labels = try await viewModel.provider.fetchLabels(for: viewModel.list)
@@ -670,7 +691,6 @@ struct EditItemView: View {
     @State private var isLoading = true
     @State private var showDeleteConfirmation = false
     @State private var showError = false
-    @State private var showMarkdownEditor = false
     @State private var reminderEnabled = false
     @State private var reminderDate = Date().addingTimeInterval(3600)
     @State private var repeatRule: ReminderRepeatRule? = nil
@@ -686,7 +706,6 @@ struct EditItemView: View {
                 selectedLabel: $selectedLabel,
                 checked: $checked,
                 mdNotes: $mdNotes,
-                showMarkdownEditor: $showMarkdownEditor,
                 reminderEnabled: $reminderEnabled,
                 reminderDate: $reminderDate,
                 repeatRule: $repeatRule,
@@ -768,11 +787,6 @@ struct EditItemView: View {
             }
             .alert("Failed to Save Changes", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
-            }
-            .sheet(isPresented: $showMarkdownEditor) {
-                MarkdownEditorView(text: $mdNotes)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.hidden)
             }
             .task {
                 do {
@@ -919,14 +933,16 @@ struct ItemPreviewView: View {
     }
 }
 
-// MARK: - Markdown Editor View (Extracted for reuse)
+// MARK: - Inline Markdown Editor (snippet toolbar + TextEditor, no chrome)
 
-struct MarkdownEditorView: View {
+/// Reusable in-place markdown editor: snippet toolbar row above a monospaced
+/// `TextEditor`. Owns its own `AttributedString` + selection so the snippet
+/// engine can read the real cursor position; mirrors the parent `text` binding.
+struct InlineMarkdownEditor: View {
     @Binding var text: String
-    @Environment(\.dismiss) var dismiss
-    @FocusState private var editorFocused: Bool
+    var minHeight: CGFloat = 200
 
-    // AttributedString + selection state — gives us real cursor position.
+    @FocusState private var editorFocused: Bool
     @State private var attributedText = AttributedString("")
     @State private var selection = AttributedTextSelection()
 
@@ -1003,75 +1019,21 @@ struct MarkdownEditorView: View {
     // MARK: body
 
     var body: some View {
-        NavigationStack {
-#if targetEnvironment(macCatalyst)
-            // TextEditor fills the full space; glass snippet bar floats over it at the top.
+        VStack(alignment: .leading, spacing: 8) {
+            snippetToolbar
+
             TextEditor(text: $attributedText, selection: $selection)
                 .font(.system(.body, design: .monospaced))
+                .scrollContentBackground(.hidden)
                 .focused($editorFocused)
+                .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
                 .onChange(of: attributedText) { _, newVal in
                     let str = String(newVal.characters)
                     if str != text { text = str }
                     // Strip any rich-text formatting that came in via paste.
                     let plain = AttributedString(str)
-                    if newVal != plain {
-                        attributedText = plain
-                    }
+                    if newVal != plain { attributedText = plain }
                 }
-                .navigationTitle("Notes")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(role: .close) { dismiss() }
-                    }
-                }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    macSnippetBar
-                }
-#else
-            TextEditor(text: $attributedText, selection: $selection)
-                .font(.system(.body, design: .monospaced))
-                .padding(0)
-                .focused($editorFocused)
-                .onChange(of: attributedText) { _, newVal in
-                    let str = String(newVal.characters)
-                    if str != text { text = str }
-                    // Strip any rich-text formatting that came in via paste.
-                    let plain = AttributedString(str)
-                    if newVal != plain {
-                        attributedText = plain
-                    }
-                }
-                .navigationTitle("Notes")
-                .navigationBarTitleDisplayMode(.inline)
-                // .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                // .toolbarBackground(.visible, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(role: .close) { dismiss() }
-                    }
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Button { applySnippet(.taskItem) } label: { Label("Task", systemImage: MarkdownSnippet.taskItem.systemImage) }
-                        Button { applySnippet(.unorderedList) } label: { Label("List", systemImage: MarkdownSnippet.unorderedList.systemImage) }
-                        Menu {
-                            Button("H1 — Heading 1") { applySnippet(.heading(1)) }
-                            Button("H2 — Heading 2") { applySnippet(.heading(2)) }
-                            Button("H3 — Heading 3") { applySnippet(.heading(3)) }
-                        } label: { Label("Heading", systemImage: MarkdownSnippet.heading(1).systemImage) }
-                        Button { applySnippet(.link) } label: { Label("Link", systemImage: MarkdownSnippet.link.systemImage) }
-                        Spacer()
-                        Menu {
-                            Button { applySnippet(.bold) } label: { Label(MarkdownSnippet.bold.label, systemImage: MarkdownSnippet.bold.systemImage) }
-                            Button { applySnippet(.italic) } label: { Label(MarkdownSnippet.italic.label, systemImage: MarkdownSnippet.italic.systemImage) }
-                            Button { applySnippet(.code) } label: { Label(MarkdownSnippet.code.label, systemImage: MarkdownSnippet.code.systemImage) }
-                            Button { applySnippet(.codeBlock) } label: { Label(MarkdownSnippet.codeBlock.label, systemImage: MarkdownSnippet.codeBlock.systemImage) }
-                            Button { applySnippet(.blockquote) } label: { Label(MarkdownSnippet.blockquote.label, systemImage: MarkdownSnippet.blockquote.systemImage) }
-                            Button { applySnippet(.image) } label: { Label(MarkdownSnippet.image.label, systemImage: MarkdownSnippet.image.systemImage) }
-                            Button { applySnippet(.orderedList) } label: { Label(MarkdownSnippet.orderedList.label, systemImage: MarkdownSnippet.orderedList.systemImage) }
-                        } label: { Label("More", systemImage: "ellipsis") }
-                    }
-                }
-#endif
         }
         .onAppear {
             attributedText = AttributedString(text)
@@ -1085,75 +1047,70 @@ struct MarkdownEditorView: View {
         }
     }
 
-    // MARK: Mac Catalyst inline snippet bar (no keyboard on Mac)
+    // MARK: Inline snippet toolbar
 
-#if targetEnvironment(macCatalyst)
-    private var macSnippetBar: some View {
-        HStack(spacing: 12) {
-            Spacer()
-            // Primary group — single capsule glass surface behind all 4 buttons
+    private var snippetToolbar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                Button { applySnippet(.taskItem) } label: {
-                    Image(systemName: MarkdownSnippet.taskItem.systemImage)
-                        .imageScale(.medium)
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
-                .help("Task")
+                snippetButton(.taskItem, help: "Task")
+                snippetButton(.unorderedList, help: "List")
+                headingMenu
+                snippetButton(.link, help: "Link")
 
-                Button { applySnippet(.unorderedList) } label: {
-                    Image(systemName: MarkdownSnippet.unorderedList.systemImage)
-                        .imageScale(.medium)
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
-                .help("List")
+                Divider()
+                    .frame(height: 20)
+                    .padding(.horizontal, 6)
 
-                Menu {
-                    Button("H1") { applySnippet(.heading(1)) }
-                    Button("H2") { applySnippet(.heading(2)) }
-                    Button("H3") { applySnippet(.heading(3)) }
-                } label: {
-                    Image(systemName: MarkdownSnippet.heading(1).systemImage)
-                        .imageScale(.medium)
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
-                .help("Heading")
-
-                Button { applySnippet(.link) } label: {
-                    Image(systemName: MarkdownSnippet.link.systemImage)
-                        .imageScale(.medium)
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
-                .help("Link")
+                snippetButton(.bold, help: "Bold")
+                snippetButton(.italic, help: "Italic")
+                snippetButton(.code, help: "Inline code")
+                overflowMenu
             }
-            .glassEffect(.regular.interactive(), in: .capsule)
-
-            // Overflow — separate floating circle
-            Menu {
-                Button { applySnippet(.bold) } label: { Label(MarkdownSnippet.bold.label, systemImage: MarkdownSnippet.bold.systemImage) }
-                Button { applySnippet(.italic) } label: { Label(MarkdownSnippet.italic.label, systemImage: MarkdownSnippet.italic.systemImage) }
-                Button { applySnippet(.code) } label: { Label(MarkdownSnippet.code.label, systemImage: MarkdownSnippet.code.systemImage) }
-                Button { applySnippet(.codeBlock) } label: { Label(MarkdownSnippet.codeBlock.label, systemImage: MarkdownSnippet.codeBlock.systemImage) }
-                Button { applySnippet(.blockquote) } label: { Label(MarkdownSnippet.blockquote.label, systemImage: MarkdownSnippet.blockquote.systemImage) }
-                Button { applySnippet(.image) } label: { Label(MarkdownSnippet.image.label, systemImage: MarkdownSnippet.image.systemImage) }
-                Button { applySnippet(.orderedList) } label: { Label(MarkdownSnippet.orderedList.label, systemImage: MarkdownSnippet.orderedList.systemImage) }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .imageScale(.medium)
-                    .frame(width: 40, height: 40)
-            }
-            .glassEffect(.regular.interactive(), in: .circle)
-            .help("More")
-
-            Spacer()
+            .padding(.horizontal, 4)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
-#endif
+
+    private func snippetButton(_ snippet: MarkdownSnippet, help: String) -> some View {
+        Button { applySnippet(snippet) } label: {
+            Image(systemName: snippet.systemImage)
+                .imageScale(.medium)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private var headingMenu: some View {
+        Menu {
+            Button("H1 — Heading 1") { applySnippet(.heading(1)) }
+            Button("H2 — Heading 2") { applySnippet(.heading(2)) }
+            Button("H3 — Heading 3") { applySnippet(.heading(3)) }
+        } label: {
+            Image(systemName: MarkdownSnippet.heading(1).systemImage)
+                .imageScale(.medium)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .help("Heading")
+    }
+
+    private var overflowMenu: some View {
+        Menu {
+            Button { applySnippet(.codeBlock)  } label: { Label(MarkdownSnippet.codeBlock.label,  systemImage: MarkdownSnippet.codeBlock.systemImage) }
+            Button { applySnippet(.blockquote) } label: { Label(MarkdownSnippet.blockquote.label, systemImage: MarkdownSnippet.blockquote.systemImage) }
+            Button { applySnippet(.image)      } label: { Label(MarkdownSnippet.image.label,      systemImage: MarkdownSnippet.image.systemImage) }
+            Button { applySnippet(.orderedList)} label: { Label(MarkdownSnippet.orderedList.label,systemImage: MarkdownSnippet.orderedList.systemImage) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .imageScale(.medium)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .help("More")
+    }
 }
 
 // MARK: - Item Form Chip
@@ -1496,5 +1453,3 @@ enum MarkdownSnippet {
     }
 }
 
-// (CustomTextEditor, MarkdownTextView, and MarkdownSnippetToolbar removed —
-//  the editor now uses SwiftUI TextEditor with ToolbarItemGroup(placement: .keyboard))
