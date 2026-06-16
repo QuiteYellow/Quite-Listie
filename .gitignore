@@ -120,5 +120,8 @@ QuiteListie.icon/Assets/Asset 3.svg
 QuiteListie.icon/Assets/Asset 3.svg
 QuiteListie.icon/Assets/Asset 2.svg
 QuiteListie.icon/icon.json
-notes/
 local/
+
+# Local Claude config + private staging area (kept off all remotes)
+.claude/
+priviate_bits/

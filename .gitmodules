@@ -1,0 +1,6 @@
+[submodule "notes"]
+	path = notes
+	url = https://git.jackandkata.com/wire-keepers/Quite-Listie-Swift-notes
+[submodule "SharedIcons"]
+	path = SharedIcons
+	url = https://git.jackandkata.com/wire-keepers/Quite-Listie-icons

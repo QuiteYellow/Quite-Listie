@@ -34,7 +34,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		377036572F6495BE00811E99 /* QuiteListie.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = QuiteListie.icon; sourceTree = "<group>"; };
+		377036572F6495BE00811E99 /* QuiteListie.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = SharedIcons/apple/QuiteListie.icon; sourceTree = "<group>"; };
 		37F742762EF8531900C4EEF4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = QuiteListie/Info.plist; sourceTree = "<group>"; };
 		CB001A002F100000002F4B13 /* ListieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListieTests.swift; sourceTree = "<group>"; };
 		CB001A042F100000002F4B14 /* SyncResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncResilienceTests.swift; sourceTree = "<group>"; };
