@@ -4,6 +4,8 @@
 
 A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and Nextcloud sync.
 
+> Also available on Linux: **[Quite Listie for GNOME](https://github.com/QuiteYellow/Quite-Listie-Linux)** (GTK4 + libadwaita). Both apps share the `.listie` file format and Nextcloud sync, so lists move between them.
+
 <img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 45 07" src="https://github.com/user-attachments/assets/ff491cdb-ada5-4b6c-8e10-dae242c8f29f" />
 <img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 44 53" src="https://github.com/user-attachments/assets/a8a493e6-11a4-4133-9aad-eea1e9440135" />
 
