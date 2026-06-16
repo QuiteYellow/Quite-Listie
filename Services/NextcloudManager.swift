@@ -638,6 +638,15 @@ actor NextcloudManager {
 
     // MARK: - Helpers: download / upload
 
+    // NextcloudKit dropped `etag` from downloadAsync/uploadAsync return tuples in PR #225
+    // (commit 95ab43d). Extract it from the HTTP response headers the way the old SDK did:
+    // prefer OC-ETag, fall back to ETag, strip surrounding quotes.
+    private func etag(from http: HTTPURLResponse?) -> String? {
+        let raw = http?.value(forHTTPHeaderField: "OC-ETag")
+              ?? http?.value(forHTTPHeaderField: "Etag")
+        return raw?.replacingOccurrences(of: "\"", with: "")
+    }
+
     private func downloadFile(creds: NextcloudCredentials, remotePath: String, updateEtag: Bool = true) async throws -> ListDocument {
         let serverURL = creds.davURL(for: remotePath)
 
@@ -680,7 +689,7 @@ actor NextcloudManager {
         try? saveToDisk(doc, at: diskURL)
 
         // Update ETag (skipped for background refreshes — see backgroundSync)
-        if updateEtag, let etag = result.etag {
+        if updateEtag, let etag = etag(from: result.response?.response) {
             let ekey = etagKey(creds: creds, remotePath: remotePath)
             etagStore[ekey] = etag
             saveEtags()
@@ -712,7 +721,7 @@ actor NextcloudManager {
         }
 
         // Update ETag from upload response
-        if let etag = result.etag {
+        if let etag = etag(from: result.response?.response) {
             let ekey = etagKey(creds: creds, remotePath: remotePath)
             etagStore[ekey] = etag
             saveEtags()
