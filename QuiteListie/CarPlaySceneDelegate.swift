@@ -54,7 +54,13 @@ final class CarPlaySceneDelegate: UIResponder, @preconcurrency CPTemplateApplica
         interfaceController.setRootTemplate(tabs, animated: false, completion: nil)
 
         beginObserving()
-        Task { await refresh() }
+        Task {
+            // CarPlay can launch the app process on its own — the iOS scene's
+            // WelcomeView never runs, so no one has called loadAllLists() yet
+            // and allLists is empty. Kick the load from here.
+            await UnifiedListProvider.shared.loadAllLists()
+            await refresh()
+        }
     }
 
     private func makeListTemplate() -> CPListTemplate {
