@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		377036582F6495BE00811E99 /* QuiteListie.icon in Resources */ = {isa = PBXBuildFile; fileRef = 377036572F6495BE00811E99 /* QuiteListie.icon */; };
+		377036582F6495BE00811E99 /* SharedIcons/apple/QuiteListie.icon in Resources */ = {isa = PBXBuildFile; fileRef = 377036572F6495BE00811E99 /* SharedIcons/apple/QuiteListie.icon */; };
 		379DF6462F01885B00475782 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 379DF6452F01885B00475782 /* MarkdownView */; };
 		37DE9A5A2F5B1B460067D1AB /* NextcloudKit in Frameworks */ = {isa = PBXBuildFile; productRef = 37DE9A592F5B1B460067D1AB /* NextcloudKit */; };
 		CB001A012F100000002F4B13 /* ListieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A002F100000002F4B13 /* ListieTests.swift */; };
@@ -34,7 +34,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		377036572F6495BE00811E99 /* QuiteListie.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = SharedIcons/apple/QuiteListie.icon; sourceTree = "<group>"; };
+		377036572F6495BE00811E99 /* SharedIcons/apple/QuiteListie.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = SharedIcons/apple/QuiteListie.icon; sourceTree = "<group>"; };
 		37F742762EF8531900C4EEF4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = Info.plist; path = QuiteListie/Info.plist; sourceTree = "<group>"; };
 		CB001A002F100000002F4B13 /* ListieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListieTests.swift; sourceTree = "<group>"; };
 		CB001A042F100000002F4B14 /* SyncResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncResilienceTests.swift; sourceTree = "<group>"; };
@@ -148,7 +148,7 @@
 				CB3015E22DE9D43700CCFCC8 /* Frameworks */,
 				CB001A022F100000002F4B13 /* QuiteListieTests */,
 				CBEFA7AC2DE31318002F4B13 /* Products */,
-				377036572F6495BE00811E99 /* QuiteListie.icon */,
+				377036572F6495BE00811E99 /* SharedIcons/apple/QuiteListie.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -289,7 +289,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				377036582F6495BE00811E99 /* QuiteListie.icon in Resources */,
+				377036582F6495BE00811E99 /* SharedIcons/apple/QuiteListie.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -478,7 +478,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -544,7 +544,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -607,7 +607,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 97;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -629,7 +629,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 97;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -650,7 +650,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 97;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -673,7 +673,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 97;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -236,10 +236,15 @@ struct SettingsView: View {
                         Label("CarPlay Pins", systemImage: "pin.fill")
                     }
                     #endif
+                    NavigationLink {
+                        CustomTileSourceSettingsView()
+                    } label: {
+                        Label("Custom Map Layers", systemImage: "square.stack.3d.up")
+                    }
                 } header: {
                     Label("Navigation", systemImage: "map")
                 } footer: {
-                    Text("Muted style de-emphasises the map background so your pins stand out. Choose which navigation apps appear on items with a pinned location. The CarPlay default skips the in-car picker when set to a specific app (and that app is enabled above). CarPlay Pins manages which places and labels appear at the top of the in-car interface.")
+                    Text("Muted style de-emphasises the map background so your pins stand out. Choose which navigation apps appear on items with a pinned location. The CarPlay default skips the in-car picker when set to a specific app (and that app is enabled above). CarPlay Pins manages which places and labels appear at the top of the in-car interface. Custom Map Layers lets you scan a British-National-Grid (EPSG:27700) WMTS endpoint and add the layers it offers as selectable overlays on the Locations map.")
                 }
 
                 Section {
