@@ -217,13 +217,15 @@ final class SaveStatusClassificationTests: XCTestCase {
 // MARK: - Layer 1: Keychain retry
 
 final class NextcloudCredentialsRetryTests: XCTestCase {
-    /// Verifies the retry helper at least returns when keychain is empty (default state
-    /// in unit-test bundles, which don't have provisioned credentials). The bounded
-    /// timing behaviour is exercised indirectly: this completes well within the
-    /// 50+100+200ms budget without hanging.
+    /// Verifies the retry helper returns nil (within its bounded budget) when the
+    /// entry is absent. Probes a test-namespaced keychain account: the test host
+    /// shares the developer's real keychain on Mac Catalyst, where the genuine
+    /// credentials entry may exist — the default account would return it.
     func testLoadWithRetryReturnsNilWhenAbsentWithinBudget() async {
         let start = Date()
-        let result = await NextcloudCredentials.loadWithRetry(attempts: 3, baseDelayMs: 10)
+        let result = await NextcloudCredentials.loadWithRetry(
+            attempts: 3, baseDelayMs: 10,
+            account: "com.listie.tests.nextcloud.absent")
         let elapsed = Date().timeIntervalSince(start)
         XCTAssertNil(result)
         XCTAssertLessThan(elapsed, 1.0, "Retry budget should be well under 1s")

@@ -18,10 +18,14 @@ import UserNotifications
 enum BackgroundRefreshManager {
 
     static let taskIdentifier = "com.quiteyellow.quitelistie.reminderRefresh"
+    static let offlineTilesTaskIdentifier = "com.quiteyellow.quitelistie.offlineTileRefresh"
 
     // MARK: - Registration
 
     /// Registers the background refresh task handler. Call once at app launch (in AppDelegate).
+    /// Both identifiers must be registered before `didFinishLaunching` returns
+    /// (and listed in `BGTaskSchedulerPermittedIdentifiers`), or iOS silently
+    /// never runs them.
     static func register() {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: taskIdentifier,
@@ -30,7 +34,56 @@ enum BackgroundRefreshManager {
             guard let refreshTask = task as? BGAppRefreshTask else { return }
             handleBackgroundRefresh(task: refreshTask)
         }
-        AppLogger.background.info("Registered background task: \(taskIdentifier)")
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: offlineTilesTaskIdentifier,
+            using: nil
+        ) { task in
+            guard let processingTask = task as? BGProcessingTask else { return }
+            handleOfflineTileRefresh(task: processingTask)
+        }
+        AppLogger.background.info("Registered background tasks: \(taskIdentifier), \(offlineTilesTaskIdentifier)")
+    }
+
+    // MARK: - Offline tile refresh (BGProcessingTask)
+
+    /// Ask for a processing slot roughly weekly when any auto-refresh pack
+    /// exists. The task itself only refreshes packs >30 days stale, so being
+    /// granted slots more often than monthly costs nothing; the launch-time
+    /// staleness check remains the reliable fallback (iOS scheduling is
+    /// advisory).
+    static func scheduleOfflineTileRefresh() {
+        let wantsRefresh = OfflineRegionStore.loadAll().contains { $0.autoRefresh }
+        guard wantsRefresh else { return }
+        let request = BGProcessingTaskRequest(identifier: offlineTilesTaskIdentifier)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 7 * 86_400)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            AppLogger.background.info("Scheduled offline tile refresh")
+        } catch {
+            AppLogger.background.error("Failed to schedule offline tile refresh: \(error)")
+        }
+    }
+
+    private static func handleOfflineTileRefresh(task: BGProcessingTask) {
+        let workTask = Task { @MainActor in
+            let summary = await OfflineRegionManager.shared.refreshStaleRegions()
+            AppLogger.background.info(
+                "Offline refresh: \(summary.regions) regions, \(summary.updated) updated, \(summary.unchanged) unchanged, \(summary.failed) failed")
+            scheduleOfflineTileRefresh()
+        }
+        task.expirationHandler = {
+            // Partial refresh is fine — validators already flushed per region;
+            // whatever is still stale gets the next slot or the launch check.
+            workTask.cancel()
+            scheduleOfflineTileRefresh()
+            AppLogger.background.warning("Offline tile refresh expired before completion")
+        }
+        Task {
+            _ = await workTask.value
+            task.setTaskCompleted(success: true)
+        }
     }
 
     // MARK: - Scheduling

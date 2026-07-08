@@ -59,10 +59,13 @@ extension NextcloudCredentials {
 
     // MARK: Load
 
-    static func load() -> NextcloudCredentials? {
+    /// `account` is injectable so tests can probe a namespaced, guaranteed-absent
+    /// entry — the test host shares the developer's real keychain on Mac
+    /// Catalyst, where the genuine credentials may exist.
+    static func load(account: String = keychainKey) -> NextcloudCredentials? {
         let query: [CFString: Any] = [
             kSecClass:            kSecClassGenericPassword,
-            kSecAttrAccount:      keychainKey,
+            kSecAttrAccount:      account,
             kSecReturnData:       true,
             kSecMatchLimit:       kSecMatchLimitOne
         ]
@@ -79,9 +82,10 @@ extension NextcloudCredentials {
     /// iOS can transiently refuse keychain access right after deep sleep or app prewarming,
     /// even with `kSecAttrAccessibleAfterFirstUnlock`. Bounded retry with backoff gives the
     /// keychain a moment to become available before we conclude the user isn't connected.
-    static func loadWithRetry(attempts: Int = 3, baseDelayMs: UInt64 = 50) async -> NextcloudCredentials? {
+    static func loadWithRetry(attempts: Int = 3, baseDelayMs: UInt64 = 50,
+                              account: String = keychainKey) async -> NextcloudCredentials? {
         for attempt in 0..<attempts {
-            if let creds = load() { return creds }
+            if let creds = load(account: account) { return creds }
             if attempt < attempts - 1 {
                 let delay = baseDelayMs << UInt64(attempt)  // 50ms, 100ms, 200ms
                 try? await Task.sleep(nanoseconds: delay * 1_000_000)

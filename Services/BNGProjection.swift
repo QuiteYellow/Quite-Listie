@@ -28,6 +28,20 @@ enum BNGProjection {
     private static let ry = -0.2470 * .pi / (180.0 * 3600.0)
     private static let rz = -0.8421 * .pi / (180.0 * 3600.0)
 
+    /// Rough test that a WGS84 coordinate lies in Great Britain (England,
+    /// Scotland, Wales — what EPSG:27700 covers), excluding Northern Ireland,
+    /// which uses the Irish Grid. Bounding boxes only — good enough to decide
+    /// whether to show a "these layers won't cover you" hint, nothing more.
+    static func isLikelyInGreatBritain(lat: Double, lon: Double) -> Bool {
+        guard (49.8...61.0).contains(lat), (-8.65...1.80).contains(lon) else { return false }
+        // Carve out the island of Ireland — NI *and* the Republic both fall
+        // inside the outer box. Latitude tops out at 55.3 so the Mull of
+        // Kintyre (55.31) stays in; Donegal's far north slips through, which
+        // is fine for a hint.
+        let inIreland = (51.3...55.3).contains(lat) && (-8.65 ... -5.35).contains(lon)
+        return !inIreland
+    }
+
     /// WGS84 lat/lon (degrees) -> BNG easting/northing (metres).
     static func wgs84ToBNG(lat: Double, lon: Double) -> (e: Double, n: Double) {
         let phi = lat * .pi / 180.0

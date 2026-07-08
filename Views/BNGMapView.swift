@@ -179,6 +179,10 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     /// frame/transform out from under the gesture.
     private var isPinching = false
 
+    /// Accumulated translation of the in-progress scroll-to-zoom gesture, so each
+    /// event zooms by its own delta (trackpad / mouse wheel on Mac & iPad).
+    private var scrollZoomLastY: CGFloat = 0
+
     // Tile layers currently placed, and which of them hold their real image
     // (vs. a temporary upscaled-ancestor placeholder).
     private let tileHost = CALayer()
@@ -476,10 +480,17 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         let nMin = ens.map(\.n).min()! - tileMeters
         let nMax = ens.map(\.n).max()! + tileMeters
 
-        let txMin = Int(floor((eMin - matrix.originX) / tileMeters))
-        let txMax = Int(floor((eMax - matrix.originX) / tileMeters))
-        let tyMin = Int(floor((matrix.originY - nMax) / tileMeters))
-        let tyMax = Int(floor((matrix.originY - nMin) / tileMeters))
+        // Clamp the tile range to the grid: never below 0, and never past the
+        // advertised MatrixWidth/Height (requests outside coverage are
+        // guaranteed 404s).
+        let originX = matrix.originX(at: z)
+        let originY = matrix.originY(at: z)
+        let txMin = max(0, Int(floor((eMin - originX) / tileMeters)))
+        let tyMin = max(0, Int(floor((originY - nMax) / tileMeters)))
+        var txMax = Int(floor((eMax - originX) / tileMeters))
+        var tyMax = Int(floor((originY - nMin) / tileMeters))
+        if let cols = matrix.columns(at: z) { txMax = min(txMax, cols - 1) }
+        if let rows = matrix.rows(at: z) { tyMax = min(tyMax, rows - 1) }
 
         // Safety: never fan out to an unbounded grid (e.g. a degenerate resolution).
         if (txMax - txMin + 1) * (tyMax - tyMin + 1) > 800 { return }
@@ -487,12 +498,16 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
+        // An empty range (viewport entirely off-grid) still falls through so the
+        // stale-tile drop below clears what's no longer visible.
         var needed = Set<TileID>()
-        for ty in tyMin...tyMax {
-            for tx in txMin...txMax where tx >= 0 && ty >= 0 {
-                let id = TileID(z: z, x: tx, y: ty)
-                needed.insert(id)
-                placeTile(id)
+        if txMin <= txMax, tyMin <= tyMax {
+            for ty in tyMin...tyMax {
+                for tx in txMin...txMax {
+                    let id = TileID(z: z, x: tx, y: ty)
+                    needed.insert(id)
+                    placeTile(id)
+                }
             }
         }
         // Drop tiles no longer in view.
@@ -510,8 +525,8 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     private func tileFrame(_ id: TileID) -> CGRect {
         let resZ = matrix.resolutions[id.z]
         let tileMeters = Double(matrix.tileSize) * resZ
-        let eLeft = matrix.originX + Double(id.x) * tileMeters
-        let nTop = matrix.originY - Double(id.y) * tileMeters
+        let eLeft = matrix.originX(at: id.z) + Double(id.x) * tileMeters
+        let nTop = matrix.originY(at: id.z) - Double(id.y) * tileMeters
         let topLeft = screen(e: eLeft, n: nTop)
         let sizePt = CGFloat(tileMeters / resolution)
         // Expand a touch so fractional positions don't leave hairline seams.
@@ -578,18 +593,32 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
 
     /// The nearest cached coarser tile covering `id`, with the normalized
     /// sub-rectangle of it that corresponds to `id` (for CALayer.contentsRect).
+    ///
+    /// Computed geometrically (via each level's own origin and resolution)
+    /// rather than by bit-shifting indices: WMTS neither guarantees a shared
+    /// origin across levels nor exact power-of-two resolution steps, so index
+    /// arithmetic only holds for OS-style pyramids.
     private func bestAncestor(_ id: TileID) -> (image: UIImage, rect: CGRect)? {
-        var k = 1
-        while id.z - k >= matrix.minZoom {
-            let az = id.z - k
-            let ax = id.x >> k, ay = id.y >> k
-            if let img = store.cachedImage(z: az, x: ax, y: ay) {
-                let scale = Double(1 << k)
-                let fx = Double(id.x - (ax << k)) / scale
-                let fy = Double(id.y - (ay << k)) / scale
-                return (img, CGRect(x: fx, y: fy, width: 1 / scale, height: 1 / scale))
-            }
-            k += 1
+        let sizeC = Double(matrix.tileSize) * matrix.resolutions[id.z]
+        let eLeft = matrix.originX(at: id.z) + Double(id.x) * sizeC
+        let nTop = matrix.originY(at: id.z) - Double(id.y) * sizeC
+        var az = id.z - 1
+        while az >= matrix.minZoom {
+            defer { az -= 1 }
+            let sizeA = Double(matrix.tileSize) * matrix.resolutions[az]
+            // Ancestor tile containing this tile's top-left corner. The epsilon
+            // absorbs float error when the corner lies exactly on a tile edge.
+            let ax = Int(floor((eLeft - matrix.originX(at: az)) / sizeA + 1e-9))
+            let ay = Int(floor((matrix.originY(at: az) - nTop) / sizeA + 1e-9))
+            guard ax >= 0, ay >= 0,
+                  let img = store.cachedImage(z: az, x: ax, y: ay) else { continue }
+            let fx = (eLeft - (matrix.originX(at: az) + Double(ax) * sizeA)) / sizeA
+            let fy = ((matrix.originY(at: az) - Double(ay) * sizeA) - nTop) / sizeA
+            let f = sizeC / sizeA
+            // Usable only when the child sits fully inside this ancestor tile
+            // (always true for aligned pyramids; may fail on odd ladders).
+            guard fx >= -1e-6, fy >= -1e-6, fx + f <= 1 + 1e-6, fy + f <= 1 + 1e-6 else { continue }
+            return (img, CGRect(x: max(0, fx), y: max(0, fy), width: min(1, f), height: min(1, f)))
         }
         return nil
     }
@@ -877,6 +906,18 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
         twoFingerTap.numberOfTouchesRequired = 2
         addGestureRecognizer(twoFingerTap)
+
+        // Scroll-to-zoom for pointer devices (Mac trackpad / Catalyst, iPad with a
+        // trackpad or mouse). A pan recognizer restricted to *indirect* scroll
+        // events with `maximumNumberOfTouches = 0` only fires for scrolls — never
+        // for a finger drag — so it coexists with the 1-finger pan without either
+        // stealing the other's gesture. MapKit does this for us; the native slippy
+        // map has to opt in.
+        let scrollZoom = UIPanGestureRecognizer(target: self, action: #selector(handleScrollZoom(_:)))
+        scrollZoom.allowedScrollTypesMask = .all
+        scrollZoom.maximumNumberOfTouches = 0
+        scrollZoom.delegate = self
+        addGestureRecognizer(scrollZoom)
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer,
@@ -1023,6 +1064,40 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         animateZoom(to: clampRes(resolution * 2), anchor: g.location(in: self))
     }
 
+    /// Trackpad / mouse-wheel zoom. Each scroll event's vertical delta scales the
+    /// resolution about the pointer, keeping the world point under the cursor
+    /// fixed (like MapKit / Apple Maps: scroll up zooms in). Applied directly per
+    /// event rather than animated — the scroll stream is already smooth.
+    @objc private func handleScrollZoom(_ g: UIPanGestureRecognizer) {
+        switch g.state {
+        case .began:
+            stopDisplayLink()
+            exitFollow()
+            scrollZoomLastY = 0
+        case .changed:
+            let y = g.translation(in: self).y
+            let dy = y - scrollZoomLastY
+            scrollZoomLastY = y
+            guard dy != 0 else { return }
+            // Scroll up (dy < 0) → zoom in (smaller resolution). ~0.4%/point.
+            let target = clampRes(resolution * exp(Double(dy) * 0.006))
+            guard abs(target - resolution) > 1e-9 else { return }
+            // Hold the point under the pointer fixed: capture it un-rotated into
+            // north-up content space, change resolution, then solve for centre.
+            let anchorScreen = rotate(g.location(in: self), by: -rotation)
+            let anchorBNG = bng(atScreen: anchorScreen)
+            resolution = target
+            centerE = anchorBNG.e - Double(anchorScreen.x - midX) * resolution
+            centerN = anchorBNG.n + Double(anchorScreen.y - midY) * resolution
+            clampCenter()
+            updateTiles()
+        case .ended, .cancelled:
+            reportRegion()
+        default:
+            break
+        }
+    }
+
     // MARK: Animation driver
 
     private func startMomentum() {
@@ -1128,10 +1203,16 @@ private final class BNGTileStore: @unchecked Sendable {
     private var inflight: Set<String> = []
 
     init(source: CustomTileSource) {
-        // The key is already embedded in the ZXY URL, so no apiKey to inject.
+        // The key is already embedded in the tile URL, so no apiKey to inject.
+        // Matrix identifiers make {z} substitute the WMTS TileMatrix name for
+        // each level (falls back to the numeric zoom when absent — v3 sources).
         fetcher = TileFetcher(urlTemplate: source.zxyTemplate,
                               apiKey: "",
-                              cacheNamespace: "src-\(source.cacheNamespace)")
+                              cacheNamespace: "src-\(source.cacheNamespace)",
+                              legacyCacheNamespace: "src-\(source.legacyCacheNamespace)",
+                              zoomIdentifiers: source.validated?.matrixIdentifiers,
+                              healthSourceID: source.id.uuidString,
+                              healthSourceName: source.name)
     }
 
     func cachedImage(z: Int, x: Int, y: Int) -> UIImage? {

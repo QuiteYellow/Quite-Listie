@@ -19,6 +19,19 @@ struct WMTSCapabilities {
         let title: String?
         let tileMatrixSetLinks: [String] // matrix set identifiers this layer supports
         let formats: [String]
+        let styles: [Style]
+        let resourceURLs: [ResourceURL]
+    }
+    struct Style {
+        let identifier: String
+        let isDefault: Bool
+    }
+    /// A RESTful access template advertised by the server, e.g.
+    /// `https://…/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png`.
+    struct ResourceURL {
+        let resourceType: String  // "tile" is the one we use
+        let format: String?
+        let template: String
     }
     struct TileMatrix {
         let identifier: String            // usually the zoom level as a string
@@ -50,9 +63,129 @@ struct WMTSCapabilities {
         return nil
     }
 
-    /// True if the supportedCRS URN references EPSG:27700 (British National Grid).
-    static func isEPSG27700(_ urn: String) -> Bool {
-        urn.contains("27700")
+    /// True if the supportedCRS references EPSG:27700 (British National Grid).
+    static func isEPSG27700(_ crs: String) -> Bool {
+        epsgCode(crs) == 27700
+    }
+
+    /// Scan-failure message for a working WMTS server that yielded no usable
+    /// EPSG:27700 layer: says *why* (wrong projection) rather than the generic
+    /// "nothing found", naming the projections the server does offer.
+    var noBNGLayersMessage: String {
+        let others = Set(tileMatrixSets.compactMap { Self.epsgCode($0.supportedCRS) })
+            .subtracting([27700])
+        guard !others.isEmpty else {
+            return "No EPSG:27700 layers found at this endpoint."
+        }
+        let list = others.sorted().map { "EPSG:\($0)" }.joined(separator: ", ")
+        let layerNoun = layers.count == 1 ? "its layer uses" : "its \(layers.count) layers use"
+        return "This WMTS server works, but \(layerNoun) \(list) — nothing in EPSG:27700 (British National Grid)."
+    }
+
+    /// Extract the EPSG code from any of the forms servers use:
+    /// `urn:ogc:def:crs:EPSG::27700`, `urn:ogc:def:crs:EPSG:6.18:27700`,
+    /// `EPSG:27700`, `http://www.opengis.net/def/crs/EPSG/0/27700`.
+    static func epsgCode(_ crs: String) -> Int? {
+        guard crs.range(of: "EPSG", options: .caseInsensitive) != nil else { return nil }
+        let parts = crs.split(whereSeparator: { $0 == ":" || $0 == "/" })
+        guard let last = parts.last else { return nil }
+        return Int(last)
+    }
+}
+
+// MARK: - Tile URL construction
+
+extension WMTSCapabilities {
+    /// Build a `{z}/{x}/{y}` tile URL template for a layer, the standard way:
+    /// prefer the RESTful `ResourceURL` template the server advertises, fall back
+    /// to a KVP GetTile query. `{z}` is later replaced with the TileMatrix
+    /// *identifier* for that zoom (not necessarily the numeric level) — see
+    /// `TileFetcher.zoomIdentifiers`. The pasted endpoint's own query items
+    /// (API keys etc.) are carried over, minus the capabilities-request params.
+    static func tileTemplate(endpoint: String, layer: Layer, matrixSet: TileMatrixSet) -> String? {
+        guard let comps = URLComponents(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
+              comps.host != nil else { return nil }
+
+        let style = layer.styles.first(where: \.isDefault)?.identifier
+            ?? layer.styles.first?.identifier
+            ?? "default"
+
+        if let resource = layer.resourceURLs.first(where: { $0.resourceType == "tile" }) {
+            var template = resource.template
+            // WMTS placeholder names are defined capitalised, but be lenient.
+            for (from, to) in [("{Style}", style),
+                               ("{style}", style),
+                               ("{TileMatrixSet}", matrixSet.identifier),
+                               ("{tilematrixset}", matrixSet.identifier),
+                               ("{TileMatrix}", "{z}"), ("{tilematrix}", "{z}"),
+                               ("{TileRow}", "{y}"), ("{tilerow}", "{y}"),
+                               ("{TileCol}", "{x}"), ("{tilecol}", "{x}")] {
+                template = template.replacingOccurrences(of: from, with: to)
+            }
+            guard template.contains("{z}"), template.contains("{x}"), template.contains("{y}") else {
+                return nil
+            }
+            return mergingEndpointQuery(from: comps, into: template)
+        }
+
+        // KVP GetTile fallback. Built by string so the {z}/{y}/{x} placeholders
+        // stay literal — URLComponents would percent-encode the braces and the
+        // fetcher's substitution would never find them.
+        var base = comps
+        base.query = nil
+        base.fragment = nil
+        guard let baseURL = base.url?.absoluteString else { return nil }
+        var pairs = carriedQueryPairs(from: comps)
+        let format = layer.formats.first { $0.lowercased().contains("png") }
+            ?? layer.formats.first
+            ?? "image/png"
+        pairs += [("service", "WMTS"),
+                  ("version", "1.0.0"),
+                  ("request", "GetTile"),
+                  ("layer", encodeQueryValue(layer.identifier)),
+                  ("style", encodeQueryValue(style)),
+                  ("tilematrixset", encodeQueryValue(matrixSet.identifier)),
+                  ("format", encodeQueryValue(format)),
+                  ("TileMatrix", "{z}"),
+                  ("TileRow", "{y}"),
+                  ("TileCol", "{x}")]
+        return baseURL + "?" + pairs.map { "\($0.0)=\($0.1)" }.joined(separator: "&")
+    }
+
+    /// Append the endpoint's query items to a ResourceURL template, using `&`
+    /// when the template already has a query and skipping any parameter name the
+    /// template already carries (some servers bake the key into the template).
+    private static func mergingEndpointQuery(from endpoint: URLComponents, into template: String) -> String {
+        let pairs = carriedQueryPairs(from: endpoint)
+        guard !pairs.isEmpty else { return template }
+        var existing: Set<String> = []
+        if let q = template.firstIndex(of: "?") {
+            existing = Set(template[template.index(after: q)...]
+                .split(separator: "&")
+                .compactMap { $0.split(separator: "=").first.map { $0.lowercased() } })
+        }
+        var out = template
+        for (name, value) in pairs where !existing.contains(name.lowercased()) {
+            out += (out.contains("?") ? "&" : "?") + "\(name)=\(value)"
+        }
+        return out
+    }
+
+    /// The endpoint's query pairs worth carrying onto tile requests (auth keys
+    /// and the like), minus the capabilities-request parameters. Percent-encoded
+    /// form, preserving the original encoding.
+    private static func carriedQueryPairs(from comps: URLComponents) -> [(String, String)] {
+        (comps.percentEncodedQueryItems ?? []).compactMap { item in
+            let name = item.name.lowercased()
+            guard !["service", "request", "version"].contains(name) else { return nil }
+            return (item.name, item.value ?? "")
+        }
+    }
+
+    private static func encodeQueryValue(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 }
 
@@ -69,8 +202,8 @@ enum WMTSError: Error, LocalizedError {
         case .http(let s, let b):
             let snippet = b.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)
             return "Server returned HTTP \(s). \(snippet)"
-        case .xmlParse(let m):      return "Couldn't read the capabilities document (\(m))."
-        case .noCapabilities:       return "No layers advertised at this URL."
+        case .xmlParse(let m):      return "This doesn't look like a WMTS endpoint — couldn't read a capabilities document (\(m))."
+        case .noCapabilities:       return "The WMTS server responded but advertises no layers."
         case .network(let e):       return "Network error: \(e.localizedDescription)"
         }
     }
@@ -112,6 +245,12 @@ enum WMTSCapabilitiesLoader {
             let body = String(data: data.prefix(500), encoding: .utf8) ?? ""
             throw WMTSError.http(status: status, body: body)
         }
+        return try parse(data)
+    }
+
+    /// Parse a capabilities document. Split from `discover` so tests can feed
+    /// fixture XML without a network round-trip.
+    static func parse(_ data: Data) throws -> WMTSCapabilities {
         let parser = WMTSXMLDelegate()
         let xml = XMLParser(data: data)
         xml.delegate = parser
@@ -142,6 +281,10 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
     private var currentLayerTitle: String?
     private var currentLayerLinks: [String] = []
     private var currentLayerFormats: [String] = []
+    private var currentLayerStyles: [WMTSCapabilities.Style] = []
+    private var currentLayerResourceURLs: [WMTSCapabilities.ResourceURL] = []
+    private var currentStyleIsDefault = false
+    private var currentStyleIdent: String?
 
     private var tileMatrixSets: [WMTSCapabilities.TileMatrixSet] = []
     private var currentTMSIdent: String?
@@ -173,6 +316,21 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
             currentLayerTitle = nil
             currentLayerLinks = []
             currentLayerFormats = []
+            currentLayerStyles = []
+            currentLayerResourceURLs = []
+        case "Style":
+            currentStyleIsDefault = (attributeDict["isDefault"] as NSString?)?.boolValue ?? false
+            currentStyleIdent = nil
+        case "ResourceURL":
+            // Empty element carried entirely in attributes.
+            if elementPath.count >= 2, elementPath[elementPath.count - 2] == "Layer",
+               let type = attributeDict["resourceType"],
+               let template = attributeDict["template"] {
+                currentLayerResourceURLs.append(.init(
+                    resourceType: type,
+                    format: attributeDict["format"],
+                    template: template))
+            }
         case "TileMatrixSet" where isDirectChildOfContents():
             currentTMSIdent = nil
             currentTMSCRS = nil
@@ -208,6 +366,11 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
             case "Format":      currentLayerFormats.append(text)
             default: break
             }
+        }
+        // Style children (Layer/Style/Identifier)
+        if elementPath.count >= 2 && elementPath[elementPath.count - 2] == "Style",
+           local == "Identifier" {
+            currentStyleIdent = text
         }
         // TileMatrixSetLink → TileMatrixSet reference
         if elementPath.count >= 3 &&
@@ -264,12 +427,20 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
                 tileMatrixSets.append(.init(
                     identifier: id, supportedCRS: crs, matrices: currentTMSMatrices))
             }
+        case "Style":
+            if let id = currentStyleIdent, elementPath.count >= 2,
+               elementPath[elementPath.count - 2] == "Layer" {
+                currentLayerStyles.append(.init(identifier: id, isDefault: currentStyleIsDefault))
+            }
+            currentStyleIdent = nil
         case "Layer":
             if let id = currentLayerIdent {
                 layers.append(.init(
                     identifier: id, title: currentLayerTitle,
                     tileMatrixSetLinks: currentLayerLinks,
-                    formats: currentLayerFormats))
+                    formats: currentLayerFormats,
+                    styles: currentLayerStyles,
+                    resourceURLs: currentLayerResourceURLs))
             }
         default:
             break

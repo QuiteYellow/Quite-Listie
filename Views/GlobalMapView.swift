@@ -31,6 +31,10 @@ struct GlobalMapView: View {
     @State private var showPopover: Bool = false
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var customSources: [CustomTileSource] = []
+    @State private var standardSources: [StandardTileSource] = []
+    /// Layer-health banner text ("layer X rejected your API key"), or nil.
+    /// TileLayerHealth already rate-limits to once per source per session.
+    @State private var healthBannerMessage: String? = nil
     /// Live screen position of the pin a popover is anchored to (custom map, iPad/Mac).
     @State private var customPopoverAnchor: CGPoint? = nil
     /// Set when the popover target changes (cycle / re-select) so the *next*
@@ -47,7 +51,22 @@ struct GlobalMapView: View {
         customSources.first { $0.id.uuidString == selectedLayerRaw }
     }
 
-    private var isCustomLayerActive: Bool { selectedCustomSource != nil }
+    /// The standard-projection (web-mercator) raster layer selected, if any.
+    private var selectedRasterLayer: StandardTileSource? {
+        standardSources.first { $0.id.uuidString == selectedLayerRaw }
+    }
+
+    /// Any non-Apple layer is active (drives the toolbar icon fill).
+    private var isCustomLayerActive: Bool { selectedLayerRaw != GlobalMapLayer.appleMaps }
+
+    /// The selected layer's attribution caption, if it has one. Apple Maps
+    /// draws its own legal attribution, so only custom layers contribute.
+    private var selectedLayerAttribution: String? {
+        let text = selectedCustomSource?.attribution ?? selectedRasterLayer?.attribution
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
@@ -104,17 +123,46 @@ struct GlobalMapView: View {
                 emptyState
             } else if let src = selectedCustomSource {
                 customMapContent(source: src)
+            } else if let raster = selectedRasterLayer {
+                rasterMapContent(layer: raster)
             } else {
                 mapContent
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let attribution = selectedLayerAttribution {
+                Text(attribution)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .top) {
+            if let message = healthBannerMessage {
+                healthBanner(message)
             }
         }
         .navigationTitle("Locations")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             customSources = CustomTileSourceStore.loadAll()
+            standardSources = StandardTileSourceStore.loadAll()
         }
         .onReceive(NotificationCenter.default.publisher(for: .customTileSourceChanged)) { _ in
             customSources = CustomTileSourceStore.loadAll()
+            standardSources = StandardTileSourceStore.loadAll()
+        }
+        // Fetchers report terminal auth failures from their own actor/threads;
+        // hop to main before touching view state.
+        .onReceive(NotificationCenter.default
+            .publisher(for: TileLayerHealth.authFailureNotification)
+            .receive(on: DispatchQueue.main)) { note in
+            guard let message = note.userInfo?[TileLayerHealth.messageKey] as? String else { return }
+            withAnimation { healthBannerMessage = message }
         }
         .toolbar {
 #if targetEnvironment(macCatalyst)
@@ -128,10 +176,8 @@ struct GlobalMapView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 filterMenu
             }
-            if !customSources.isEmpty {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    layerMenu
-                }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                layerMenu
             }
 #else
             ToolbarSpacer(.flexible, placement: .bottomBar)
@@ -146,17 +192,42 @@ struct GlobalMapView: View {
             ToolbarItem(placement: .bottomBar) {
                 filterMenu
             }
-            if !customSources.isEmpty {
-                ToolbarSpacer(.fixed, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    layerMenu
-                }
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                layerMenu
             }
 #endif
         }
         // Pin the bars to the real interface scheme so the toolbar items stay
         // dark in dark mode instead of auto-lightening over the light map.
         .toolbarColorScheme(colorScheme, for: .navigationBar, .bottomBar)
+    }
+
+    // MARK: - Layer health banner
+
+    /// Dismissible warning that a layer's server has terminally rejected it
+    /// (bad key, exhausted quota). Content comes from `TileLayerHealth`.
+    private func healthBanner(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.footnote)
+            Spacer(minLength: 4)
+            Button {
+                withAnimation { healthBannerMessage = nil }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: - Layer picker
@@ -168,6 +239,10 @@ struct GlobalMapView: View {
             Picker("Map Layer", selection: $selectedLayerRaw) {
                 Label("Apple Maps", systemImage: "map")
                     .tag(GlobalMapLayer.appleMaps)
+                ForEach(standardSources) { layer in
+                    Label(layer.name, systemImage: "map")
+                        .tag(layer.id.uuidString)
+                }
                 ForEach(customSources) { src in
                     Label(src.name, systemImage: "square.stack.3d.up")
                         .tag(src.id.uuidString)
@@ -182,28 +257,53 @@ struct GlobalMapView: View {
         }
     }
 
-    // MARK: - Custom-layer branch
+    // MARK: - Custom / raster layer branches
 
+    /// Fully native EPSG:27700 renderer: a slippy map drawing tiles at their
+    /// native British-National-Grid resolution, no on-device reprojection.
     private func customMapContent(source: CustomTileSource) -> some View {
-        // Fully native EPSG:27700 renderer: a slippy map drawing tiles at their
-        // native British-National-Grid resolution, no on-device reprojection.
-        BNGMapView(
-            entries: visibleEntries,
-            source: source,
-            muted: mapStyleMuted,
-            selectedItemID: $selectedItemID,
-            visibleRegion: $visibleRegion,
-            focusState: $focusState,
-            popoverItemID: useSheet ? nil : popoverItem?.id,
-            onPopoverAnchorChange: { customPopoverAnchor = $0 }
+        withPinInteraction(
+            BNGMapView(
+                entries: visibleEntries,
+                source: source,
+                muted: mapStyleMuted,
+                selectedItemID: $selectedItemID,
+                visibleRegion: $visibleRegion,
+                focusState: $focusState,
+                popoverItemID: useSheet ? nil : popoverItem?.id,
+                onPopoverAnchorChange: { customPopoverAnchor = $0 }
+            )
         )
+    }
+
+    /// Standard MapKit map with a web-mercator raster tile overlay. Shares the
+    /// exact pin/popover/sheet presentation with the custom-layer branch.
+    private func rasterMapContent(layer: StandardTileSource) -> some View {
+        withPinInteraction(
+            RasterTileMapView(
+                entries: visibleEntries,
+                layer: layer,
+                muted: mapStyleMuted,
+                selectedItemID: $selectedItemID,
+                visibleRegion: $visibleRegion,
+                focusState: $focusState,
+                popoverItemID: useSheet ? nil : popoverItem?.id,
+                onPopoverAnchorChange: { customPopoverAnchor = $0 }
+            )
+        )
+    }
+
+    /// Wrap a full-screen map (that reports through `selectedItemID` /
+    /// `visibleRegion` / `focusState` / `customPopoverAnchor`) with the shared
+    /// pin popover (iPad/Mac) and sheet (iPhone), plus the selection/cycling glue.
+    @ViewBuilder
+    private func withPinInteraction(_ map: some View) -> some View {
+        map
         .ignoresSafeArea()
         // iPad/Mac: anchor the popover bubble to the pin, matching Apple Maps.
-        // The MapKit branch attaches its popover to a real `Annotation` view that
-        // MapKit itself keeps positioned at the coordinate. The custom map has no
-        // SwiftUI view living at the pin (pins are UIKit layers inside the
-        // representable), so we attach the popover to a full-screen clear view and
-        // point it at the pin via an explicit `.point` attachment — the pin's
+        // These maps have no SwiftUI view living at the pin (pins are UIKit inside
+        // the representable), so we attach the popover to a full-screen clear view
+        // and point it at the pin via an explicit `.point` attachment — the pin's
         // fraction of the same full-screen space the map reports the anchor in.
         // (A padded/offset anchor frame does not survive macCatalyst's popover
         // placement — it detaches and parks the bubble in a corner.)
@@ -441,7 +541,11 @@ struct GlobalMapView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
         }
-        .ignoresSafeArea(edges: .bottom)
+        // Full-bleed like the raster/BNG branches (which use `.ignoresSafeArea()`).
+        // If this only ignored the bottom, the same region would fit into a
+        // shorter frame here than there, shifting the on-screen centre when
+        // switching layers.
+        .ignoresSafeArea()
         .onChange(of: selectedItemID) { _, newID in
             guard let newID,
                   let entry = visibleEntries.first(where: { $0.item.id == newID }) else { return }
