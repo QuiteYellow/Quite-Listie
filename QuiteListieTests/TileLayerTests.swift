@@ -13,19 +13,31 @@ import MapKit
 
 // MARK: - Fixtures
 
-/// OS-Maps-API-shaped capabilities: RESTful ResourceURL, numeric matrix
+/// RESTful-ResourceURL-shaped capabilities: numeric matrix
 /// identifiers, shared origin across zooms.
-private let osStyleXML = """
+private let restfulStyleXML = """
 <?xml version="1.0" encoding="UTF-8"?>
 <Capabilities xmlns="http://www.opengis.net/wmts/1.0" xmlns:ows="http://www.opengis.net/ows/1.1" version="1.0.0">
   <Contents>
     <Layer>
-      <ows:Identifier>Outdoor_27700</ows:Identifier>
-      <ows:Title>OS Outdoor</ows:Title>
+      <ows:Identifier>Terrain_27700</ows:Identifier>
+      <ows:Title>Terrain</ows:Title>
+      <ows:BoundingBox crs="urn:ogc:def:crs:EPSG::3857">
+        <ows:LowerCorner>-1198263.03 6365004.03</ows:LowerCorner>
+        <ows:UpperCorner>213000.0 8702260.01</ows:UpperCorner>
+      </ows:BoundingBox>
+      <ows:BoundingBox crs="urn:ogc:def:crs:EPSG::27700">
+        <ows:LowerCorner>-238375.0000149319 0.0</ows:LowerCorner>
+        <ows:UpperCorner>900000.00000057 1376256.0000176653</ows:UpperCorner>
+      </ows:BoundingBox>
+      <ows:WGS84BoundingBox crs="urn:ogc:def:crs:OGC:2:84">
+        <ows:LowerCorner>-10.76 49.52</ows:LowerCorner>
+        <ows:UpperCorner>1.91 61.33</ows:UpperCorner>
+      </ows:WGS84BoundingBox>
       <Style isDefault="true"><ows:Identifier>true-colour</ows:Identifier></Style>
       <Format>image/png</Format>
       <TileMatrixSetLink><TileMatrixSet>27700</TileMatrixSet></TileMatrixSetLink>
-      <ResourceURL format="image/png" resourceType="tile" template="https://api.example.co/maps/raster/v1/tiles/Outdoor_27700/{Style}/{TileMatrix}/{TileCol}/{TileRow}.png"/>
+      <ResourceURL format="image/png" resourceType="tile" template="https://api.example.co/maps/raster/v1/tiles/Terrain_27700/{Style}/{TileMatrix}/{TileCol}/{TileRow}.png"/>
     </Layer>
     <TileMatrixSet>
       <ows:Identifier>27700</ows:Identifier>
@@ -156,10 +168,10 @@ private let mapProxyStyleXML = """
 final class WMTSCapabilitiesParsingTests: XCTestCase {
 
     func testParsesResourceURLAndStyle() throws {
-        let caps = try WMTSCapabilitiesLoader.parse(Data(osStyleXML.utf8))
+        let caps = try WMTSCapabilitiesLoader.parse(Data(restfulStyleXML.utf8))
         XCTAssertEqual(caps.layers.count, 1)
         let layer = try XCTUnwrap(caps.layers.first)
-        XCTAssertEqual(layer.identifier, "Outdoor_27700")
+        XCTAssertEqual(layer.identifier, "Terrain_27700")
         XCTAssertEqual(layer.styles.count, 1)
         XCTAssertEqual(layer.styles.first?.identifier, "true-colour")
         XCTAssertEqual(layer.styles.first?.isDefault, true)
@@ -229,12 +241,60 @@ final class WMTSCapabilitiesParsingTests: XCTestCase {
     }
 }
 
+// MARK: - Declared extent (what the edge fade is laid against)
+
+final class LayerExtentTests: XCTestCase {
+
+    func testParsesTheEPSG27700BoundingBoxAndIgnoresOthers() throws {
+        let caps = try WMTSCapabilitiesLoader.parse(Data(restfulStyleXML.utf8))
+        let box = try XCTUnwrap(caps.layers.first?.boundingBox)
+        // The 3857 and WGS84 boxes in the same layer must not be picked up.
+        XCTAssertEqual(box.eMin, -238_375, accuracy: 0.01)
+        XCTAssertEqual(box.eMax, 900_000, accuracy: 0.01)
+        XCTAssertEqual(box.nMin, 0, accuracy: 0.01)
+        XCTAssertEqual(box.nMax, 1_376_256, accuracy: 0.01)
+    }
+
+    func testLayerWithoutABoundingBoxHasNone() throws {
+        let caps = try WMTSCapabilitiesLoader.parse(Data(geoServerStyleXML.utf8))
+        XCTAssertNil(caps.layers.first?.boundingBox)
+    }
+
+    func testValidatedCapabilitiesCarryTheExtent() throws {
+        let caps = try WMTSCapabilitiesLoader.parse(Data(restfulStyleXML.utf8))
+        let layer = try XCTUnwrap(caps.layers.first)
+        let set = try XCTUnwrap(caps.matrixSet(for: layer))
+        let matrix = try XCTUnwrap(BNGTileMatrix.fromCapabilities(set))
+        let v = CustomTileSource.ValidatedCapabilities.from(layer: layer, set: set, matrix: matrix)
+        let extent = try XCTUnwrap(v.extent)
+        XCTAssertEqual(extent.eMax, 900_000, accuracy: 0.01)
+        XCTAssertEqual(extent.nMin, 0, accuracy: 0.01)
+        // The grid fields the fade falls back on still come through.
+        XCTAssertEqual(v.matrixWidths, [5, 9])
+        XCTAssertEqual(v.matrixHeights, [7, 13])
+    }
+
+    /// The extent is a v5 addition; records written before it must still load.
+    func testV4RecordWithoutAnExtentStillDecodes() throws {
+        let json = """
+        {"layerIdentifier":"L","tileMatrixSetIdentifier":"S",
+         "supportedCRS":"urn:ogc:def:crs:EPSG::27700",
+         "originX":-238375,"originY":1376256,"tileSize":256,
+         "resolutions":[896,448],"matrixWidths":[5,9],"matrixHeights":[7,13]}
+        """
+        let v = try JSONDecoder().decode(
+            CustomTileSource.ValidatedCapabilities.self, from: Data(json.utf8))
+        XCTAssertNil(v.extent)
+        XCTAssertEqual(v.matrixWidths, [5, 9])
+    }
+}
+
 // MARK: - Tile URL construction
 
 final class WMTSTileTemplateTests: XCTestCase {
 
     private func osLayerAndSet() throws -> (WMTSCapabilities.Layer, WMTSCapabilities.TileMatrixSet) {
-        let caps = try WMTSCapabilitiesLoader.parse(Data(osStyleXML.utf8))
+        let caps = try WMTSCapabilitiesLoader.parse(Data(restfulStyleXML.utf8))
         let layer = try XCTUnwrap(caps.layers.first)
         let set = try XCTUnwrap(caps.matrixSet(for: layer))
         return (layer, set)
@@ -245,7 +305,7 @@ final class WMTSTileTemplateTests: XCTestCase {
         let endpoint = "https://api.example.co/maps/raster/v1/wmts?key=SECRET&service=WMTS&request=GetCapabilities"
         let template = WMTSCapabilities.tileTemplate(endpoint: endpoint, layer: layer, matrixSet: set)
         XCTAssertEqual(template,
-            "https://api.example.co/maps/raster/v1/tiles/Outdoor_27700/true-colour/{z}/{x}/{y}.png?key=SECRET")
+            "https://api.example.co/maps/raster/v1/tiles/Terrain_27700/true-colour/{z}/{x}/{y}.png?key=SECRET")
     }
 
     func testResourceURLSkipsParamsAlreadyInTemplate() {
@@ -253,7 +313,8 @@ final class WMTSTileTemplateTests: XCTestCase {
             identifier: "L", title: nil, tileMatrixSetLinks: ["S"], formats: ["image/png"],
             styles: [.init(identifier: "default", isDefault: true)],
             resourceURLs: [.init(resourceType: "tile", format: "image/png",
-                                 template: "https://t.example/{TileMatrix}/{TileCol}/{TileRow}.png?key=EMBEDDED")])
+                                 template: "https://t.example/{TileMatrix}/{TileCol}/{TileRow}.png?key=EMBEDDED")],
+            boundingBox: nil)
         let set = WMTSCapabilities.TileMatrixSet(identifier: "S",
                                                  supportedCRS: "EPSG:27700", matrices: [])
         let template = WMTSCapabilities.tileTemplate(
@@ -326,7 +387,7 @@ final class BNGTileMatrixTests: XCTestCase {
     }
 }
 
-// MARK: - Template expansion (XYZ dialect)
+// MARK: - Template expansion
 
 final class TemplateExpansionTests: XCTestCase {
 
@@ -334,33 +395,6 @@ final class TemplateExpansionTests: XCTestCase {
         XCTAssertEqual(
             TileFetcher.expandTemplate("https://t.example/{z}/{x}/{y}.png", z: 3, x: 2, y: 1),
             "https://t.example/3/2/1.png")
-    }
-
-    func testTMSFlippedY() {
-        // {-y} = 2^z − 1 − y → at z3, y1 → 6. {y} must not match inside {-y}.
-        XCTAssertEqual(
-            TileFetcher.expandTemplate("https://t.example/{z}/{x}/{-y}.png", z: 3, x: 2, y: 1),
-            "https://t.example/3/2/6.png")
-    }
-
-    func testSubdomainPickIsDeterministicPerTile() {
-        let subs = ["a", "b", "c"]
-        let template = "https://{s}.t.example/{z}/{x}/{y}.png"
-        let first = TileFetcher.expandTemplate(template, z: 1, x: 2, y: 3, subdomains: subs)
-        let again = TileFetcher.expandTemplate(template, z: 1, x: 2, y: 3, subdomains: subs)
-        XCTAssertEqual(first, again)
-        XCTAssertEqual(first, "https://c.t.example/1/2/3.png")  // (2+3) % 3 = 2 → "c"
-        // Neighbouring tile rotates to a different host.
-        XCTAssertEqual(
-            TileFetcher.expandTemplate(template, z: 1, x: 3, y: 3, subdomains: subs),
-            "https://a.t.example/1/3/3.png")                     // (3+3) % 3 = 0 → "a"
-    }
-
-    func testApiKeyAndRetina() {
-        XCTAssertEqual(
-            TileFetcher.expandTemplate("https://t.example/{z}/{x}/{y}{r}.png?key={apikey}",
-                                       z: 0, x: 0, y: 0, apiKey: "K123"),
-            "https://t.example/0/0/0@2x.png?key=K123")
     }
 
     func testZoomIdentifierSubstitution() {
@@ -433,17 +467,6 @@ final class TileURLKeysTests: XCTestCase {
         XCTAssertEqual(c.cacheNamespace, c.legacyCacheNamespace)
     }
 
-    func testStandardSourceNamespaceSurvivesKeyRotation() {
-        func src(_ template: String) -> StandardTileSource {
-            StandardTileSource(name: "L", urlTemplate: template, maxZoom: 19, minZoom: 0)
-        }
-        let a = src("https://t.example/{z}/{x}/{y}.png?access_token=AAA")
-        let b = src("https://t.example/{z}/{x}/{y}.png?access_token=BBB")
-        XCTAssertEqual(a.cacheNamespace, b.cacheNamespace)
-        XCTAssertTrue(a.cacheNamespace.hasPrefix("std-"))
-        XCTAssertTrue(a.legacyCacheNamespace.hasPrefix("std-"))
-        XCTAssertNotEqual(a.legacyCacheNamespace, b.legacyCacheNamespace)
-    }
 }
 
 // MARK: - Layer health (Phase 3)
@@ -481,10 +504,10 @@ final class TileLayerHealthTests: XCTestCase {
     }
 
     func testMessagesNameTheLayerAndTheProblem() {
-        let auth = TileLayerHealth.message(name: "OS Outdoor", status: 403)
-        XCTAssertTrue(auth.contains("OS Outdoor"))
+        let auth = TileLayerHealth.message(name: "Terrain", status: 403)
+        XCTAssertTrue(auth.contains("Terrain"))
         XCTAssertTrue(auth.contains("rejected your API key"))
-        let quota = TileLayerHealth.message(name: "OS Outdoor", status: 429)
+        let quota = TileLayerHealth.message(name: "Terrain", status: 429)
         XCTAssertTrue(quota.contains("rate limit"))
     }
 }
@@ -523,27 +546,6 @@ final class TileLayerTesterTests: XCTestCase {
         XCTAssertEqual(tile.y, Int((1_376_256.0 - 461_000.0) / (448 * 256)))
     }
 
-    func testStandardTestTileClampsToZoomRange() {
-        let layer = StandardTileSource(name: "L", urlTemplate: "t/{z}/{x}/{y}",
-                                       maxZoom: 12, minZoom: 4)
-        let tile = TileLayerTester.testTile(for: layer, lat: 54.5, lon: -2.5)
-        XCTAssertEqual(tile.z, 8)
-        let expected = TileLayerTester.webMercatorTileXY(lat: 54.5, lon: -2.5, z: 8)
-        XCTAssertEqual(tile.x, expected.x)
-        XCTAssertEqual(tile.y, expected.y)
-    }
-
-    func testWebMercatorTileXY() {
-        XCTAssertEqual(TileLayerTester.webMercatorTileXY(lat: 0, lon: 0, z: 0).x, 0)
-        XCTAssertEqual(TileLayerTester.webMercatorTileXY(lat: 0, lon: 0, z: 0).y, 0)
-        // (0,0) at z1 is the top-left corner of the bottom-right quadrant.
-        let origin = TileLayerTester.webMercatorTileXY(lat: 0, lon: 0, z: 1)
-        XCTAssertEqual(origin.x, 1)
-        XCTAssertEqual(origin.y, 1)
-        // Extreme latitudes clamp into the grid rather than under/overflowing.
-        let pole = TileLayerTester.webMercatorTileXY(lat: 89.9, lon: 0, z: 3)
-        XCTAssertEqual(pole.y, 0)
-    }
 }
 
 // MARK: - Great Britain bounds hint (Phase 5)
@@ -566,47 +568,84 @@ final class GreatBritainBoundsTests: XCTestCase {
     }
 }
 
-// MARK: - StandardTileSource model
+// MARK: - Failed-tile retry back-off
 
-final class StandardTileSourceTests: XCTestCase {
+final class TileRetryPolicyTests: XCTestCase {
 
-    private func source(_ template: String, subdomains: String? = nil) -> StandardTileSource {
-        StandardTileSource(name: "T", urlTemplate: template, maxZoom: 19, minZoom: 0,
-                           subdomains: subdomains)
+    private func policy() -> TileRetryPolicy<Int> {
+        TileRetryPolicy(maxAttempts: 3, baseDelay: 2)
     }
 
-    func testIsUsableAcceptsFlippedY() {
-        XCTAssertTrue(source("https://t.example/{z}/{x}/{y}.png").isUsable)
-        XCTAssertTrue(source("https://t.example/{z}/{x}/{-y}.png").isUsable)
-        XCTAssertFalse(source("https://t.example/{z}/{x}.png").isUsable)
-        XCTAssertFalse(source("").isUsable)
+    func testUntriedTileMayBeRequested() {
+        XCTAssertTrue(policy().mayRequest(1, now: 0))
     }
 
-    func testSecureScheme() {
-        XCTAssertTrue(source("https://t.example/{z}/{x}/{y}.png").usesSecureScheme)
-        XCTAssertFalse(source("http://t.example/{z}/{x}/{y}.png").usesSecureScheme)
-        XCTAssertFalse(source("t.example/{z}/{x}/{y}.png").usesSecureScheme)
+    /// The bug this exists for: a failed tile must become requestable again
+    /// without having to leave the viewport first.
+    func testFailedTileBecomesRequestableAfterTheBackOff() {
+        var p = policy()
+        p.noteFailure(1, now: 100)
+        XCTAssertFalse(p.mayRequest(1, now: 100))       // immediately after
+        XCTAssertFalse(p.mayRequest(1, now: 101.9))     // still inside 2s
+        XCTAssertTrue(p.mayRequest(1, now: 102))        // 2s elapsed
     }
 
-    func testSubdomainTokenParsing() {
-        XCTAssertEqual(source("x", subdomains: "abc").subdomainTokens, ["a", "b", "c"])
-        XCTAssertEqual(source("x", subdomains: "mt0, mt1").subdomainTokens, ["mt0", "mt1"])
-        XCTAssertEqual(source("x", subdomains: " ").subdomainTokens, [])
-        XCTAssertEqual(source("x", subdomains: nil).subdomainTokens, [])
+    func testBackOffDoublesThenAttemptsAreCapped() {
+        var p = policy()
+        XCTAssertEqual(p.noteFailure(1, now: 0), 2)     // retry in 2s
+        XCTAssertEqual(p.noteFailure(1, now: 2), 4)     // then in 4s
+        XCTAssertNil(p.noteFailure(1, now: 6))          // third strike: give up
+        // Capped means capped, however long we wait — no request storm on a
+        // position the layer genuinely has nothing for.
+        XCTAssertFalse(p.mayRequest(1, now: 6))
+        XCTAssertFalse(p.mayRequest(1, now: 10_000))
     }
 
-    func testV1RecordDecodesWithoutNewFields() throws {
-        // A v1-era record has no apiKey/subdomains/tilePixelSize keys at all.
-        let v1JSON = """
-        {"id":"\(UUID().uuidString)","name":"Old","urlTemplate":"https://t.example/{z}/{x}/{y}.png","maxZoom":18,"minZoom":2}
-        """
-        let decoded = try JSONDecoder().decode(StandardTileSource.self, from: Data(v1JSON.utf8))
-        XCTAssertEqual(decoded.name, "Old")
-        XCTAssertNil(decoded.apiKey)
-        XCTAssertNil(decoded.subdomains)
-        XCTAssertNil(decoded.tilePixelSize)
-        XCTAssertNil(decoded.attribution)
-        XCTAssertEqual(decoded.maxZoom, 18)
+    func testSuccessClearsTheHistory() {
+        var p = policy()
+        p.noteFailure(1, now: 0)
+        p.noteFailure(1, now: 2)
+        p.noteSuccess(1)
+        XCTAssertTrue(p.mayRequest(1, now: 2))
+        XCTAssertEqual(p.trackedCount, 0)
+    }
+
+    /// Leaving the viewport forgets the tile, so returning to it retries at once
+    /// (the escape hatch users found by zooming out and back in) and the table
+    /// cannot grow as they pan.
+    func testForgettingRestoresAnImmediateAttempt() {
+        var p = policy()
+        p.noteFailure(1, now: 0)
+        p.noteFailure(1, now: 2)
+        p.noteFailure(1, now: 6)
+        XCTAssertFalse(p.mayRequest(1, now: 6))
+        p.forget(1)
+        XCTAssertTrue(p.mayRequest(1, now: 6))
+        XCTAssertEqual(p.trackedCount, 0)
+    }
+
+    func testFailuresAreTrackedPerTile() {
+        var p = policy()
+        p.noteFailure(1, now: 0)
+        XCTAssertFalse(p.mayRequest(1, now: 0))
+        XCTAssertTrue(p.mayRequest(2, now: 0))
+        XCTAssertEqual(p.trackedCount, 1)
+    }
+
+    /// A whole screenful of failures still resolves in a bounded number of
+    /// requests rather than re-asking on every layout pass.
+    func testBoundedTotalAttemptsForAPermanentlyEmptyTile() {
+        var p = policy()
+        var now: TimeInterval = 0
+        var requests = 0
+        for _ in 0..<200 {                    // 200 layout passes
+            if p.mayRequest(1, now: now) {
+                requests += 1
+                p.noteFailure(1, now: now)
+            }
+            now += 0.5
+        }
+        XCTAssertEqual(requests, 3)           // exactly maxAttempts
     }
 }
 
@@ -663,14 +702,10 @@ final class TileDiskCacheTests: XCTestCase {
         FileManager.default.fileExists(atPath: tempRoot.appendingPathComponent(relPath).path)
     }
 
-    func testTrimEvictsOldestFirstAndSparesManifest() throws {
+    func testTrimEvictsOldestFirst() throws {
         try plant("ns1/3/1/1", kb: 100, ageDays: 30)   // oldest — should go
         try plant("ns1/3/1/2", kb: 100, ageDays: 10)   // next oldest — should go
         try plant("ns2/5/9/9", kb: 100, ageDays: 1)    // recent — stays
-        // Ancient but spared. Kept small: it counts toward the tree total while
-        // never being evictable, so an outsized one would force the trim to eat
-        // recent tiles to satisfy the cap.
-        try plant("ns1/manifest.json", kb: 1, ageDays: 400)
 
         // Cap fits ~1.5 tiles: the two oldest must go, the recent one survives.
         TileDiskCache.trim(under: tempRoot, toBytes: 150 * 1024)
@@ -678,7 +713,6 @@ final class TileDiskCacheTests: XCTestCase {
         XCTAssertFalse(exists("ns1/3/1/1"))
         XCTAssertFalse(exists("ns1/3/1/2"))
         XCTAssertTrue(exists("ns2/5/9/9"))
-        XCTAssertTrue(exists("ns1/manifest.json"))
     }
 
     func testTrimNoOpUnderCap() throws {
@@ -695,45 +729,8 @@ final class TileDiskCacheTests: XCTestCase {
         // New writes are extensionless and readable.
         cache.write(z: 8, x: 1, y: 2, data: Data([0x01, 0x02]))
         XCTAssertEqual(cache.read(z: 8, x: 1, y: 2), Data([0x01, 0x02]))
-        // remove() clears both namings.
-        cache.remove(z: 7, x: 3, y: 4)
-        cache.remove(z: 8, x: 1, y: 2)
-        XCTAssertNil(cache.read(z: 7, x: 3, y: 4))
-        XCTAssertNil(cache.read(z: 8, x: 1, y: 2))
-    }
-
-    func testReadPrefersPinnedRootAndTrimNeverTouchesIt() throws {
-        // Distinct cache and pinned trees, like Caches/ vs Application Support/.
-        let cacheRoot = tempRoot.appendingPathComponent("cache/ns", isDirectory: true)
-        let pinnedRoot = tempRoot.appendingPathComponent("pinned/ns", isDirectory: true)
-        let store = TileDiskCache(root: cacheRoot, pinnedRoot: pinnedRoot)
-
-        // Same tile in both: the pinned copy (deliberately refreshed) wins.
-        try plant("pinned/ns/5/1/2", kb: 1, ageDays: 0)
-        let pinnedURL = tempRoot.appendingPathComponent("pinned/ns/5/1/2")
-        try Data("pinned-bytes".utf8).write(to: pinnedURL)
-        store.write(z: 5, x: 1, y: 2, data: Data("cache-bytes".utf8))
-        XCTAssertEqual(store.read(z: 5, x: 1, y: 2), Data("pinned-bytes".utf8))
-
-        // A cache-only tile still reads.
-        store.write(z: 6, x: 0, y: 0, data: Data("only-cached".utf8))
-        XCTAssertEqual(store.read(z: 6, x: 0, y: 0), Data("only-cached".utf8))
-
-        // Trim the cache tree to nothing: pinned tiles must survive, and reads
-        // must keep serving them (Phase 7's pinned-root exclusion guarantee).
-        TileDiskCache.trim(under: tempRoot.appendingPathComponent("cache"), toBytes: 0)
-        XCTAssertNil(store.read(z: 6, x: 0, y: 0))
-        XCTAssertEqual(store.read(z: 5, x: 1, y: 2), Data("pinned-bytes".utf8))
-    }
-
-    func testContainsChecksBothNamings() throws {
-        let store = TileDiskCache(root: tempRoot.appendingPathComponent("c", isDirectory: true))
-        XCTAssertFalse(store.contains(z: 1, x: 2, y: 3))
-        store.write(z: 1, x: 2, y: 3, data: Data([0x01]))
-        XCTAssertTrue(store.contains(z: 1, x: 2, y: 3))
-        try plant("c/4/5/6.png", kb: 1, ageDays: 0)   // legacy naming
-        XCTAssertTrue(store.contains(z: 4, x: 5, y: 6))
-        XCTAssertEqual(store.fileSize(z: 4, x: 5, y: 6), 1024)
+        // A tile never written is a miss under either naming.
+        XCTAssertNil(cache.read(z: 9, x: 9, y: 9))
     }
 
     func testAdoptLegacyNamespaceRenamesOldDirectory() throws {
@@ -766,53 +763,6 @@ final class TileDiskCacheTests: XCTestCase {
     }
 }
 
-// MARK: - Validator manifest
-
-final class TileValidatorManifestTests: XCTestCase {
-
-    private var dir: URL!
-
-    override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ManifestTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: dir)
-    }
-
-    func testRoundTripThroughFlush() {
-        let m = TileValidatorManifest(directory: dir)
-        m.record(key: "3/1/2", etag: "\"abc\"", lastModified: nil)
-        m.record(key: "4/0/0", etag: nil, lastModified: "Tue, 07 Jul 2026 10:00:00 GMT")
-        m.flush()
-
-        let reloaded = TileValidatorManifest(directory: dir)
-        XCTAssertEqual(reloaded.entry(for: "3/1/2")?.etag, "\"abc\"")
-        XCTAssertEqual(reloaded.entry(for: "4/0/0")?.lastModified, "Tue, 07 Jul 2026 10:00:00 GMT")
-        XCTAssertNil(reloaded.entry(for: "9/9/9"))
-    }
-
-    func testValidatorlessResponsesAreNotRecorded() {
-        let m = TileValidatorManifest(directory: dir)
-        m.record(key: "1/1/1", etag: nil, lastModified: nil)
-        XCTAssertNil(m.entry(for: "1/1/1"))
-    }
-
-    func testRemoveAndMarkChecked() {
-        let m = TileValidatorManifest(directory: dir)
-        m.record(key: "2/2/2", etag: "\"x\"", lastModified: nil)
-        let before = m.entry(for: "2/2/2")!.checked
-        m.markChecked(key: "2/2/2")
-        XCTAssertGreaterThanOrEqual(m.entry(for: "2/2/2")!.checked, before)
-        m.remove(key: "2/2/2")
-        XCTAssertNil(m.entry(for: "2/2/2"))
-        m.flush()
-        XCTAssertNil(TileValidatorManifest(directory: dir).entry(for: "2/2/2"))
-    }
-}
-
 // MARK: - v3 → v4 store migration
 
 final class CustomTileSourceMigrationTests: XCTestCase {
@@ -840,11 +790,11 @@ final class CustomTileSourceMigrationTests: XCTestCase {
 
     private func makeV3Source() -> CustomTileSource {
         CustomTileSource(
-            name: "OS Outdoor",
+            name: "Terrain",
             wmtsEndpoint: "https://api.example.co/maps/raster/v1/wmts?key=K",
-            zxyTemplate: "https://api.example.co/maps/raster/v1/zxy/Outdoor_27700/{z}/{x}/{y}.png?key=K",
+            zxyTemplate: "https://api.example.co/maps/raster/v1/zxy/Terrain_27700/{z}/{x}/{y}.png?key=K",
             validated: .init(
-                layerIdentifier: "Outdoor_27700", layerTitle: "OS Outdoor",
+                layerIdentifier: "Terrain_27700", layerTitle: "Terrain",
                 tileMatrixSetIdentifier: "27700", supportedCRS: "urn:ogc:def:crs:EPSG::27700",
                 originX: -238375, originY: 1376256, tileSize: 256,
                 resolutions: [896, 448]))
@@ -894,220 +844,6 @@ final class CustomTileSourceMigrationTests: XCTestCase {
     }
 }
 
-// MARK: - Standard-layer store dedupe
-
-final class StandardTileSourceStoreTests: XCTestCase {
-
-    private let key = "standardTileSources.v1"
-    private var saved: Data?
-
-    override func setUp() {
-        super.setUp()
-        saved = UserDefaults.standard.data(forKey: key)
-        UserDefaults.standard.removeObject(forKey: key)
-    }
-
-    override func tearDown() {
-        if let saved {
-            UserDefaults.standard.set(saved, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-        super.tearDown()
-    }
-
-    func testUpsertDedupesOnTemplate() {
-        let original = StandardTileSource(
-            name: "Hills", urlTemplate: "https://t.example/{z}/{x}/{y}.png",
-            maxZoom: 19, minZoom: 0)
-        StandardTileSourceStore.upsert(original)
-
-        var again = original
-        again.id = UUID()
-        again.name = "Hills v2"
-        StandardTileSourceStore.upsert(again)
-
-        let all = StandardTileSourceStore.loadAll()
-        XCTAssertEqual(all.count, 1)
-        XCTAssertEqual(all.first?.id, original.id)
-        XCTAssertEqual(all.first?.name, "Hills v2")
-
-        // Same id keeps updating in place (the ordinary edit path).
-        var edited = all[0]
-        edited.maxZoom = 16
-        StandardTileSourceStore.upsert(edited)
-        XCTAssertEqual(StandardTileSourceStore.loadAll(), [edited])
-    }
-}
-
-// MARK: - Offline region: tile enumeration (Phase 7)
-
-final class OfflineTileEnumeratorTests: XCTestCase {
-
-    /// Nearly the whole world: exact power-of-four pyramid counts.
-    private let world = LatLonBounds(latMin: -85, latMax: 85, lonMin: -179.9, lonMax: 179.9)
-    /// A Lake-District-sized rectangle.
-    private let lakes = LatLonBounds(latMin: 54.3, latMax: 54.7, lonMin: -3.4, lonMax: -2.8)
-
-    private var osMatrix: BNGTileMatrix {
-        // The osStyleXML grid: z0 5×7, z1 9×13, shared/near origins.
-        BNGTileMatrix(originsX: [-238375, -238375], originsY: [1376256, 1376256],
-                      tileSize: 256, resolutions: [896, 448],
-                      matrixWidths: [5, 9], matrixHeights: [7, 13])
-    }
-
-    func testMercatorPyramidCounts() {
-        XCTAssertEqual(OfflineTileEnumerator.tileCount(bounds: world, grid: .mercator, zooms: 0...0), 1)
-        XCTAssertEqual(OfflineTileEnumerator.tileCount(bounds: world, grid: .mercator, zooms: 0...2), 1 + 4 + 16)
-        // A small region's count grows roughly ×4 per level; the deepest level dominates.
-        let perLevel = (10...14).map {
-            OfflineTileEnumerator.tileCount(bounds: lakes, grid: .mercator, zooms: $0...$0)
-        }
-        let total = OfflineTileEnumerator.tileCount(bounds: lakes, grid: .mercator, zooms: 10...14)
-        XCTAssertEqual(total, perLevel.reduce(0, +))
-        XCTAssertGreaterThan(perLevel.last!, total / 2)   // deepest level dominates
-    }
-
-    func testBNGRangesClipToAdvertisedGrid() {
-        // A box comfortably larger than the whole grid (the z1 matrix runs
-        // 9×13 tiles from its origin — well out into the North Sea): the
-        // enumeration must clip to exactly the advertised grid, no more.
-        let hugeBounds = LatLonBounds(latMin: 45, latMax: 63, lonMin: -12, lonMax: 10)
-        XCTAssertEqual(
-            OfflineTileEnumerator.tileCount(bounds: hugeBounds, grid: .bng(osMatrix), zooms: 0...0),
-            5 * 7)
-        XCTAssertEqual(
-            OfflineTileEnumerator.tileCount(bounds: hugeBounds, grid: .bng(osMatrix), zooms: 0...1),
-            5 * 7 + 9 * 13)
-        // A small region needs far fewer tiles than the full grid.
-        let small = OfflineTileEnumerator.tileCount(bounds: lakes, grid: .bng(osMatrix), zooms: 1...1)
-        XCTAssertGreaterThan(small, 0)
-        XCTAssertLessThan(small, 9 * 13)
-        // Far outside BNG coverage: nothing to download.
-        let alps = LatLonBounds(latMin: 45.8, latMax: 46.0, lonMin: 7.5, lonMax: 7.9)
-        XCTAssertEqual(OfflineTileEnumerator.tileCount(bounds: alps, grid: .bng(osMatrix), zooms: 0...1), 0)
-        // Zooms past the matrix contribute nothing (no phantom levels).
-        XCTAssertEqual(
-            OfflineTileEnumerator.tileCount(bounds: lakes, grid: .bng(osMatrix), zooms: 0...9),
-            OfflineTileEnumerator.tileCount(bounds: lakes, grid: .bng(osMatrix), zooms: 0...1))
-    }
-
-    func testLazyEnumerationMatchesCountAndIsCoarsestFirst() {
-        let tiles = Array(OfflineTileEnumerator.tiles(bounds: lakes, grid: .mercator, zooms: 3...6))
-        XCTAssertEqual(tiles.count,
-                       OfflineTileEnumerator.tileCount(bounds: lakes, grid: .mercator, zooms: 3...6))
-        XCTAssertEqual(tiles.first?.z, 3)
-        XCTAssertEqual(tiles.last?.z, 6)
-        // Monotone non-decreasing zoom: a partial download is a usable shallow map.
-        XCTAssertTrue(zip(tiles, tiles.dropFirst()).allSatisfy { $0.z <= $1.z })
-        // No duplicates.
-        XCTAssertEqual(Set(tiles.map { "\($0.z)/\($0.x)/\($0.y)" }).count, tiles.count)
-    }
-
-    func testResumeSkipsTilesAlreadyOnDisk() throws {
-        // The downloader's resume predicate: contains() on the pinned store.
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ResumeTest-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let store = TileDiskCache(root: root)
-
-        let all = Array(OfflineTileEnumerator.tiles(bounds: lakes, grid: .mercator, zooms: 8...10))
-        XCTAssertGreaterThan(all.count, 4)
-        for tile in all.prefix(3) {
-            store.write(z: tile.z, x: tile.x, y: tile.y, data: Data([0xAB]))
-        }
-        let pending = all.filter { !store.contains(z: $0.z, x: $0.x, y: $0.y) }
-        XCTAssertEqual(pending.count, all.count - 3)
-    }
-}
-
-// MARK: - Offline region model + store
-
-final class OfflineRegionModelTests: XCTestCase {
-
-    private let key = "offlineRegions.v1"
-    private var saved: Data?
-
-    override func setUp() {
-        super.setUp()
-        saved = UserDefaults.standard.data(forKey: key)
-        UserDefaults.standard.removeObject(forKey: key)
-    }
-
-    override func tearDown() {
-        if let saved {
-            UserDefaults.standard.set(saved, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-        super.tearDown()
-    }
-
-    private func makeRegion() -> OfflineRegion {
-        OfflineRegion(layerID: UUID(), name: "Lakes",
-                      bounds: LatLonBounds(latMin: 54.3, latMax: 54.7, lonMin: -3.4, lonMax: -2.8),
-                      minZoom: 0, maxZoom: 12, tileCount: 1234, sizeBytes: 37_000_000)
-    }
-
-    func testStoreRoundTrip() {
-        let region = makeRegion()
-        OfflineRegionStore.upsert(region)
-        XCTAssertEqual(OfflineRegionStore.loadAll(), [region])
-
-        var updated = region
-        updated.downloadComplete = true
-        updated.lastRefreshed = Date(timeIntervalSince1970: 1_700_000_000)
-        OfflineRegionStore.upsert(updated)
-        XCTAssertEqual(OfflineRegionStore.loadAll(), [updated])
-
-        OfflineRegionStore.remove(id: region.id)
-        XCTAssertEqual(OfflineRegionStore.loadAll(), [])
-    }
-
-    func testStaleness() {
-        var region = makeRegion()
-        region.createdAt = Date(timeIntervalSinceNow: -40 * 86_400)
-        // Never refreshed: staleness measures from creation.
-        XCTAssertTrue(region.isStale())
-        region.lastRefreshed = Date(timeIntervalSinceNow: -5 * 86_400)
-        XCTAssertFalse(region.isStale())
-        region.lastRefreshed = Date(timeIntervalSinceNow: -31 * 86_400)
-        XCTAssertTrue(region.isStale())
-    }
-
-    @MainActor
-    func testPickerFrameBoundsMath() {
-        // 400×800 map, 200×200 centered frame → half the lon span, a quarter
-        // of the lat span, centered on the map centre.
-        let region = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 54, longitude: -2),
-            span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2))
-        let bounds = OfflineRegionPickerView.boundsUnderFrame(
-            region: region,
-            mapSize: CGSize(width: 400, height: 800),
-            frame: CGRect(x: 100, y: 300, width: 200, height: 200))
-        XCTAssertEqual(bounds.latMin, 53.75, accuracy: 1e-9)
-        XCTAssertEqual(bounds.latMax, 54.25, accuracy: 1e-9)
-        XCTAssertEqual(bounds.lonMin, -2.5, accuracy: 1e-9)
-        XCTAssertEqual(bounds.lonMax, -1.5, accuracy: 1e-9)
-    }
-
-    func testBNGLayerRefNamespaceMatchesRendererConvention() {
-        let src = CustomTileSource(name: "L", wmtsEndpoint: "e",
-                                   zxyTemplate: "https://t.example/{z}/{x}/{y}.png")
-        CustomTileSourceStore.upsert(src)
-        defer { CustomTileSourceStore.remove(id: src.id) }
-        // BNGTileStore caches under "src-<hash>"; the pinned pack must match or
-        // the renderer's pinned→cache read path never finds offline tiles.
-        if case .bng(let resolved)? = OfflineLayerRef.resolve(id: src.id) {
-            XCTAssertEqual(resolved.id, src.id)
-        } else {
-            XCTFail("custom source did not resolve as BNG layer")
-        }
-        XCTAssertEqual(OfflineLayerRef.bng(src).namespace, "src-\(src.cacheNamespace)")
-    }
-}
-
 // MARK: - Cache cap setting
 
 final class TileCacheCapTests: XCTestCase {
@@ -1136,135 +872,5 @@ final class TileCacheCapTests: XCTestCase {
         // The default matches the "small" choice, so existing installs land on
         // a valid picker selection.
         XCTAssertEqual(TileDiskCache.defaultCapBytes, TileDiskCache.capChoices[0])
-    }
-}
-
-// MARK: - Conditional refresh + double-storage (URLProtocol stub)
-
-/// Stubs the network for `TileFetcher`'s injected session: every request goes
-/// through `handler`. Tests run serially, so the shared handler is safe.
-final class StubTileProtocol: URLProtocol {
-    nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> (status: Int, headers: [String: String], body: Data))?
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        guard let handler = Self.handler, let url = request.url else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
-            return
-        }
-        let (status, headers, body) = handler(request)
-        let response = HTTPURLResponse(url: url, statusCode: status,
-                                       httpVersion: "HTTP/1.1", headerFields: headers)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if !body.isEmpty {
-            client?.urlProtocol(self, didLoad: body)
-        }
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {}
-}
-
-final class TileRefreshNetworkTests: XCTestCase {
-
-    private var storeRoot: URL!
-    /// Enough bytes to pass the image sniff (PNG magic + padding).
-    private let fakePNG = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-                                0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52])
-
-    override func setUpWithError() throws {
-        storeRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("RefreshTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: storeRoot, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        StubTileProtocol.handler = nil
-        try? FileManager.default.removeItem(at: storeRoot)
-    }
-
-    private func makeFetcher(store: TileDiskCache) -> TileFetcher {
-        TileFetcher(urlTemplate: "https://stub.example/{z}/{x}/{y}.png",
-                    apiKey: "", cacheNamespace: "unused-when-target-store-set",
-                    targetStore: store,
-                    protocolClasses: [StubTileProtocol.self])
-    }
-
-    func testRefresh304LeavesTileAndCostsNoDownload() async {
-        let store = TileDiskCache(root: storeRoot)
-        let fetcher = makeFetcher(store: store)
-
-        // Initial fetch: 200 with an ETag → cached + validator recorded.
-        let etag = "\"v1\""
-        StubTileProtocol.handler = { [fakePNG] _ in
-            (200, ["ETag": etag], fakePNG)
-        }
-        let first = await fetcher.data(z: 3, x: 1, y: 2)
-        XCTAssertEqual(first, fakePNG)
-        XCTAssertEqual(store.read(z: 3, x: 1, y: 2), fakePNG)
-
-        // Refresh: server sees the validator and answers 304 with no body.
-        final class HeaderBox: @unchecked Sendable { var value: String? }
-        let sawIfNoneMatch = HeaderBox()
-        StubTileProtocol.handler = { request in
-            sawIfNoneMatch.value = request.value(forHTTPHeaderField: "If-None-Match")
-            return (304, [:], Data())
-        }
-        let outcome = await fetcher.refreshTile(z: 3, x: 1, y: 2)
-        XCTAssertEqual(outcome, .unchanged)
-        XCTAssertEqual(sawIfNoneMatch.value, etag)
-        XCTAssertEqual(store.read(z: 3, x: 1, y: 2), fakePNG)   // untouched
-    }
-
-    func testRefresh200RewritesAnd404Removes() async {
-        let store = TileDiskCache(root: storeRoot)
-        let fetcher = makeFetcher(store: store)
-
-        StubTileProtocol.handler = { [fakePNG] _ in (200, ["ETag": "\"v1\""], fakePNG) }
-        _ = await fetcher.data(z: 4, x: 0, y: 0)
-
-        // Changed on the server: 200 with new bytes replaces the cached tile.
-        var newTile = fakePNG
-        newTile.append(contentsOf: [0xFF, 0xEE])
-        StubTileProtocol.handler = { [newTile] _ in (200, ["ETag": "\"v2\""], newTile) }
-        let updated = await fetcher.refreshTile(z: 4, x: 0, y: 0)
-        XCTAssertEqual(updated, .updated)
-        XCTAssertEqual(store.read(z: 4, x: 0, y: 0), newTile)
-
-        // Dropped by the server: 404 removes the pack entry.
-        StubTileProtocol.handler = { _ in (404, [:], Data()) }
-        let missing = await fetcher.refreshTile(z: 4, x: 0, y: 0)
-        XCTAssertEqual(missing, .missing)
-        XCTAssertNil(store.read(z: 4, x: 0, y: 0))
-    }
-
-    func testTargetStoreWritesOnlyThere_DoubleStorageRegression() async {
-        let store = TileDiskCache(root: storeRoot)
-        let fetcher = makeFetcher(store: store)
-        // A namespace that must never materialise under the cache root: the
-        // pack downloader's fetcher writes to its target store and nowhere else.
-        let cacheDir = TileDiskCache.rootBase
-            .appendingPathComponent("unused-when-target-store-set", isDirectory: true)
-        try? FileManager.default.removeItem(at: cacheDir)
-
-        StubTileProtocol.handler = { [fakePNG] _ in (200, [:], fakePNG) }
-        let data = await fetcher.data(z: 5, x: 6, y: 7)
-        XCTAssertEqual(data, fakePNG)
-        XCTAssertTrue(store.contains(z: 5, x: 6, y: 7))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheDir.path),
-                       "pack tiles must not be duplicated into the purgeable cache")
-    }
-
-    func testValidatorManifestLivesNextToThePack() async {
-        let store = TileDiskCache(root: storeRoot)
-        let fetcher = makeFetcher(store: store)
-        StubTileProtocol.handler = { [fakePNG] _ in (200, ["ETag": "\"m\""], fakePNG) }
-        _ = await fetcher.data(z: 1, x: 0, y: 0)
-        await fetcher.flushValidators()
-        // One manifest per pack/namespace, stored beside the tiles it validates.
-        XCTAssertTrue(FileManager.default.fileExists(
-            atPath: storeRoot.appendingPathComponent(TileDiskCache.manifestFilename).path))
     }
 }

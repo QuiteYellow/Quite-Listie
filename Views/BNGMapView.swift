@@ -45,8 +45,9 @@ struct BNGMapView: UIViewRepresentable {
     /// SwiftUI popover to it and keep it glued as the map moves.
     var onPopoverAnchorChange: ((CGPoint?) -> Void)? = nil
 
-    func makeUIView(context: Context) -> SlippyMapView {
-        let view = SlippyMapView(source: source)
+    func makeUIView(context: Context) -> SlippyMapHost {
+        let host = SlippyMapHost(source: source)
+        let view = host.map
         view.onSelect = { id in selectedItemID = id }
         view.onRegionChange = { region in visibleRegion = region }
         view.onUserPannedAway = {
@@ -62,10 +63,11 @@ struct BNGMapView: UIViewRepresentable {
             view.setEntries(entries)
             view.applyInitialFocus(focusState, adopting: visibleRegion)
         }
-        return view
+        return host
     }
 
-    func updateUIView(_ view: SlippyMapView, context: Context) {
+    func updateUIView(_ host: SlippyMapHost, context: Context) {
+        let view = host.map
         view.onPopoverAnchorChange = onPopoverAnchorChange
         // Same as makeUIView: this whole block runs during SwiftUI's view update,
         // so defer the state callbacks these calls fire (region, popover anchor)
@@ -81,14 +83,56 @@ struct BNGMapView: UIViewRepresentable {
         }
     }
 
-    static func dismantleUIView(_ view: SlippyMapView, coordinator: Coordinator) {
-        view.teardown()
+    static func dismantleUIView(_ host: SlippyMapHost, coordinator: Coordinator) {
+        host.map.teardown()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator {
         var lastFocus: MapFocusState = .all
+    }
+}
+
+// MARK: - Scroll edge effect host
+
+/// Hosts the slippy map inside a scroll view that never scrolls.
+///
+/// iOS 26 keeps a title and toolbar glyphs legible over full-bleed content with
+/// the scroll edge effect — the progressive blur "pocket" it draws into the top
+/// and bottom of the *content*, not a background on the bar. UIKit only installs
+/// it for content that registers as a scroll view, which is why `MKMapView` gets
+/// one for free and a bare `UIView` renderer does not: the bars had nothing
+/// behind them and the map ran straight through the title.
+///
+/// A scroll view with scrolling switched off and its content pinned to `bounds`
+/// is inert — no pan gesture, no content offset, no bounce — but it is enough to
+/// register, so both bars get the same treatment as the MapKit branch.
+final class SlippyMapHost: UIScrollView {
+    let map: SlippyMapView
+
+    init(source: CustomTileSource) {
+        map = SlippyMapView(source: source)
+        super.init(frame: .zero)
+        isScrollEnabled = false
+        bounces = false
+        showsVerticalScrollIndicator = false
+        showsHorizontalScrollIndicator = false
+        // Full-bleed content is the point: never inset it away from the bars,
+        // or there is nothing under them for the effect to blur.
+        contentInsetAdjustmentBehavior = .never
+        // The map recognizes its own touches; don't let the scroll view sit on
+        // them waiting to see whether a drag turns into a scroll.
+        delaysContentTouches = false
+        addSubview(map)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        map.frame = CGRect(origin: .zero, size: bounds.size)
+        contentSize = bounds.size
     }
 }
 
@@ -156,13 +200,23 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     /// When entering `.all` because the user panned (not via the button), keep
     /// the current viewport + rotation instead of refitting/resetting north.
     private var suppressRefitOnAll = false
+    /// Whether the viewport is still an automatic fit to the pins rather than a
+    /// framing the user chose. While it holds, a change to the entry set refits
+    /// — which is what crops the map to a search's matches. Any direct
+    /// manipulation clears it, so a view someone framed by hand is never yanked
+    /// out from under them. This mirrors `MapCameraPosition.automatic`, which the
+    /// MapKit renderer gets for free: it re-frames as content changes until the
+    /// user takes the camera over.
+    private var viewportIsAutoFit = true
 
-    // Pinch gesture: we transform the tile layer on the GPU during the gesture
-    // and only re-tile once it ends (the reference slippy-map technique —
-    // re-tiling every event is what makes pinch jumpy/fast under load). The
-    // transform tracks the moving two-finger centroid (so pinch + pan together
-    // stay glued) and carries the current rotation (so heading mode survives a
-    // pinch).
+    // Pinch gesture: we transform the tile layer on the GPU between commits
+    // rather than re-tiling every event (the reference slippy-map technique —
+    // re-tiling per event is what makes pinch jumpy/fast under load), and commit
+    // the gesture into the map state each time it crosses a tile level, so the
+    // level being zoomed into starts loading while the fingers are still down.
+    // The transform tracks the moving two-finger centroid (so pinch + pan
+    // together stay glued) and carries the current rotation (so heading mode
+    // survives a pinch).
     private var pinchCentroid0: CGPoint = .zero
     private var pinchMapAnchor: (e: Double, n: Double) = (0, 0)
     private var pinchBaseRes: Double = 0
@@ -175,28 +229,95 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     /// When the last pinch ended, so a lingering finger can't immediately hijack
     /// the 1-finger pan and drag the map (the post-pinch "bounce back").
     private var lastPinchEndTime: CFTimeInterval = 0
+    /// True when the live pinch is a trackpad magnify rather than two fingers on
+    /// glass. Mac Catalyst (and iPadOS with a trackpad) delivers those as
+    /// `UIEventTypeTransform` events, which carry no `UITouch` objects at all, so
+    /// the recognizer runs its entire life at `numberOfTouches == 0`. Both
+    /// two-finger guards below have to stand down for it — the `>= 2` check in
+    /// `.changed` would otherwise drop every update and leave the gesture a
+    /// no-op, which is why trackpad pinch did nothing while every other gesture
+    /// worked.
+    private var pinchIsIndirect = false
     /// True while a pinch is live, so layout doesn't reset the tile layer's
     /// frame/transform out from under the gesture.
     private var isPinching = false
+    /// The tile level the live pinch has laid out for, so it can tell when the
+    /// gesture has scaled into a different one. Tracked separately from
+    /// `laidOutZoom` because `updateTiles` may step out to a coarser level than
+    /// the resolution asks for, and comparing against that would re-commit on a
+    /// loop for the whole gesture.
+    private var pinchTiledZoom = 0
+    /// When the pinch last committed, so a scale hovering on a level boundary
+    /// re-tiles at most a few times a second instead of every frame it wobbles.
+    private var lastPinchRebase: CFTimeInterval = 0
+    /// The recognizer's raw `scale` at the last commit. Live scale is measured
+    /// from here rather than by writing `g.scale = 1`, because a trackpad
+    /// magnify's scale is synthesized from accumulated `NSEvent` magnification
+    /// and does not reliably take a write mid-gesture — and a reset that
+    /// silently didn't stick re-applies the entire accumulated zoom on the next
+    /// frame, which reads as a jolt at the level boundary and a runaway zoom
+    /// after it. Reading an offset can't fail that way.
+    private var pinchScaleBase: CGFloat = 1
+    /// Rate of change of ln(resolution) through the pinch, per second, smoothed
+    /// across events — the release value becomes the zoom glide. Measured here
+    /// rather than read from `UIPinchGestureRecognizer.velocity` for the same
+    /// reason the scroll-pan measures its own: that property is derived from a
+    /// touch stream, and a trackpad magnify has no touches.
+    private var pinchLogVel = 0.0
+    private var pinchLastEvent: CFTimeInterval = 0
+    private var pinchLastRes = 0.0
 
     /// Accumulated translation of the in-progress scroll-to-zoom gesture, so each
     /// event zooms by its own delta (trackpad / mouse wheel on Mac & iPad).
     private var scrollZoomLastY: CGFloat = 0
 
+    /// Screen-space velocity of the in-progress trackpad scroll-pan, points/sec,
+    /// smoothed across events. Measured here rather than read from the
+    /// recognizer: `UIPanGestureRecognizer.velocity` is derived from a touch
+    /// stream, and a scroll-driven pan has no touches — the same reason a
+    /// trackpad pinch reports `numberOfTouches == 0`.
+    private var scrollPanVelocity: CGPoint = .zero
+    private var scrollPanLastEvent: CFTimeInterval = 0
+
     // Tile layers currently placed, and which of them hold their real image
     // (vs. a temporary upscaled-ancestor placeholder).
     private let tileHost = CALayer()
+    /// The "paper" the grid sits on: `sheet` fills the sheet extent below the
+    /// tiles and casts the drop shadow, `tileClip` holds the tiles and trims them
+    /// to that same extent, `sheetEdge` draws the cut edge over their outermost
+    /// pixel. All three are children of `tileHost`, so they pan, zoom and rotate
+    /// with the map for free, and the shadow stays a single compositor primitive —
+    /// with an explicit `shadowPath` it costs no offscreen pass per frame, which a
+    /// `masksToBounds`-plus-`shadow` layer (or a SwiftUI `.shadow`) would.
+    private let sheet = CALayer()
+    private let tileClip = CALayer()
+    private let sheetEdge = CALayer()
+    /// Corner rounding of the sheet, in points — screen-space, so the corner reads
+    /// the same at every zoom. Matches the radius the map's own controls use.
+    private static let sheetCornerRadius: CGFloat = 12
     private var tileLayers: [TileID: CALayer] = [:]
     private var realTiles: Set<TileID> = []
     /// Tiles we've already kicked off a fetch for, so a pan doesn't re-request
     /// the same (or a permanently-empty, e.g. offshore) tile every frame. Reset
     /// when the tile leaves view, so revisiting retries.
     private var requested: Set<TileID> = []
+    /// The level the last `updateTiles` actually laid out.
+    private var laidOutZoom: Int?
+    /// Finished tiles from the level we just left, kept beneath the current grid
+    /// until it has pictures of its own. Zooming *in* needs none of this — the
+    /// coarser level is already cached, and `bestCachedAncestor` upscales it into
+    /// place — but zooming out has nothing coarser to fall back on, so without a
+    /// backdrop each level change flashes bare paper. This matters much more now
+    /// that a pinch changes level while it is still running.
+    private var staleTiles: [TileID: CALayer] = [:]
 
     // Overlay for constant-size pins + user dot.
     private let overlay = PassthroughView()
     private let userDot = BNGUserDotView()
     private var entries: [LocationEntry] = []
+    /// Ids of the entries that currently have a location, so `setEntries` can
+    /// tell a changed pin set apart from the same pins arriving again.
+    private var placedEntryIDs: Set<UUID> = []
     private var pinViews: [UUID: BNGPinView] = [:]
     private var userBNG: (e: Double, n: Double)?
 
@@ -207,10 +328,22 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     // Animation / momentum driver.
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
-    private enum Motion { case idle, momentum, zoom }
+    private enum Motion { case idle, momentum, zoom, zoomGlide }
     private var motion: Motion = .idle
     private var velE = 0.0, velN = 0.0                       // momentum, BNG m/s
     private var zoomFromRes = 0.0, zoomToRes = 0.0            // zoom animation
+    /// Zoom-glide rate, in ln(resolution) per second. Zoom is geometric, so the
+    /// only velocity that decays evenly is the one measured in log space —
+    /// metres/point per second would coast forever when zoomed out and barely
+    /// move when zoomed in.
+    private var zoomVel = 0.0
+    /// Below this release rate a pinch was a settle, not a flick (≈ ×1.8/sec).
+    private static let zoomGlideMinRate = 0.6
+    /// Ease-out rate of the glide. Matches the pan momentum's decay, so a zoom
+    /// flick and a pan flick come to rest over the same sort of interval.
+    private static let zoomGlideDecay = 5.0
+    /// Rate at which the glide has visually stopped and can be retired.
+    private static let zoomGlideStopRate = 0.05
     private var zoomStart: CFTimeInterval = 0
     private let zoomDuration: CFTimeInterval = 0.25
     private var zoomAnchorScreen: CGPoint = .zero
@@ -242,13 +375,50 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         self.matrix = source.validated?.matrix ?? .bngDefault
         self.store = BNGTileStore(source: source)
         super.init(frame: .zero)
-        backgroundColor = UIColor(red: 0xF2/255, green: 0xEF/255, blue: 0xE9/255, alpha: 1)
+        // Off the sheet there is no map, so the surround is just app chrome: use
+        // the same grouped background every other screen sits on rather than a
+        // hardcoded paper tone, which stayed light in dark mode.
+        // (Was: UIColor(red: 0xF2/255, green: 0xEF/255, blue: 0xE9/255, alpha: 1).)
+        backgroundColor = .systemGroupedBackground
         clipsToBounds = true
 
         // Don't mask to bounds — the view itself clips, and letting buffer tiles
         // overflow means a pinch-out transform reveals them instead of blank edges.
         tileHost.masksToBounds = false
         layer.addSublayer(tileHost)
+
+        // zPosition rather than sublayer order, so tiles being added and removed
+        // constantly can never sandwich these wrongly.
+        sheet.zPosition = -1
+        tileClip.zPosition = 0
+        sheet.backgroundColor = UIColor(red: 0xFD/255, green: 0xFC/255, blue: 0xFA/255, alpha: 1).cgColor
+        sheet.shadowOpacity = 0            // raised in updateSheet() when an edge is near
+        sheet.shadowRadius = 14            // colour + offset: applySheetShadowColor()
+        sheetEdge.zPosition = 1
+        sheetEdge.borderColor = UIColor.black.withAlphaComponent(0.14).cgColor
+        for l in [sheet, tileClip, sheetEdge] {
+            // All three trace the same rounded rect, so the paper, the imagery
+            // clipped to it and the cut edge share one silhouette.
+            l.cornerRadius = Self.sheetCornerRadius
+            l.cornerCurve = .continuous
+            let null = NSNull()
+            l.actions = ["position": null, "bounds": null, "frame": null,
+                         "hidden": null, "shadowPath": null, "borderWidth": null,
+                         "masksToBounds": null, "sublayers": null,
+                         "cornerRadius": null]
+            tileHost.addSublayer(l)
+        }
+        sheet.isHidden = true
+        sheetEdge.isHidden = true
+        applySheetShadowColor()
+        // A CALayer stores a *resolved* CGColor, so a dynamic UIColor can't track
+        // the interface style the way the view's own backgroundColor does — the
+        // shadow has to be re-resolved by hand whenever the style flips.
+        // The registration token is only needed to unregister early; the
+        // registration dies with the view, which is exactly when we want it gone.
+        _ = registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in
+            self.applySheetShadowColor()
+        }
 
         overlay.frame = bounds
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -354,6 +524,21 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
          centerN - Double(p.y - midY) * resolution)
     }
 
+    /// The visible area in north-up content coordinates (the space tile frames are
+    /// computed in): the view's rectangle un-rotated, bounding-boxed so a rotated
+    /// viewport is fully covered.
+    private func contentBounds() -> CGRect {
+        let xs: [CGFloat], ys: [CGFloat]
+        let corners = [CGPoint(x: 0, y: 0),
+                       CGPoint(x: bounds.width, y: 0),
+                       CGPoint(x: 0, y: bounds.height),
+                       CGPoint(x: bounds.width, y: bounds.height)]
+            .map { rotate($0, by: -rotation) }
+        xs = corners.map(\.x); ys = corners.map(\.y)
+        return CGRect(x: xs.min()!, y: ys.min()!,
+                      width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+    }
+
     /// Rotate a point about the view centre by `angle` radians (clockwise).
     private func rotate(_ p: CGPoint, by angle: Double) -> CGPoint {
         guard angle != 0 else { return p }
@@ -407,25 +592,88 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     }
 
     private var minRes: Double { (matrix.resolutions.last ?? 1.75) / 4 }   // 4× overzoom past finest
-    private var maxRes: Double { (matrix.resolutions.first ?? 896) * 4 }   // out past whole-GB
+
+    /// Zoomed out far enough to see the whole sheet and a margin of surround, and
+    /// no further — shrinking a fixed sheet to a stamp in an empty view is never a
+    /// view anyone wants. This is the backstop for every zoom-out path: pinch,
+    /// two-finger tap, scroll wheel, and an adopted viewport from the worldwide
+    /// renderer that was framed around pins this projection can't show.
+    private var maxRes: Double {
+        guard bounds.width > 0, bounds.height > 0 else { return (matrix.resolutions.first ?? 896) * 4 }
+        let b = BNGTileMatrix.sheetBounds
+        return max((b.maxX - b.minX) / Double(bounds.width),
+                   (b.maxY - b.minY) / Double(bounds.height)) * 1.1
+    }
 
     private func clampRes(_ r: Double) -> Double { min(maxRes, max(minRes, r)) }
 
+    /// Keep the map centre on the paper, so the sheet can be pushed to an edge of
+    /// the screen but never off it.
     private func clampCenter() {
-        centerE = min(max(centerE, -50_000), 750_000)
-        centerN = min(max(centerN, -50_000), 1_300_000)
+        let b = BNGTileMatrix.sheetBounds
+        centerE = min(max(centerE, b.minX), b.maxX)
+        centerN = min(max(centerN, b.minY), b.maxY)
     }
 
     /// Integer tile level whose native resolution is nearest the current display
     /// resolution (in log space), clamped to what the source provides.
-    private func tileZoom() -> Int {
+    private func tileZoom() -> Int { tileZoom(for: resolution) }
+
+    /// The same choice for an arbitrary resolution, so a live pinch can ask which
+    /// level it is heading for before committing to it.
+    private func tileZoom(for res: Double) -> Int {
         var best = matrix.minZoom
         var bestDiff = Double.greatestFiniteMagnitude
         for z in matrix.minZoom...matrix.maxZoom {
-            let d = abs(log2(matrix.resolutions[z] / resolution))
+            let d = abs(log2(matrix.resolutions[z] / res))
             if d < bestDiff { bestDiff = d; best = z }
         }
         return best
+    }
+
+    // MARK: Native zoom depth
+
+    /// Levels that have answered with real imagery, and up to a handful of the
+    /// distinct tiles each level has answered "nothing" for.
+    private var zoomHasImagery: Set<Int> = []
+    private var zoomMissedTiles: [Int: Set<TileID>] = [:]
+
+    /// The deepest level worth requesting. A matrix routinely advertises more
+    /// levels than the source actually holds imagery for — nothing in WMTS
+    /// capabilities says where a series' pictures stop — and requesting those
+    /// levels returns nothing, which is why zooming in past a source's finest
+    /// level showed bare background instead of a map.
+    ///
+    /// Past this level, tiles are taken from here and scaled up by the layer:
+    /// blurry, but a map. Leaflet calls the cap `maxNativeZoom` and has you
+    /// configure it; there's nothing to read it from here, so it's learned.
+    private func deepestUsableZoom() -> Int {
+        var z = matrix.maxZoom
+        while z > matrix.minZoom, isBarren(z) { z -= 1 }
+        return z
+    }
+
+    /// Whether a level has shown it holds nothing. Needs a *coarser* level to
+    /// have worked, which is what separates "this series stops here" from "the
+    /// network is down" — the latter would otherwise cap the zoom for the
+    /// session over a few seconds of bad signal.
+    private func isBarren(_ z: Int) -> Bool {
+        guard !zoomHasImagery.contains(z),
+              zoomMissedTiles[z]?.count ?? 0 >= 4 else { return false }
+        return zoomHasImagery.contains { $0 < z }
+    }
+
+    /// Record a tile that came back empty. Returns true if this is the answer
+    /// that tipped the level over into barren, so the caller can re-tile at once
+    /// rather than leaving the view blank until the next gesture.
+    private func noteEmpty(_ id: TileID) -> Bool {
+        let wasBarren = isBarren(id.z)
+        // Capped: a long pan across a sparse level shouldn't grow this without
+        // limit, and four is already past the threshold.
+        if zoomMissedTiles[id.z, default: []].count < 8 {
+            zoomMissedTiles[id.z, default: []].insert(id)
+        }
+        return !wasBarren && isBarren(id.z)
     }
 
     // MARK: Layout
@@ -463,63 +711,232 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         // would fight it and make the map/pins jump, snapping back only on release.
         if isPinching { return }
         guard bounds.width > 0, resolution > 0 else { return }
-        let z = tileZoom()
-        let resZ = matrix.resolutions[z]
-        let tileMeters = Double(matrix.tileSize) * resZ
 
-        // Viewport BNG bounds from the four screen corners un-rotated into
-        // north-up content space (so a rotated viewport is fully covered),
-        // padded by a tile so panning reveals ready tiles.
-        let corners = [CGPoint(x: 0, y: 0),
-                       CGPoint(x: bounds.width, y: 0),
-                       CGPoint(x: 0, y: bounds.height),
-                       CGPoint(x: bounds.width, y: bounds.height)]
-        let ens = corners.map { bng(atScreen: rotate($0, by: -rotation)) }
-        let eMin = ens.map(\.e).min()! - tileMeters
-        let eMax = ens.map(\.e).max()! + tileMeters
-        let nMin = ens.map(\.n).min()! - tileMeters
-        let nMax = ens.map(\.n).max()! + tileMeters
+        // The deepest level that has something to draw here. Stepping out beats
+        // drawing nothing: coarser tiles scaled up are blurry, but they are a
+        // map, and a level with no tiles in range leaves the viewport empty.
+        var z = min(tileZoom(), deepestUsableZoom())
+        var range = tileRange(at: z)
+        while range == nil, z > matrix.minZoom {
+            z -= 1
+            range = tileRange(at: z)
+        }
+        // Nothing at any level reaches the viewport: leave what's on screen
+        // alone rather than clearing to bare background.
+        guard let r = range else { return }
 
-        // Clamp the tile range to the grid: never below 0, and never past the
-        // advertised MatrixWidth/Height (requests outside coverage are
-        // guaranteed 404s).
+        let tileMeters = Double(matrix.tileSize) * matrix.resolutions[z]
         let originX = matrix.originX(at: z)
         let originY = matrix.originY(at: z)
-        let txMin = max(0, Int(floor((eMin - originX) / tileMeters)))
-        let tyMin = max(0, Int(floor((originY - nMax) / tileMeters)))
-        var txMax = Int(floor((eMax - originX) / tileMeters))
-        var tyMax = Int(floor((originY - nMin) / tileMeters))
-        if let cols = matrix.columns(at: z) { txMax = min(txMax, cols - 1) }
-        if let rows = matrix.rows(at: z) { tyMax = min(tyMax, rows - 1) }
-
-        // Safety: never fan out to an unbounded grid (e.g. a degenerate resolution).
-        if (txMax - txMin + 1) * (tyMax - tyMin + 1) > 800 { return }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
-        // An empty range (viewport entirely off-grid) still falls through so the
-        // stale-tile drop below clears what's no longer visible.
-        var needed = Set<TileID>()
-        if txMin <= txMax, tyMin <= tyMax {
-            for ty in tyMin...tyMax {
-                for tx in txMin...txMax {
-                    let id = TileID(z: z, x: tx, y: ty)
-                    needed.insert(id)
-                    placeTile(id)
-                }
+        // Tiles the viewport needs, each paired with its squared distance from
+        // the map centre in tile units.
+        let cx = (centerE - originX) / tileMeters
+        let cy = (originY - centerN) / tileMeters
+        var wanted: [(id: TileID, d2: Double)] = []
+        wanted.reserveCapacity((r.txMax - r.txMin + 1) * (r.tyMax - r.tyMin + 1))
+        for ty in r.tyMin...r.tyMax {
+            for tx in r.txMin...r.txMax {
+                let dx = Double(tx) + 0.5 - cx, dy = Double(ty) + 0.5 - cy
+                wanted.append((TileID(z: z, x: tx, y: ty), dx * dx + dy * dy))
             }
         }
-        // Drop tiles no longer in view.
+        let needed = Set(wanted.map(\.id))
+
+        let levelChanged = laidOutZoom != nil && laidOutZoom != z
+        laidOutZoom = z
+        // One generation of backdrop only: the tiles about to be retired are a
+        // closer stand-in for this level than tiles two levels away, and keeping
+        // every generation would pile up layers across a fast multi-level pinch.
+        if levelChanged { clearBackdrop() }
+
+        // Retire what has left the view *before* asking for anything new. A zoom
+        // step invalidates every tile at once, and those fetches are sitting on
+        // the network slots the new level wants — cancelling first is the
+        // difference between the new level starting now and starting once a
+        // screenful of superseded tiles has finished arriving.
         for (id, layer) in tileLayers where !needed.contains(id) {
-            layer.removeFromSuperlayer()
+            let wasReal = realTiles.contains(id)
             tileLayers[id] = nil
             realTiles.remove(id)
             requested.remove(id)
+            placeholderZoom[id] = nil
+            store.cancelTile(z: id.z, x: id.x, y: id.y)
+            // Off screen: forget the failure history too, so coming back gives a
+            // clean attempt (and the table can't grow as the user pans).
+            retryPolicy.forget(id)
+            // A finished picture of ground the view still covers outlives the
+            // level it belongs to: demote it to the backdrop rather than drop it,
+            // so the incoming level draws over a map instead of over blank paper.
+            if levelChanged, wasReal {
+                layer.zPosition = -1
+                staleTiles[id] = layer
+            } else {
+                layer.removeFromSuperlayer()
+            }
         }
+
+        // Centre outwards, so the map fills from where the eye already is rather
+        // than sweeping in from a corner. Only a handful of requests run at once
+        // and the rest queue in arrival order, so issue order is very nearly
+        // service order.
+        wanted.sort { $0.d2 < $1.d2 }
+        for (id, _) in wanted { placeTile(id) }
+
+        updateBackdrop()
+        updateSheet()
 
         CATransaction.commit()
         repositionPins()
+    }
+
+    /// The tile index range covering the viewport at level `z`, or nil when this
+    /// level has nothing to draw here: its grid stops short of the view, the view
+    /// has left the sheet, or the range came out absurd.
+    private func tileRange(at z: Int) -> (txMin: Int, txMax: Int, tyMin: Int, tyMax: Int)? {
+        let tileMeters = Double(matrix.tileSize) * matrix.resolutions[z]
+
+        // Viewport BNG bounds, padded by a tile so panning reveals ready tiles.
+        // (screen → BNG is affine with the y axis flipped, so the content box's
+        // top-left and bottom-right corners give all four extremes.)
+        let visible = contentBounds()
+        let topLeft = bng(atScreen: CGPoint(x: visible.minX, y: visible.minY))
+        let bottomRight = bng(atScreen: CGPoint(x: visible.maxX, y: visible.maxY))
+
+        // Nothing outside the sheet is ever visible, so don't fetch it. Tiles that
+        // straddle the edge are still needed — the mask trims them.
+        let sheet = BNGTileMatrix.sheetBounds
+        let eLo = max(topLeft.e - tileMeters, sheet.minX)
+        let eHi = min(bottomRight.e + tileMeters, sheet.maxX)
+        let nLo = max(bottomRight.n - tileMeters, sheet.minY)
+        let nHi = min(topLeft.n + tileMeters, sheet.maxY)
+        guard eLo <= eHi, nLo <= nHi else { return nil }
+
+        // Clamp to the grid: never below 0, and never past the advertised
+        // MatrixWidth/Height (requests outside coverage are guaranteed 404s).
+        let originX = matrix.originX(at: z)
+        let originY = matrix.originY(at: z)
+        let txMin = max(0, Int(floor((eLo - originX) / tileMeters)))
+        let tyMin = max(0, Int(floor((originY - nHi) / tileMeters)))
+        var txMax = Int(floor((eHi - originX) / tileMeters))
+        var tyMax = Int(floor((originY - nLo) / tileMeters))
+        if let cols = matrix.columns(at: z) { txMax = min(txMax, cols - 1) }
+        if let rows = matrix.rows(at: z) { tyMax = min(tyMax, rows - 1) }
+        guard txMin <= txMax, tyMin <= tyMax else { return nil }
+
+        // Safety: never fan out to an unbounded grid (e.g. a degenerate
+        // resolution). Coarser levels cover the same ground in fewer tiles, so
+        // the caller's step-out converges instead of giving up.
+        guard (txMax - txMin + 1) * (tyMax - tyMin + 1) <= 800 else { return nil }
+        return (txMin, txMax, tyMin, tyMax)
+    }
+
+    /// Re-frame the backdrop the last level change left behind, and retire it once
+    /// it has nothing left to say: every current tile has its own picture, or the
+    /// map has moved off the ground it covers.
+    ///
+    /// The backdrop lives in `tileClip` alongside the real tiles, below them by
+    /// zPosition, so it is trimmed by the sheet edge and moves with the map
+    /// exactly as they do — it only needs re-framing at the new resolution.
+    private func updateBackdrop() {
+        guard !staleTiles.isEmpty else { return }
+        if realTiles.count == tileLayers.count { clearBackdrop(); return }
+        let cull = contentBounds().insetBy(dx: -bounds.width, dy: -bounds.height)
+        for (id, layer) in staleTiles {
+            let f = tileFrame(id)
+            if f.intersects(cull) {
+                layer.frame = f
+            } else {
+                layer.removeFromSuperlayer()
+                staleTiles[id] = nil
+            }
+        }
+    }
+
+    private func clearBackdrop() {
+        for (_, layer) in staleTiles { layer.removeFromSuperlayer() }
+        staleTiles.removeAll()
+    }
+
+    /// Lay the paper sheet, the tile clip and the cut edge around the sheet extent.
+    ///
+    /// The extent is the projection's own bounds rather than the tile grid's. The
+    /// grid is bigger — its origin is chosen to make whole tiles at every level —
+    /// and imagery peters out somewhere inside it, so an edge drawn there shows a
+    /// band of blank paper before the shadow. Cutting where the projection stops
+    /// puts the edge well inside the imagery, so it's always a clean trim.
+    ///
+    /// The rect is clamped to a box several screens deep rather than drawn at its
+    /// true size: at the finest zoom the extent is over a million points across, and
+    /// handing the render server a layer (and a shadow) that large buys nothing —
+    /// every clamped edge is far outside the viewport. The pad is deep enough that
+    /// a pinch-out, which scales these layers on the GPU between re-tiles, can't drag
+    /// a clamped edge into view before the gesture ends and this runs again.
+    private func updateSheet() {
+        let e = BNGTileMatrix.sheetBounds
+        let topLeft = screen(e: e.minX, n: e.maxY)
+        let bottomRight = screen(e: e.maxX, n: e.minY)
+
+        let pad = max(bounds.width, bounds.height) * 6
+        let limit = contentBounds().insetBy(dx: -pad, dy: -pad)
+        let minX = max(topLeft.x, limit.minX), maxX = min(bottomRight.x, limit.maxX)
+        let minY = max(topLeft.y, limit.minY), maxY = min(bottomRight.y, limit.maxY)
+        guard maxX > minX, maxY > minY else {          // extent nowhere near the viewport
+            sheet.isHidden = true
+            sheetEdge.isHidden = true
+            tileClip.masksToBounds = false
+            return
+        }
+
+        // Every side clamped ⇒ the real edge is several screens away on all four
+        // sides ⇒ there is nothing to trim and nothing to shade.
+        let allClamped = minX > topLeft.x && maxX < bottomRight.x
+            && minY > topLeft.y && maxY < bottomRight.y
+
+        let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        sheet.frame = rect
+        // Circular-arc corners rather than the layers' continuous ones: at this
+        // radius, under a 14pt blur, the two are indistinguishable, and this is a
+        // path the render server already has a fast case for.
+        sheet.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: rect.size),
+                                  cornerWidth: Self.sheetCornerRadius,
+                                  cornerHeight: Self.sheetCornerRadius,
+                                  transform: nil)
+        sheet.shadowOpacity = allClamped ? 0 : sheetShadowOpacity
+        sheet.isHidden = false
+        sheetEdge.frame = rect
+        sheetEdge.borderWidth = 1 / ql_displayScale
+        sheetEdge.isHidden = allClamped
+
+        // A non-zero bounds origin lets the tiles keep addressing tileHost's
+        // coordinate space, so their frames need no adjusting for living in here.
+        tileClip.bounds = rect
+        tileClip.position = CGPoint(x: rect.midX, y: rect.midY)
+        // A rounded clip is a mask, so it costs an offscreen pass per frame however
+        // the map is oriented — only clip when an edge can actually be on screen.
+        // Heading-follow is always zoomed far inside the extent, where every side is
+        // clamped and there's nothing to trim.
+        tileClip.masksToBounds = !allClamped
+    }
+
+    /// Opacity the sheet's shadow is raised to when an edge is on screen. A dark
+    /// shadow is a shadow; a light one is a glow, and a glow has to be stronger to
+    /// register at all against the near-black dark-mode surround.
+    private var sheetShadowOpacity: Float {
+        traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.22
+    }
+
+    /// Lift the light sheet off whichever surround is behind it: a drop shadow in
+    /// light mode, a glow in dark, where black on near-black would be invisible.
+    private func applySheetShadowColor() {
+        let dark = traitCollection.userInterfaceStyle == .dark
+        sheet.shadowColor = (dark ? UIColor.white : UIColor.black).cgColor
+        // Offsetting a glow downward reads as smearing, not lift.
+        sheet.shadowOffset = dark ? .zero : CGSize(width: 0, height: 5)
+        if !sheet.isHidden, sheet.shadowOpacity != 0 { sheet.shadowOpacity = sheetShadowOpacity }
     }
 
     private func tileFrame(_ id: TileID) -> CGRect {
@@ -532,6 +949,37 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         // Expand a touch so fractional positions don't leave hairline seams.
         return CGRect(x: topLeft.x, y: topLeft.y, width: sizePt, height: sizePt)
             .insetBy(dx: -0.5, dy: -0.5)
+    }
+
+    // MARK: Failed-tile retry
+
+    /// See `TileRetryPolicy`: a failed tile is retried in place after a growing
+    /// back-off, capped so a permanently-empty position isn't re-requested on
+    /// every layout pass.
+    private var retryPolicy = TileRetryPolicy<TileID>()
+    /// One pending retry pass at a time — a screenful of failures should cost
+    /// one sweep, not one per tile.
+    private var retrySweepScheduled = false
+
+    private func noteFailure(_ id: TileID) {
+        let nextDelay = retryPolicy.noteFailure(id, now: CACurrentMediaTime())
+        // Clearing this is what allows the retry; without it the tile is locked
+        // out until it leaves the viewport.
+        requested.remove(id)
+        guard let nextDelay else { return }   // out of attempts
+        scheduleRetrySweep(after: nextDelay)
+    }
+
+    /// Re-run tile placement once the back-off has elapsed, so a failed tile
+    /// recovers on its own instead of waiting for the user to pan or zoom.
+    private func scheduleRetrySweep(after delay: TimeInterval) {
+        guard !retrySweepScheduled else { return }
+        retrySweepScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.retrySweepScheduled = false
+            self.updateTiles()
+        }
     }
 
     private func placeTile(_ id: TileID) {
@@ -548,7 +996,7 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             l.actions = ["contents": null, "contentsRect": null, "position": null,
                          "bounds": null, "frame": null, "hidden": null,
                          "onOrderIn": null, "onOrderOut": null, "sublayers": null]
-            tileHost.addSublayer(l)
+            tileClip.addSublayer(l)
             tileLayers[id] = l
             return l
         }()
@@ -560,19 +1008,45 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             layer.contents = img.cgImage
             layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
             realTiles.insert(id)
+            placeholderZoom[id] = nil
             return
         }
         // No real tile yet: show an upscaled slice of the best cached ancestor
         // so the position is never blank, and fetch the real one (once).
-        if layer.contents == nil, let anc = bestAncestor(id) {
+        if layer.contents == nil, let anc = bestCachedAncestor(id) {
             layer.contents = anc.image.cgImage
             layer.contentsRect = anc.rect
+            placeholderZoom[id] = anc.z
         }
-        guard !requested.contains(id) else { return }
+        guard !requested.contains(id),
+              retryPolicy.mayRequest(id, now: CACurrentMediaTime()) else { return }
         requested.insert(id)
-        store.requestTile(z: id.z, x: id.x, y: id.y) { [weak self] z, x, y in
+        store.requestTile(z: id.z, x: id.x, y: id.y) { [weak self] z, x, y, outcome in
             guard let self else { return }
             let id = TileID(z: z, x: x, y: y)
+            switch outcome {
+            case .loaded:
+                self.zoomHasImagery.insert(z)
+                self.placeholderZoom[id] = nil
+            case .missing:
+                // Nothing here at this level. Cover the position from the level
+                // above straight away, then — if this level has now proved barren
+                // outright — re-tile so the whole view drops to the deepest level
+                // that does hold imagery, rather than paying for a doomed request
+                // and a fallback for every tile from here on.
+                let nowBarren = self.noteEmpty(id)
+                self.noteFailure(id)
+                self.fillFromAncestor(id, from: z - 1)
+                if nowBarren { self.updateTiles() }
+                return
+            case .cancelled:
+                // Superseded, not failed. The drop that cancelled it already
+                // cleared `requested`, so if this position comes back into view
+                // it is asked for again with a clean slate — charging it a retry
+                // attempt would instead lock it out of the level it lands on.
+                return
+            }
+            self.retryPolicy.noteSuccess(id)
             guard let layer = self.tileLayers[id],
                   let img = self.store.cachedImage(z: z, x: x, y: y) else { return }
             let hadPlaceholder = layer.contents != nil
@@ -591,41 +1065,114 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    /// The nearest cached coarser tile covering `id`, with the normalized
-    /// sub-rectangle of it that corresponds to `id` (for CALayer.contentsRect).
+    /// The tile at level `az` covering `id`, with the normalized sub-rectangle of
+    /// it that corresponds to `id` (for CALayer.contentsRect). Nil when that
+    /// level has no such tile.
     ///
     /// Computed geometrically (via each level's own origin and resolution)
     /// rather than by bit-shifting indices: WMTS neither guarantees a shared
     /// origin across levels nor exact power-of-two resolution steps, so index
-    /// arithmetic only holds for OS-style pyramids.
-    private func bestAncestor(_ id: TileID) -> (image: UIImage, rect: CGRect)? {
+    /// arithmetic only holds for aligned power-of-two pyramids.
+    private func ancestorTile(_ id: TileID, at az: Int) -> (id: TileID, rect: CGRect)? {
+        guard az >= matrix.minZoom, az < id.z else { return nil }
         let sizeC = Double(matrix.tileSize) * matrix.resolutions[id.z]
         let eLeft = matrix.originX(at: id.z) + Double(id.x) * sizeC
         let nTop = matrix.originY(at: id.z) - Double(id.y) * sizeC
+        let sizeA = Double(matrix.tileSize) * matrix.resolutions[az]
+        // Ancestor tile containing this tile's top-left corner. The epsilon
+        // absorbs float error when the corner lies exactly on a tile edge.
+        let ax = Int(floor((eLeft - matrix.originX(at: az)) / sizeA + 1e-9))
+        let ay = Int(floor((matrix.originY(at: az) - nTop) / sizeA + 1e-9))
+        guard ax >= 0, ay >= 0 else { return nil }
+        if let cols = matrix.columns(at: az), ax >= cols { return nil }
+        if let rows = matrix.rows(at: az), ay >= rows { return nil }
+        let fx = (eLeft - (matrix.originX(at: az) + Double(ax) * sizeA)) / sizeA
+        let fy = ((matrix.originY(at: az) - Double(ay) * sizeA) - nTop) / sizeA
+        let f = sizeC / sizeA
+        // Usable only when the child sits fully inside this ancestor tile
+        // (always true for aligned pyramids; may fail on odd ladders).
+        guard fx >= -1e-6, fy >= -1e-6, fx + f <= 1 + 1e-6, fy + f <= 1 + 1e-6 else { return nil }
+        return (TileID(z: az, x: ax, y: ay),
+                CGRect(x: max(0, fx), y: max(0, fy), width: min(1, f), height: min(1, f)))
+    }
+
+    /// The nearest already-cached coarser tile covering `id`. Free to consult, so
+    /// it runs for every tile before anything is requested.
+    private func bestCachedAncestor(_ id: TileID) -> (image: UIImage, rect: CGRect, z: Int)? {
         var az = id.z - 1
         while az >= matrix.minZoom {
             defer { az -= 1 }
-            let sizeA = Double(matrix.tileSize) * matrix.resolutions[az]
-            // Ancestor tile containing this tile's top-left corner. The epsilon
-            // absorbs float error when the corner lies exactly on a tile edge.
-            let ax = Int(floor((eLeft - matrix.originX(at: az)) / sizeA + 1e-9))
-            let ay = Int(floor((matrix.originY(at: az) - nTop) / sizeA + 1e-9))
-            guard ax >= 0, ay >= 0,
-                  let img = store.cachedImage(z: az, x: ax, y: ay) else { continue }
-            let fx = (eLeft - (matrix.originX(at: az) + Double(ax) * sizeA)) / sizeA
-            let fy = ((matrix.originY(at: az) - Double(ay) * sizeA) - nTop) / sizeA
-            let f = sizeC / sizeA
-            // Usable only when the child sits fully inside this ancestor tile
-            // (always true for aligned pyramids; may fail on odd ladders).
-            guard fx >= -1e-6, fy >= -1e-6, fx + f <= 1 + 1e-6, fy + f <= 1 + 1e-6 else { continue }
-            return (img, CGRect(x: max(0, fx), y: max(0, fy), width: min(1, f), height: min(1, f)))
+            guard let a = ancestorTile(id, at: az),
+                  let img = store.cachedImage(z: a.id.z, x: a.id.x, y: a.id.y) else { continue }
+            return (img, a.rect, az)
         }
         return nil
     }
 
+    /// The level currently standing in for a tile that has no picture of its own,
+    /// so the fallback chain knows when to stop looking.
+    private var placeholderZoom: [TileID: Int] = [:]
+
+    /// Fill a tile the source has nothing for from the level above — requesting
+    /// that level if it isn't already to hand, which is the part `bestCachedAncestor`
+    /// can't do. Matrices routinely advertise more levels than a series holds
+    /// pictures for, and the disk cache is not visible from the main thread, so
+    /// "no imagery here" and "not in memory" both used to end as blank paper.
+    ///
+    /// Walks up a level at a time and stops at the first that answers, so the
+    /// usual case is one extra request. Tiles already showing a coarse stand-in
+    /// only ask for the levels that would improve on it.
+    private func fillFromAncestor(_ id: TileID, from az: Int) {
+        guard az >= matrix.minZoom, az > (placeholderZoom[id] ?? matrix.minZoom - 1),
+              let layer = tileLayers[id], !realTiles.contains(id) else { return }
+        guard let a = ancestorTile(id, at: az) else {
+            fillFromAncestor(id, from: az - 1)      // this level doesn't cover it
+            return
+        }
+        if let img = store.cachedImage(z: a.id.z, x: a.id.x, y: a.id.y) {
+            layer.contents = img.cgImage
+            layer.contentsRect = a.rect
+            placeholderZoom[id] = az
+            return
+        }
+        store.requestTile(z: a.id.z, x: a.id.x, y: a.id.y) { [weak self] _, _, _, outcome in
+            guard let self else { return }
+            switch outcome {
+            case .loaded:
+                // Re-check: the tile may have got its own picture, been panned
+                // away, or found a better stand-in while this was in the air.
+                guard let layer = self.tileLayers[id], !self.realTiles.contains(id),
+                      az > (self.placeholderZoom[id] ?? self.matrix.minZoom - 1),
+                      let img = self.store.cachedImage(z: a.id.z, x: a.id.x, y: a.id.y) else { return }
+                layer.contents = img.cgImage
+                layer.contentsRect = a.rect
+                self.placeholderZoom[id] = az
+            case .missing:
+                _ = self.noteEmpty(a.id)
+                self.fillFromAncestor(id, from: az - 1)
+            case .cancelled:
+                break
+            }
+        }
+    }
+
     // MARK: Pins / dot
 
+    /// Whether a BNG point falls on the sheet. Off it there's no map to sit on,
+    /// and `wgs84ToBNG` is extrapolating a projection outside the ground it's
+    /// fitted to, so the coordinates are fiction as well as invisible.
+    private static func isOnSheet(e: Double, n: Double) -> Bool {
+        let b = BNGTileMatrix.sheetBounds
+        return e >= b.minX && e <= b.maxX && n >= b.minY && n <= b.maxY
+    }
+
     func setEntries(_ newEntries: [LocationEntry]) {
+        // Which items are pinned, not how they're styled: a label being renamed
+        // or recoloured is not a reason to move the map.
+        let placed = Set(newEntries.filter { $0.item.location != nil }.map(\.item.id))
+        let placementChanged = placed != placedEntryIDs
+        placedEntryIDs = placed
+
         entries = newEntries
         let wanted = Set(newEntries.map(\.item.id))
         for (id, view) in pinViews where !wanted.contains(id) {
@@ -643,8 +1190,23 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             }()
             view.configure(with: entry)
             let bng = BNGProjection.wgs84ToBNG(lat: loc.latitude, lon: loc.longitude)
-            view.mapE = bng.e
-            view.mapN = bng.n
+            // Off-sheet stays nil: that's already the "nowhere to put it" case for
+            // repositionPins, the popover anchor and the fit-all zoom.
+            let onSheet = Self.isOnSheet(e: bng.e, n: bng.n)
+            view.mapE = onSheet ? bng.e : nil
+            view.mapN = onSheet ? bng.n : nil
+        }
+
+        // Re-frame the new set. This is the search crop: filtering the list
+        // hands us a smaller `entries` and the map closes in on what's left,
+        // without anything having to tell it a search happened.
+        if placementChanged, focus == .all, viewportIsAutoFit, bounds.width > 0 {
+            stopDisplayLink()
+            fitAllPins()
+            clampCenter()
+            updateTiles()      // repositions the pins itself
+            reportRegion()
+            return
         }
         repositionPins()
     }
@@ -669,7 +1231,10 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
                 view.isHidden = true
             }
         }
-        if let u = userBNG {
+        // Same rule for the dot: a user abroad has no position on this sheet.
+        // (`userBNG` itself is left alone, so follow modes still have something to
+        // centre on — clamped to the sheet — rather than silently doing nothing.)
+        if let u = userBNG, Self.isOnSheet(e: u.e, n: u.n) {
             let p = displayPoint(e: u.e, n: u.n)
             userDot.center = p
             userDot.isHidden = !overlay.bounds.insetBy(dx: -30, dy: -30).contains(p)
@@ -755,6 +1320,10 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         guard newSource != source else { return }
         source = newSource
         matrix = newSource.validated?.matrix ?? .bngDefault
+        // Every fetch still running belongs to a layer that's about to vanish;
+        // let them finish and they'd spend the next few seconds of bandwidth and
+        // decode time on imagery nobody will see.
+        store.clear()
         store = BNGTileStore(source: newSource)
         // Swap the tiles in place — keep the exact centre / zoom / rotation so
         // switching layers passes the current view through unchanged.
@@ -762,6 +1331,15 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         tileLayers.removeAll()
         realTiles.removeAll()
         requested.removeAll()
+        // The backdrop is imagery from the layer being switched away from — the
+        // one thing that must not survive under the new one.
+        clearBackdrop()
+        laidOutZoom = nil
+        placeholderZoom.removeAll()
+        retryPolicy.removeAll()
+        // Where imagery stops is a property of the source, not of the app.
+        zoomHasImagery.removeAll()
+        zoomMissedTiles.removeAll()
         // Clamp only in case the new matrix has a different resolution range.
         resolution = clampRes(resolution)
         updateTiles()
@@ -790,7 +1368,8 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
                 suppressRefitOnAll = false
             } else {
                 setRotation(0)
-                if let region { setViewport(region) } else { fitAllPins() }
+                let adopted = region.map(setViewport) ?? false
+                if !adopted { fitAllPins() }
             }
         case .city:
             setRotation(0)
@@ -811,6 +1390,10 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     /// viewport and (frozen) rotation; the toolbar icon returns to .all.
     private func exitFollow() {
         userDot.setEnlarged(false)
+        // The framing is now the user's, so the entry set changing must not
+        // re-frame it. Set before the guard: panning while already in `.all` is
+        // the commonest way to take the camera over, and it returns early.
+        viewportIsAutoFit = false
         guard focus != .all else { onUserPannedAway?(); return }
         focus = .all
         suppressRefitOnAll = true
@@ -818,9 +1401,12 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func fitAllPins() {
-        let coords = entries.compactMap(\.item.location)
-        guard !coords.isEmpty else { return }
-        let pts = coords.map { BNGProjection.wgs84ToBNG(lat: $0.latitude, lon: $0.longitude) }
+        // Off-sheet pins are excluded, not just hidden: one item abroad would
+        // otherwise stretch the fit until nothing on the sheet is legible.
+        let pts = entries.compactMap(\.item.location)
+            .map { BNGProjection.wgs84ToBNG(lat: $0.latitude, lon: $0.longitude) }
+            .filter { Self.isOnSheet(e: $0.e, n: $0.n) }
+        guard !pts.isEmpty else { return }
         let eMin = pts.map(\.e).min()!, eMax = pts.map(\.e).max()!
         let nMin = pts.map(\.n).min()!, nMax = pts.map(\.n).max()!
         centerE = (eMin + eMax) / 2
@@ -833,6 +1419,7 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             let resN = spanN / Double(bounds.height)
             resolution = clampRes(max(resE, resN) * 1.3)
         }
+        viewportIsAutoFit = true
     }
 
     private func centreOnUser() {
@@ -846,18 +1433,33 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         resolution = clampRes(focus == .heading ? headingResolution : followResolution)
     }
 
-    private func setViewport(_ region: MKCoordinateRegion) {
-        let c = BNGProjection.wgs84ToBNG(lat: region.center.latitude, lon: region.center.longitude)
-        centerE = c.e
-        centerN = c.n
-        let north = BNGProjection.wgs84ToBNG(lat: region.center.latitude + region.span.latitudeDelta / 2,
-                                             lon: region.center.longitude)
-        let south = BNGProjection.wgs84ToBNG(lat: region.center.latitude - region.span.latitudeDelta / 2,
-                                             lon: region.center.longitude)
-        let spanN = abs(north.n - south.n)
-        if spanN > 1, bounds.height > 0 {
-            resolution = clampRes(spanN / Double(bounds.height))
+    /// Adopt a viewport reported by the other renderer, so switching layers passes
+    /// the current view through unchanged. Returns false when the region isn't a
+    /// view of this sheet and the caller should fit the pins instead.
+    ///
+    /// The binding this arrives on is shared with the worldwide renderer, which
+    /// fits it to every pin — including ones this projection can't show. A region
+    /// framed around the UK *and* Switzerland centres in the Channel: adopting it
+    /// parks the sheet in a corner (the centre clamps to the nearest sheet corner)
+    /// at a zoom set by a pin that isn't drawn. There's no honest way to carry such
+    /// a view across, so we don't try; a region that lies entirely on the sheet is
+    /// adopted exactly, which is the case where continuity means anything.
+    private func setViewport(_ region: MKCoordinateRegion) -> Bool {
+        let lat = region.center.latitude, lon = region.center.longitude
+        let dLat = region.span.latitudeDelta / 2, dLon = region.span.longitudeDelta / 2
+        let sw = BNGProjection.wgs84ToBNG(lat: lat - dLat, lon: lon - dLon)
+        let ne = BNGProjection.wgs84ToBNG(lat: lat + dLat, lon: lon + dLon)
+        let eLo = min(sw.e, ne.e), eHi = max(sw.e, ne.e)
+        let nLo = min(sw.n, ne.n), nHi = max(sw.n, ne.n)
+        guard Self.isOnSheet(e: eLo, n: nLo), Self.isOnSheet(e: eHi, n: nHi) else { return false }
+
+        centerE = (eLo + eHi) / 2
+        centerN = (nLo + nHi) / 2
+        if bounds.width > 0, bounds.height > 0, eHi - eLo > 1, nHi - nLo > 1 {
+            resolution = clampRes(max((eHi - eLo) / Double(bounds.width),
+                                      (nHi - nLo) / Double(bounds.height)))
         }
+        return true
     }
 
     // MARK: Region reporting
@@ -899,25 +1501,60 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         pinch.delegate = self
         addGestureRecognizer(pinch)
 
+        // Zero-duration press: recognizes the instant a touch lands, purely so it
+        // can arrest a glide. It never consumes the touch — `cancelsTouchesInView`
+        // off, no delays, recognizes alongside everything — so pan, pinch, taps
+        // and the pin hit-testing behave exactly as before.
+        let touchDown = UILongPressGestureRecognizer(target: self, action: #selector(handleTouchDown(_:)))
+        touchDown.minimumPressDuration = 0
+        touchDown.cancelsTouchesInView = false
+        touchDown.delaysTouchesBegan = false
+        touchDown.delaysTouchesEnded = false
+        touchDown.delegate = self
+        addGestureRecognizer(touchDown)
+
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
         addGestureRecognizer(doubleTap)
 
         let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
         twoFingerTap.numberOfTouchesRequired = 2
+        // A small, quick pinch satisfies this recognizer too — two touches, ended
+        // before the tap timeout, moved less than its slop — and `shouldRecognize
+        // SimultaneouslyWith` returns true for every pair, so the live pinch never
+        // cancels it the way UIKit would by default. It therefore fired at the end
+        // of a gentle pinch and animated a full ×2 zoom *out* on top of whatever
+        // the pinch had just done: the map appeared to snap to the next step, and
+        // only for small pinches, which is what made it look intermittent.
+        // Waiting on the pinch to fail is the exact rule we want — a pinch that
+        // recognized is not a tap, and one that never began fails as the touches
+        // lift, which is when the tap would fire anyway.
+        twoFingerTap.require(toFail: pinch)
         addGestureRecognizer(twoFingerTap)
 
-        // Scroll-to-zoom for pointer devices (Mac trackpad / Catalyst, iPad with a
-        // trackpad or mouse). A pan recognizer restricted to *indirect* scroll
+        // Scroll handling for pointer devices (Mac trackpad / Catalyst, iPad with
+        // a trackpad or mouse). A pan recognizer restricted to *indirect* scroll
         // events with `maximumNumberOfTouches = 0` only fires for scrolls — never
         // for a finger drag — so it coexists with the 1-finger pan without either
         // stealing the other's gesture. MapKit does this for us; the native slippy
         // map has to opt in.
-        let scrollZoom = UIPanGestureRecognizer(target: self, action: #selector(handleScrollZoom(_:)))
-        scrollZoom.allowedScrollTypesMask = .all
-        scrollZoom.maximumNumberOfTouches = 0
-        scrollZoom.delegate = self
-        addGestureRecognizer(scrollZoom)
+        //
+        // Two of them, because a wheel and a trackpad mean different things by the
+        // same event. `UIScrollType` is what tells them apart — `.discrete`
+        // "originate from devices like a scroll wheel mouse", `.continuous` "from
+        // devices like trackpads" — and the macOS convention (MapKit's included)
+        // is wheel zooms, two-finger swipe pans. Pinch is the trackpad's zoom.
+        let wheelZoom = UIPanGestureRecognizer(target: self, action: #selector(handleScrollZoom(_:)))
+        wheelZoom.allowedScrollTypesMask = .discrete
+        wheelZoom.maximumNumberOfTouches = 0
+        wheelZoom.delegate = self
+        addGestureRecognizer(wheelZoom)
+
+        let scrollPan = UIPanGestureRecognizer(target: self, action: #selector(handleScrollPan(_:)))
+        scrollPan.allowedScrollTypesMask = .continuous
+        scrollPan.maximumNumberOfTouches = 0
+        scrollPan.delegate = self
+        addGestureRecognizer(scrollPan)
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer,
@@ -928,11 +1565,39 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         // Block the 1-finger pan while a pinch is live or just ended, so a finger
         // lingering as the pinch ends can't drag the map (the "bounce back").
+        // A trackpad magnify leaves no finger behind to do that, so it doesn't
+        // earn the cool-off — charging it one would just deaden click-drag for a
+        // third of a second after every zoom.
         if g === mapPan {
             if isPinching { return false }
-            if CACurrentMediaTime() - lastPinchEndTime < 0.3 { return false }
+            if !pinchIsIndirect, CACurrentMediaTime() - lastPinchEndTime < 0.3 { return false }
         }
         return true
+    }
+
+    /// Touching the map stops a glide dead, the way every inertial scroller does —
+    /// otherwise the map keeps sliding out from under a finger that has clearly
+    /// asked it to stop.
+    ///
+    /// On Mac this catches a click. A bare two-finger *rest* on a trackpad can't
+    /// be caught: it produces no touch and no scroll event, and UIKit exposes no
+    /// scroll phase to see it through. Starting to scroll does stop the glide, via
+    /// `handleScrollPan`'s `.began`.
+    @objc private func handleTouchDown(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began else { return }
+        arrestMomentum()
+    }
+
+    /// Stop a glide where it is. Retires the momentum rather than tearing the
+    /// display link down: a heading-follow ease may be riding the same link, and
+    /// `tick` stops it on its own once nothing is left to animate.
+    private func arrestMomentum() {
+        guard motion == .momentum || motion == .zoomGlide else { return }
+        motion = .idle
+        velE = 0
+        velN = 0
+        zoomVel = 0
+        reportRegion()
     }
 
     @objc private func handlePan(_ g: UIPanGestureRecognizer) {
@@ -943,22 +1608,73 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         case .changed:
             let t = g.translation(in: self)
             g.setTranslation(.zero, in: self)
-            // Un-rotate the screen delta into north-up content space so panning
-            // moves the map correctly even when rotated (heading free-look).
-            let d = unrotateVector(dx: Double(t.x), dy: Double(t.y))
-            centerE -= d.dx * resolution
-            centerN += d.dy * resolution
-            clampCenter()
-            updateTiles()
+            panBy(dx: t.x, dy: t.y)
         case .ended, .cancelled:
-            let v = g.velocity(in: self)
-            let d = unrotateVector(dx: Double(v.x), dy: Double(v.y))
-            velE = -d.dx * resolution
-            velN = d.dy * resolution
-            if hypot(v.x, v.y) > 80 { startMomentum() } else { reportRegion() }
+            flingBy(velocity: g.velocity(in: self))
         default:
             break
         }
+    }
+
+    /// Trackpad two-finger scroll pans, matching macOS and MapKit: a continuous
+    /// scroll comes from a trackpad, where the gesture reads as a drag, not a
+    /// zoom. UIKit synthesizes the pan translation from the scroll deltas in the
+    /// same sense a drag would produce, so this is the finger-pan maths verbatim.
+    @objc private func handleScrollPan(_ g: UIPanGestureRecognizer) {
+        switch g.state {
+        case .began:
+            stopDisplayLink()
+            exitFollow()
+            g.setTranslation(.zero, in: self)
+            scrollPanVelocity = .zero
+            scrollPanLastEvent = CACurrentMediaTime()
+        case .changed:
+            let t = g.translation(in: self)
+            g.setTranslation(.zero, in: self)
+            panBy(dx: t.x, dy: t.y)
+            let now = CACurrentMediaTime()
+            let dt = now - scrollPanLastEvent
+            scrollPanLastEvent = now
+            // Ignore a gap long enough that the delta says nothing about speed
+            // (first event of the gesture, or a stall), and smooth the rest so one
+            // stuttering frame can't decide the fling.
+            if dt > 0.001, dt < 0.1 {
+                let instant = CGPoint(x: t.x / CGFloat(dt), y: t.y / CGFloat(dt))
+                let k: CGFloat = 0.35
+                scrollPanVelocity.x += (instant.x - scrollPanVelocity.x) * k
+                scrollPanVelocity.y += (instant.y - scrollPanVelocity.y) * k
+            }
+        case .ended, .cancelled:
+            // Fingers came to rest on the trackpad before lifting: the last
+            // velocity we saw is stale, and flinging on it would throw the map
+            // after the user deliberately stopped it.
+            if CACurrentMediaTime() - scrollPanLastEvent > 0.05 { scrollPanVelocity = .zero }
+            flingBy(velocity: scrollPanVelocity)
+        default:
+            break
+        }
+    }
+
+    /// Hand a release velocity (screen points/second) to the momentum driver, or
+    /// just settle when the gesture ended too slowly to be a fling. Shared, so a
+    /// trackpad flick and a finger flick decay identically.
+    private func flingBy(velocity v: CGPoint) {
+        let d = unrotateVector(dx: Double(v.x), dy: Double(v.y))
+        velE = -d.dx * resolution
+        velN = d.dy * resolution
+        if hypot(v.x, v.y) > 80 { startMomentum() } else { reportRegion() }
+    }
+
+    /// Move the map by a screen-space drag delta. Shared by the finger pan and
+    /// the trackpad scroll-pan, which differ only in how they end.
+    private func panBy(dx: CGFloat, dy: CGFloat) {
+        // Un-rotate the screen delta into north-up content space so panning moves
+        // the map correctly even when rotated (heading free-look).
+        let d = unrotateVector(dx: Double(dx), dy: Double(dy))
+        centerE -= d.dx * resolution
+        centerN += d.dy * resolution
+        clampCenter()
+        updateTiles()
     }
 
     /// Rotate a screen-space vector by −rotation (into north-up content space).
@@ -973,21 +1689,38 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         case .began:
             stopDisplayLink()
             // NB: pinch does NOT exit follow — heading mode (and its rotation)
-            // survives a pinch; only the zoom changes.
+            // survives a pinch; only the zoom changes. It does still hand the
+            // zoom to the user, so an auto-fit no longer applies.
+            viewportIsAutoFit = false
             isPinching = true
+            // No touches at all ⇒ a trackpad magnify, not fingers. A touch pinch
+            // only begins once two touches have moved enough to count as one, so
+            // this can't misread one.
+            pinchIsIndirect = g.numberOfTouches == 0
             pinchCentroid0 = g.location(in: self)
             pinchLastCentroid = pinchCentroid0
             pinchLastScale = 1
+            pinchScaleBase = 1
+            pinchLogVel = 0
+            pinchLastEvent = CACurrentMediaTime()
+            pinchLastRes = resolution
             // World point under the centroid (un-rotated to north-up, then BNG).
             pinchMapAnchor = bng(atScreen: rotate(pinchCentroid0, by: -rotation))
             pinchBaseRes = resolution
+            pinchTiledZoom = min(tileZoom(), deepestUsableZoom())
+            // Starts the rate limit armed, so a twitch on touch-down can't re-tile
+            // before the gesture has shown which way it's going.
+            lastPinchRebase = CACurrentMediaTime()
             for (_, pin) in pinViews where !pin.isHidden { pin.pinchBase = pin.layer.position }
             userDotPinchBase = userDot.isHidden ? nil : userDot.center
         case .changed:
             // A finger lifting to end the pinch snaps `location(in:)` to the
             // remaining touch (a ~100px centroid jump at unchanged scale). Ignore
-            // any sub-2-finger frame so that lurch never reaches the map.
-            guard g.numberOfTouches >= 2 else { return }
+            // any sub-2-finger frame so that lurch never reaches the map — but
+            // only for a real touch pinch. A trackpad magnify has no touches to
+            // count and no finger to lift, so it reports 0 throughout and this
+            // guard would eat the whole gesture.
+            guard pinchIsIndirect || g.numberOfTouches >= 2 else { return }
             // Transform the already-laid-out tiles on the GPU (no re-tiling, so
             // it's smooth however fast the fingers move). The two-finger centroid
             // is tracked, so a simultaneous pan moves the map too, and the
@@ -999,7 +1732,18 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             let current = g.location(in: self)
             pinchLastCentroid = current
             pinchLastScale = g.scale
-            let targetRes = clampRes(pinchBaseRes / Double(g.scale))
+            let targetRes = clampRes(pinchBaseRes / scaleSinceCommit(g.scale))
+            noteZoomRate(targetRes)
+            // Scaled into a different tile level: commit what the gesture has done
+            // so far and lay that level out now, so its detail arrives while the
+            // fingers are still moving rather than all at once on release.
+            let wantZoom = min(tileZoom(for: targetRes), deepestUsableZoom())
+            if wantZoom != pinchTiledZoom,
+               CACurrentMediaTime() - lastPinchRebase > 0.1 {
+                pinchTiledZoom = wantZoom
+                rebasePinch(centroid: current, targetRes: targetRes, rawScale: g.scale)
+                return
+            }
             let s = CGFloat(pinchBaseRes / targetRes)
             let ttx = current.x - s * pinchCentroid0.x
             let tty = current.y - s * pinchCentroid0.y
@@ -1030,7 +1774,7 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             // at release — a lifting finger has already snapped those to the
             // remaining touch, which would commit the lurch we skip in `.changed`.
             let current = pinchLastCentroid
-            let targetRes = clampRes(pinchBaseRes / Double(pinchLastScale))
+            let targetRes = clampRes(pinchBaseRes / scaleSinceCommit(pinchLastScale))
             isPinching = false
             lastPinchEndTime = CACurrentMediaTime()
             for (_, pin) in pinViews { pin.pinchBase = nil }
@@ -1049,9 +1793,112 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             CATransaction.commit()
             updateTiles()
             reportRegion()
+            startZoomGlide(anchor: u)
         default:
             break
         }
+    }
+
+    /// Fold this event's zoom rate into the smoothed estimate that becomes the
+    /// glide on release. Called before the level-commit branch, so a frame that
+    /// commits still contributes its rate like any other.
+    private func noteZoomRate(_ targetRes: Double) {
+        let now = CACurrentMediaTime()
+        let dt = now - pinchLastEvent
+        // Skip a gap too long to say anything about speed (the first event, or a
+        // stall), and smooth the rest so one stuttering frame can't set the glide.
+        if dt > 0.001, dt < 0.1, pinchLastRes > 0, targetRes > 0 {
+            let instant = log(targetRes / pinchLastRes) / dt
+            pinchLogVel += (instant - pinchLogVel) * 0.35
+        }
+        pinchLastEvent = now
+        pinchLastRes = targetRes
+    }
+
+    /// How far the pinch has scaled since the last commit (or since it began).
+    /// `pinchBaseRes` moves with each commit, so the scale applied to it has to be
+    /// measured from the same instant.
+    private func scaleSinceCommit(_ raw: CGFloat) -> Double {
+        max(Double(raw / pinchScaleBase), 0.0001)
+    }
+
+    /// Carry a released pinch on a little, the way AppKit's magnification does: a
+    /// flick keeps zooming and eases out, instead of stopping dead the instant the
+    /// fingers lift.
+    ///
+    /// `anchor` is the release centroid in north-up content space. The glide holds
+    /// that point fixed for its whole run, exactly as the pinch did — zooming
+    /// about the view centre instead would slide the map sideways as it settled.
+    ///
+    /// Trackpad only, and deliberately so: coasting is the *Mac* idiom (touch pinch
+    /// on iOS, MapKit's included, stops dead where the fingers lift), and neither
+    /// half of the rate estimate this glide rides on survives contact with glass.
+    /// A touch pinch `.ended`s as the first finger *starts* lifting, so the last
+    /// frames past the `>= 2` guard are the gesture's noisiest — a drifting
+    /// lift-off centroid over a ~4ms `dt` reads as a large rate in *either*
+    /// direction, and a negative one glides back out from where the user let go.
+    /// The stall check below can't catch it either: a finger resting on glass still
+    /// emits `touchesMoved` jitter, so `pinchLastEvent` keeps refreshing and the
+    /// rate never goes stale. A trackpad held still emits no events at all.
+    private func startZoomGlide(anchor: CGPoint) {
+        guard pinchIsIndirect else { return }
+        // Fingers came to rest before lifting: the last rate we saw is stale, and
+        // gliding on it would zoom past where the user deliberately stopped.
+        if CACurrentMediaTime() - pinchLastEvent > 0.05 { pinchLogVel = 0 }
+        guard abs(pinchLogVel) > Self.zoomGlideMinRate else { return }
+        zoomVel = pinchLogVel
+        zoomAnchorScreen = anchor
+        zoomAnchorBNG = bng(atScreen: anchor)
+        motion = .zoomGlide
+        startDisplayLink()
+    }
+
+    /// Commit the in-flight pinch into the map state, lay out the level it has
+    /// reached, and re-baseline the gesture so it carries on from there.
+    ///
+    /// Zoom is a GPU transform between commits because re-tiling every frame is
+    /// what makes a pinch stutter — but a transform only ever rescales the
+    /// pictures already on screen, which is why detail used to arrive in one lump
+    /// on release. Committing at each level boundary is the middle ground: the
+    /// arithmetic is exactly what `.ended` does, so the map does not move, and the
+    /// level being zoomed into starts fetching with the fingers still down.
+    private func rebasePinch(centroid: CGPoint, targetRes: Double, rawScale: CGFloat) {
+        lastPinchRebase = CACurrentMediaTime()
+        // Everything from here measures against this instant. Written before the
+        // state below so a re-entrant read can't see the old offset with the new
+        // base resolution.
+        pinchScaleBase = max(rawScale, 0.0001)
+        resolution = targetRes
+        // Keep the anchored world point under the centroid, exactly as `.ended`
+        // does: un-rotate the centroid to north-up content space, solve for centre.
+        let u = rotate(centroid, by: -rotation)
+        centerE = pinchMapAnchor.e - Double(u.x - midX) * resolution
+        centerN = pinchMapAnchor.n + Double(u.y - midY) * resolution
+        clampCenter()
+
+        // From here the gesture is a fresh pinch off the committed state. The
+        // anchor is re-read *after* the clamp, so running into a sheet edge
+        // doesn't leave the rest of the gesture solving for a point the map has
+        // already refused to show.
+        pinchBaseRes = resolution
+        pinchCentroid0 = centroid
+        pinchMapAnchor = bng(atScreen: u)
+
+        // `isPinching` is what keeps a stray re-tile from fighting the gesture's
+        // transform; this re-tile *is* the gesture, so lower it across the call.
+        isPinching = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        tileHost.transform = CATransform3DMakeRotation(CGFloat(rotation), 0, 0, 1)
+        CATransaction.commit()
+        updateTiles()          // repositions the pins onto the committed state
+        isPinching = true
+        for (_, pin) in pinViews { pin.pinchBase = pin.isHidden ? nil : pin.layer.position }
+        userDotPinchBase = userDot.isHidden ? nil : userDot.center
+        // Deliberately no `reportRegion()`: the viewport binding drives a SwiftUI
+        // update pass, and running one at every level boundary is exactly the
+        // mid-gesture cost this design exists to avoid. `.ended` reports the
+        // settled region.
     }
 
     @objc private func handleDoubleTap(_ g: UITapGestureRecognizer) {
@@ -1175,6 +2022,23 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             updateTiles()
             if t >= 1 { motion = .idle; reportRegion() } else { active = true }
 
+        case .zoomGlide:
+            zoomVel *= exp(-dt * Self.zoomGlideDecay)
+            let next = clampRes(resolution * exp(zoomVel * dt))
+            // Clamped to the same value ⇒ the glide has run into the zoom limit
+            // and there is nothing left for it to do.
+            let atLimit = next == resolution
+            resolution = next
+            // Hold the release centroid fixed, as the pinch did.
+            centerE = zoomAnchorBNG.e - Double(zoomAnchorScreen.x - midX) * resolution
+            centerN = zoomAnchorBNG.n + Double(zoomAnchorScreen.y - midY) * resolution
+            clampCenter()
+            updateTiles()
+            if atLimit || abs(zoomVel) < Self.zoomGlideStopRate {
+                motion = .idle
+                reportRegion()
+            } else { active = true }
+
         case .momentum:
             velE *= exp(-dt * 5)
             velN *= exp(-dt * 5)
@@ -1194,20 +2058,50 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
 
 // MARK: - Tile store (off-main fetch + cache)
 
+/// How a tile request ended.
+private enum TileOutcome {
+    /// Bytes arrived and are in the cache.
+    case loaded
+    /// The server had nothing there, or the fetch failed for good.
+    case missing
+    /// Superseded by a zoom or pan before it finished. Distinct from `missing`
+    /// because it says nothing about the tile — treating it as a failure would
+    /// put a perfectly good position into retry back-off.
+    case cancelled
+}
+
 /// Off-main-actor owner of the tile fetch + in-memory cache. Fetches run on
 /// detached tasks; `ready` fires on the main actor so tile layers can update.
 private final class BNGTileStore: @unchecked Sendable {
     private let fetcher: TileFetcher
     private let cache = TileImageCache()
     private let lock = NSLock()
-    private var inflight: Set<String> = []
+    // `fileprivate`, matching `TileOutcome` and the enclosing class: a member
+    // may not be more visible than the types in its signature, and everything
+    // here is scoped to this file anyway.
+    fileprivate typealias Done = @MainActor @Sendable (Int, Int, Int, TileOutcome) -> Void
+
+    /// One fetch per tile, however many callers want it. Four sibling tiles with
+    /// no imagery of their own all fall back to the same parent, so a second
+    /// caller has to be able to wait on a fetch already running rather than be
+    /// dropped — it would never hear back and its tile would stay blank.
+    ///
+    /// The token distinguishes generations of the same key: a cancelled fetch
+    /// and its replacement can be alive at once, and only the current one may
+    /// clear the entry when it finishes.
+    private struct Inflight {
+        let token: UInt64
+        let task: Task<Void, Never>
+        var dones: [Done]
+    }
+    private var inflight: [String: Inflight] = [:]
+    private var nextToken: UInt64 = 0
 
     init(source: CustomTileSource) {
-        // The key is already embedded in the tile URL, so no apiKey to inject.
+        // The key is already embedded in the tile URL, so nothing to inject.
         // Matrix identifiers make {z} substitute the WMTS TileMatrix name for
         // each level (falls back to the numeric zoom when absent — v3 sources).
         fetcher = TileFetcher(urlTemplate: source.zxyTemplate,
-                              apiKey: "",
                               cacheNamespace: "src-\(source.cacheNamespace)",
                               legacyCacheNamespace: "src-\(source.legacyCacheNamespace)",
                               zoomIdentifiers: source.validated?.matrixIdentifiers,
@@ -1221,28 +2115,66 @@ private final class BNGTileStore: @unchecked Sendable {
 
     func clear() {
         cache.removeAll()
-        lock.lock(); inflight.removeAll(); lock.unlock()
+        lock.lock()
+        let tasks = inflight.values.map(\.task)
+        inflight.removeAll()
+        lock.unlock()
+        for t in tasks { t.cancel() }
     }
 
-    func requestTile(z: Int, x: Int, y: Int,
-                     ready: @escaping @MainActor @Sendable (Int, Int, Int) -> Void) {
+    /// Call off a fetch the view no longer wants. Cancellation reaches all the
+    /// way down: `TileFetcher` checks it around each attempt, `FetchLimiter`
+    /// hands back a waiting slot, and `URLSession` tears down a request already
+    /// on the wire. That released slot is the point — it's what lets a new zoom
+    /// level start fetching immediately instead of behind the old one.
+    func cancelTile(z: Int, x: Int, y: Int) {
+        lock.lock()
+        let entry = inflight.removeValue(forKey: "\(z)/\(x)/\(y)")
+        lock.unlock()
+        entry?.task.cancel()
+    }
+
+    /// `done` reports the outcome whatever it is. A fetch that comes back empty
+    /// has to be reported too, or the caller can't tell "still loading" from
+    /// "this one failed" — and a failed tile that is never retried stays blank
+    /// for as long as it remains on screen.
+    fileprivate func requestTile(z: Int, x: Int, y: Int, done: @escaping Done) {
         let key = "\(z)/\(x)/\(y)"
         lock.lock()
-        if inflight.contains(key) { lock.unlock(); return }
-        inflight.insert(key)
-        lock.unlock()
-
-        Task.detached(priority: .userInitiated) { [self] in
-            let image = await fetcher.fetchImage(z: z, x: x, y: y)
-            finish(key)
-            guard let image else { return }
-            cache.set(z: z, x: x, y: y, image: UIImage(cgImage: image.cg))
-            await MainActor.run { ready(z, x, y) }
+        if inflight[key] != nil {
+            inflight[key]?.dones.append(done)
+            lock.unlock()
+            return
         }
+        nextToken += 1
+        let token = nextToken
+        // Created under the lock: the task's own `finish` takes the same lock, so
+        // it cannot run ahead of this assignment and strand the entry.
+        inflight[key] = Inflight(token: token, task: Task.detached(priority: .userInitiated) { [self] in
+            let image = await fetcher.fetchImage(z: z, x: x, y: y)
+            let waiting = finish(key, token: token)
+            if let image {
+                cache.set(z: z, x: x, y: y, image: UIImage(cgImage: image.cg))
+            }
+            // A cancelled fetch returns nil like a missing one; only the task's
+            // own cancellation flag tells them apart. An image outranks the flag:
+            // cancelling a request that turned out to be a cache hit still leaves
+            // a real tile, and its layer may well have survived the drop.
+            let outcome: TileOutcome = image != nil ? .loaded
+                                     : (Task.isCancelled ? .cancelled : .missing)
+            await MainActor.run { for d in waiting { d(z, x, y, outcome) } }
+        }, dones: [done])
+        lock.unlock()
     }
 
-    private func finish(_ key: String) {
-        lock.lock(); inflight.remove(key); lock.unlock()
+    /// Claim the callbacks waiting on this fetch, if it's still the current
+    /// generation — a cancelled fetch finishing late must not evict, or answer
+    /// for, its own replacement.
+    private func finish(_ key: String, token: UInt64) -> [Done] {
+        lock.lock(); defer { lock.unlock() }
+        guard let entry = inflight[key], entry.token == token else { return [] }
+        inflight[key] = nil
+        return entry.dones
     }
 }
 

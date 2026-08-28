@@ -21,6 +21,15 @@ struct WMTSCapabilities {
         let formats: [String]
         let styles: [Style]
         let resourceURLs: [ResourceURL]
+        /// The layer's declared extent, when it advertises one in EPSG:27700.
+        /// This is the ground the service actually covers — unlike the tile
+        /// matrix, whose MatrixWidth/Height are tile *counts* rounded up, so each
+        /// zoom level overshoots by a different amount.
+        var boundingBox: BoundingBox? = nil
+    }
+    /// An `ows:BoundingBox` in BNG metres.
+    struct BoundingBox: Equatable {
+        let eMin: Double, eMax: Double, nMin: Double, nMax: Double
     }
     struct Style {
         let identifier: String
@@ -291,6 +300,11 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
     private var currentTMSCRS: String?
     private var currentTMSMatrices: [WMTSCapabilities.TileMatrix] = []
 
+    private var currentLayerBBox: WMTSCapabilities.BoundingBox?
+    private var currentBBoxCRS: String?
+    private var currentBBoxLower: (Double, Double)?
+    private var currentBBoxUpper: (Double, Double)?
+
     private var currentTMIdent: String?
     private var currentTMScaleDen: Double?
     private var currentTMTopLeft: (Double, Double)?
@@ -318,6 +332,13 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
             currentLayerFormats = []
             currentLayerStyles = []
             currentLayerResourceURLs = []
+            currentLayerBBox = nil
+        case "BoundingBox" where elementPath.count >= 2
+                             && elementPath[elementPath.count - 2] == "Layer":
+            // A layer may advertise several, one per CRS; only 27700 is ours.
+            currentBBoxCRS = attributeDict["crs"]
+            currentBBoxLower = nil
+            currentBBoxUpper = nil
         case "Style":
             currentStyleIsDefault = (attributeDict["isDefault"] as NSString?)?.boolValue ?? false
             currentStyleIdent = nil
@@ -367,6 +388,15 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
             default: break
             }
         }
+        // BoundingBox corners (Layer/BoundingBox/{Lower,Upper}Corner)
+        if elementPath.count >= 2 && elementPath[elementPath.count - 2] == "BoundingBox" {
+            let parts = text.split(separator: " ").compactMap { Double($0) }
+            if parts.count == 2 {
+                if local == "LowerCorner" { currentBBoxLower = (parts[0], parts[1]) }
+                if local == "UpperCorner" { currentBBoxUpper = (parts[0], parts[1]) }
+            }
+        }
+
         // Style children (Layer/Style/Identifier)
         if elementPath.count >= 2 && elementPath[elementPath.count - 2] == "Style",
            local == "Identifier" {
@@ -412,6 +442,16 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
 
         // Element-close finalisation
         switch local {
+        case "BoundingBox" where elementPath.count >= 2
+                             && elementPath[elementPath.count - 2] == "Layer":
+            if let crs = currentBBoxCRS, WMTSCapabilities.isEPSG27700(crs),
+               let lo = currentBBoxLower, let hi = currentBBoxUpper {
+                currentLayerBBox = .init(eMin: min(lo.0, hi.0), eMax: max(lo.0, hi.0),
+                                         nMin: min(lo.1, hi.1), nMax: max(lo.1, hi.1))
+            }
+            currentBBoxCRS = nil
+            currentBBoxLower = nil
+            currentBBoxUpper = nil
         case "TileMatrix":
             if let id = currentTMIdent, let s = currentTMScaleDen,
                let tl = currentTMTopLeft,
@@ -440,7 +480,8 @@ private final class WMTSXMLDelegate: NSObject, XMLParserDelegate {
                     tileMatrixSetLinks: currentLayerLinks,
                     formats: currentLayerFormats,
                     styles: currentLayerStyles,
-                    resourceURLs: currentLayerResourceURLs))
+                    resourceURLs: currentLayerResourceURLs,
+                    boundingBox: currentLayerBBox))
             }
         default:
             break

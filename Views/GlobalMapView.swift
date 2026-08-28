@@ -30,8 +30,16 @@ struct GlobalMapView: View {
     @State private var popoverEntry: LocationEntry? = nil
     @State private var showPopover: Bool = false
     @State private var visibleRegion: MKCoordinateRegion?
+    /// Set when the custom renderer goes away, so the MapKit branch adopts its
+    /// final viewport on the appearance that follows — and only that one.
+    ///
+    /// The restore has to be this narrow. `cameraPosition` starts `.automatic`,
+    /// which is not a one-off fit: it re-frames whenever the annotation set
+    /// changes, and that is what crops the map to a search's matches. Writing a
+    /// concrete `.region` into it ends that for good, so it may only happen when
+    /// there is genuinely a viewport being handed over.
+    @State private var adoptRegionOnAppear = false
     @State private var customSources: [CustomTileSource] = []
-    @State private var standardSources: [StandardTileSource] = []
     /// Layer-health banner text ("layer X rejected your API key"), or nil.
     /// TileLayerHealth already rate-limits to once per source per session.
     @State private var healthBannerMessage: String? = nil
@@ -51,18 +59,13 @@ struct GlobalMapView: View {
         customSources.first { $0.id.uuidString == selectedLayerRaw }
     }
 
-    /// The standard-projection (web-mercator) raster layer selected, if any.
-    private var selectedRasterLayer: StandardTileSource? {
-        standardSources.first { $0.id.uuidString == selectedLayerRaw }
-    }
-
     /// Any non-Apple layer is active (drives the toolbar icon fill).
     private var isCustomLayerActive: Bool { selectedLayerRaw != GlobalMapLayer.appleMaps }
 
     /// The selected layer's attribution caption, if it has one. Apple Maps
     /// draws its own legal attribution, so only custom layers contribute.
     private var selectedLayerAttribution: String? {
-        let text = selectedCustomSource?.attribution ?? selectedRasterLayer?.attribution
+        let text = selectedCustomSource?.attribution
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else { return nil }
         return trimmed
@@ -70,6 +73,16 @@ struct GlobalMapView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
+
+    /// Scheme for everything drawn *over* the map — bars, attribution, banner.
+    ///
+    /// Custom layers are raster tiles baked light by their provider; they have
+    /// no dark variant, so in dark mode the chrome has to go light or it sits
+    /// as dark-on-bright. Apple Maps restyles itself per appearance, so that
+    /// branch tracks the real interface scheme.
+    private var mapChromeScheme: ColorScheme {
+        selectedCustomSource != nil ? .light : colorScheme
+    }
     private var useSheet: Bool {
         UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact
     }
@@ -123,8 +136,6 @@ struct GlobalMapView: View {
                 emptyState
             } else if let src = selectedCustomSource {
                 customMapContent(source: src)
-            } else if let raster = selectedRasterLayer {
-                rasterMapContent(layer: raster)
             } else {
                 mapContent
             }
@@ -139,22 +150,22 @@ struct GlobalMapView: View {
                     .background(.thinMaterial, in: Capsule())
                     .padding(8)
                     .allowsHitTesting(false)
+                    .environment(\.colorScheme, mapChromeScheme)
             }
         }
         .overlay(alignment: .top) {
             if let message = healthBannerMessage {
                 healthBanner(message)
+                    .environment(\.colorScheme, mapChromeScheme)
             }
         }
         .navigationTitle("Locations")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             customSources = CustomTileSourceStore.loadAll()
-            standardSources = StandardTileSourceStore.loadAll()
         }
         .onReceive(NotificationCenter.default.publisher(for: .customTileSourceChanged)) { _ in
             customSources = CustomTileSourceStore.loadAll()
-            standardSources = StandardTileSourceStore.loadAll()
         }
         // Fetchers report terminal auth failures from their own actor/threads;
         // hop to main before touching view state.
@@ -198,9 +209,10 @@ struct GlobalMapView: View {
             }
 #endif
         }
-        // Pin the bars to the real interface scheme so the toolbar items stay
-        // dark in dark mode instead of auto-lightening over the light map.
-        .toolbarColorScheme(colorScheme, for: .navigationBar, .bottomBar)
+        // No `.toolbarColorScheme` pin here: the scroll edge effect the bars now
+        // sit in (see `SlippyMapHost`) adapts glyph luminance to whatever the map
+        // is actually drawing underneath, on both branches. Forcing a scheme
+        // fights that adaptation rather than helping it.
     }
 
     // MARK: - Layer health banner
@@ -239,10 +251,6 @@ struct GlobalMapView: View {
             Picker("Map Layer", selection: $selectedLayerRaw) {
                 Label("Apple Maps", systemImage: "map")
                     .tag(GlobalMapLayer.appleMaps)
-                ForEach(standardSources) { layer in
-                    Label(layer.name, systemImage: "map")
-                        .tag(layer.id.uuidString)
-                }
                 ForEach(customSources) { src in
                     Label(src.name, systemImage: "square.stack.3d.up")
                         .tag(src.id.uuidString)
@@ -257,7 +265,7 @@ struct GlobalMapView: View {
         }
     }
 
-    // MARK: - Custom / raster layer branches
+    // MARK: - Custom layer branch
 
     /// Fully native EPSG:27700 renderer: a slippy map drawing tiles at their
     /// native British-National-Grid resolution, no on-device reprojection.
@@ -274,23 +282,9 @@ struct GlobalMapView: View {
                 onPopoverAnchorChange: { customPopoverAnchor = $0 }
             )
         )
-    }
-
-    /// Standard MapKit map with a web-mercator raster tile overlay. Shares the
-    /// exact pin/popover/sheet presentation with the custom-layer branch.
-    private func rasterMapContent(layer: StandardTileSource) -> some View {
-        withPinInteraction(
-            RasterTileMapView(
-                entries: visibleEntries,
-                layer: layer,
-                muted: mapStyleMuted,
-                selectedItemID: $selectedItemID,
-                visibleRegion: $visibleRegion,
-                focusState: $focusState,
-                popoverItemID: useSheet ? nil : popoverItem?.id,
-                onPopoverAnchorChange: { customPopoverAnchor = $0 }
-            )
-        )
+        // Arm the hand-off: whatever this renderer was last looking at is what
+        // the MapKit branch should come up on when the layer is switched back.
+        .onDisappear { adoptRegionOnAppear = true }
     }
 
     /// Wrap a full-screen map (that reports through `selectedItemID` /
@@ -301,7 +295,7 @@ struct GlobalMapView: View {
         map
         .ignoresSafeArea()
         // iPad/Mac: anchor the popover bubble to the pin, matching Apple Maps.
-        // These maps have no SwiftUI view living at the pin (pins are UIKit inside
+        // This map has no SwiftUI view living at the pin (pins are UIKit inside
         // the representable), so we attach the popover to a full-screen clear view
         // and point it at the pin via an explicit `.point` attachment — the pin's
         // fraction of the same full-screen space the map reports the anchor in.
@@ -367,6 +361,16 @@ struct GlobalMapView: View {
             popoverEntry = entry
             startCycling(from: entry.item)
             showPopover = true
+        }
+        // Searching while following the user's location drops back to the fit-all
+        // camera, so the matches are what you're looking at. Same rule the MapKit
+        // branch gets from `cameraPosition = .automatic`; the custom renderer needs
+        // it stated because it has no camera position to reset. Once in `.all` the
+        // renderer re-frames on its own as the entry set narrows.
+        .onChange(of: searchText) { _, newText in
+            if !newText.isEmpty && focusState != .all {
+                focusState = .all
+            }
         }
         .onChange(of: showPopover) { _, isShowing in
             // Ignore the transient dismiss that relocates the popover to a new pin.
@@ -533,7 +537,11 @@ struct GlobalMapView: View {
         }
         .mapScope(mapScope)
         .onAppear {
-            // Preserve zoom/center when switching back from the custom-tile layer.
+            // Preserve zoom/center when switching back from the custom-tile
+            // layer — and not on any other appearance, which would trade the
+            // live `.automatic` fit for a frozen region. See `adoptRegionOnAppear`.
+            guard adoptRegionOnAppear else { return }
+            adoptRegionOnAppear = false
             if let region = visibleRegion {
                 cameraPosition = .region(region)
             }
@@ -541,7 +549,7 @@ struct GlobalMapView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
         }
-        // Full-bleed like the raster/BNG branches (which use `.ignoresSafeArea()`).
+        // Full-bleed like the BNG branch (which uses `.ignoresSafeArea()`).
         // If this only ignored the bottom, the same region would fit into a
         // shorter frame here than there, shifting the on-screen centre when
         // switching layers.

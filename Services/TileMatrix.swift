@@ -43,6 +43,24 @@ struct BNGTileMatrix {
         return h[z]
     }
 
+    /// The rectangle the map is cut to — the British National Grid as a sheet.
+    ///
+    /// Two standards bound it, and each takes the sides where it reaches further:
+    ///
+    /// - EPSG:27700's area of use (E −68,652…652,865, N −16,704…1,140,267) goes
+    ///   furthest west and south, out over the UKCS to 9°W and 49°45'N.
+    /// - The grid itself spans 700 × 1300 km from its false origin — the lettered
+    ///   100 km squares, SV through JM. It goes furthest north and east, and it has
+    ///   to: the area of use stops short of Lowestoft (E ≈ 655,000) and slices
+    ///   through Shetland (Unst reaches N ≈ 1,220,000).
+    ///
+    /// This, not the tile grid's extent, is where the map is cut. A pyramid's
+    /// origin is chosen to make whole tiles at every level, so its grid overshoots
+    /// all of the above and imagery peters out somewhere inside it — an edge drawn
+    /// there shows a band of blank paper before the shadow.
+    static let sheetBounds = (minX: -68_652.35, minY: -16_703.89,
+                              maxX: 700_000.0, maxY: 1_300_000.0)
+
     /// The standard British National Grid raster tile matrix (origin
     /// (-238375, 1376256), 256px tiles, 896…1.75 m/px). Used as a safe default
     /// when we haven't yet fetched the live capabilities.

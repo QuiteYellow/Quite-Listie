@@ -31,7 +31,7 @@ struct CustomTileSource: Codable, Equatable, Identifiable {
         var resolutions: [Double]        // metres/pixel per zoom (0..n)
         // v4 fields — optional so v3-era records still decode; when absent the
         // matrix falls back to the shared origin and unbounded grids, and `{z}`
-        // substitutes the numeric level (the OS convention v3 assumed).
+        // substitutes the numeric level (the convention v3 assumed).
         /// TileMatrix identifier per zoom (WMTS identifiers are arbitrary
         /// strings, e.g. "EPSG:27700:5" — not necessarily the zoom number).
         var matrixIdentifiers: [String]? = nil
@@ -41,6 +41,16 @@ struct CustomTileSource: Codable, Equatable, Identifiable {
         /// Per-zoom grid dimensions, for skipping requests outside coverage.
         var matrixWidths: [Int]? = nil
         var matrixHeights: [Int]? = nil
+        // v5 field — optional so v3/v4 records still decode.
+        /// The layer's declared extent in BNG metres (`ows:BoundingBox`). This is
+        /// the ground the service actually covers, identical at every zoom;
+        /// `matrixWidths`/`matrixHeights` are tile counts rounded up, so they
+        /// overshoot by a different amount at each level.
+        var extent: Extent? = nil
+
+        struct Extent: Codable, Equatable {
+            var eMin: Double, eMax: Double, nMin: Double, nMax: Double
+        }
 
         var matrix: BNGTileMatrix {
             let n = resolutions.count
@@ -51,6 +61,30 @@ struct CustomTileSource: Codable, Equatable, Identifiable {
                 resolutions: resolutions,
                 matrixWidths: matrixWidths,
                 matrixHeights: matrixHeights)
+        }
+
+        /// Everything we keep from a scan, in one place, so the settings scan and
+        /// the back-fill of older records can't record different things.
+        static func from(layer: WMTSCapabilities.Layer,
+                         set: WMTSCapabilities.TileMatrixSet,
+                         matrix: BNGTileMatrix) -> ValidatedCapabilities {
+            ValidatedCapabilities(
+                layerIdentifier: layer.identifier,
+                layerTitle: layer.title,
+                tileMatrixSetIdentifier: set.identifier,
+                supportedCRS: set.supportedCRS,
+                originX: matrix.originX(at: 0),
+                originY: matrix.originY(at: 0),
+                tileSize: matrix.tileSize,
+                resolutions: matrix.resolutions,
+                matrixIdentifiers: BNGTileMatrix.sortedMatrices(set).map(\.identifier),
+                originsX: matrix.originsX,
+                originsY: matrix.originsY,
+                matrixWidths: matrix.matrixWidths,
+                matrixHeights: matrix.matrixHeights,
+                extent: layer.boundingBox.map {
+                    Extent(eMin: $0.eMin, eMax: $0.eMax, nMin: $0.nMin, nMax: $0.nMax)
+                })
         }
     }
 
@@ -74,7 +108,7 @@ struct CustomTileSource: Codable, Equatable, Identifiable {
         Self.namespaceHash(zxyTemplate)
     }
 
-    fileprivate static func namespaceHash(_ template: String) -> String {
+    private static func namespaceHash(_ template: String) -> String {
         let digest = SHA256.hash(data: Data(template.utf8))
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
@@ -144,124 +178,9 @@ extension Notification.Name {
 }
 
 /// Persisted map-layer choice for GlobalMapView, stored as a raw string in
-/// AppStorage: `appleMaps`, a built-in raster layer id, or a custom source's UUID.
+/// AppStorage: `appleMaps` or a custom source's UUID. An id that no longer
+/// resolves falls back to Apple Maps.
 enum GlobalMapLayer {
     static let appleMaps = "appleMaps"
     static let storageKey = "globalMapLayer.v1"
-}
-
-/// A user-added web-mercator (EPSG:3857) XYZ raster layer, shown on standard
-/// MapKit via `MKTileOverlay`. Unlike `CustomTileSource` (EPSG:27700 WMTS, which
-/// needs a fully native slippy map), these are the "standard projection" the
-/// world already uses, so the user just pastes an XYZ template, names it, and
-/// MapKit handles projection/panning/zoom. The list ships empty — no tile URLs
-/// are baked in; the user adds their own.
-struct StandardTileSource: Codable, Equatable, Identifiable {
-    var id: UUID = UUID()
-    /// Friendly, user-editable display name.
-    var name: String
-    /// XYZ tile address with `{z}/{x}/{y}` placeholders.
-    var urlTemplate: String
-    /// Deepest zoom the tileset publishes. Past this, `RasterTileMapView`
-    /// overzooms (upscales the deepest tiles) rather than requesting deeper ones
-    /// that would 404 and leave blank gaps.
-    var maxZoom: Int
-    /// Shallowest zoom the tileset publishes.
-    var minZoom: Int
-    /// Optional API key, substituted for `{apikey}` in the template. Kept out of
-    /// the template itself so the cache namespace survives a key rotation.
-    var apiKey: String? = nil
-    /// Subdomain tokens for `{s}`: per-character ("abc") or comma-separated
-    /// ("mt0,mt1"). nil/empty = template has no `{s}` or the default host.
-    var subdomains: String? = nil
-    /// Tile edge in pixels, detected when the layer is added (256 unless the
-    /// tileset serves 512/retina tiles). Drives `MKTileOverlay.tileSize` — a
-    /// 512px tileset rendered as 256 would display everything at half scale.
-    var tilePixelSize: Int? = nil
-    /// Optional licence/credit line, drawn as a small caption on the map when
-    /// set. The user's obligation to their provider — nothing is bundled.
-    var attribution: String? = nil
-
-    var isUsable: Bool {
-        let t = urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !t.isEmpty && t.contains("{z}") && t.contains("{x}")
-            && (t.contains("{y}") || t.contains("{-y}"))
-    }
-
-    /// ATS blocks plain-http tile servers at runtime with no way to relax it
-    /// from code, so anything but https is a guaranteed silent blank map.
-    var usesSecureScheme: Bool {
-        urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased().hasPrefix("https://")
-    }
-
-    /// Parsed `{s}` tokens: "abc" → ["a","b","c"], "mt0,mt1" → ["mt0","mt1"].
-    var subdomainTokens: [String] {
-        guard let s = subdomains?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return [] }
-        if s.contains(",") {
-            return s.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-        }
-        return s.map(String.init)
-    }
-
-    /// Stable filesystem-safe cache namespace derived from the template, so
-    /// different layers cache separately (and re-namespace if the URL changes),
-    /// all under the same managed cache root covered by size/clear reporting.
-    /// Recognised key/auth query params are stripped before hashing — `{apikey}`
-    /// already keeps the key out of the template, this covers keys pasted
-    /// directly into the URL.
-    var cacheNamespace: String {
-        "std-" + CustomTileSource.namespaceHash(
-            TileURLKeys.strippingAuthParams(fromTemplate: urlTemplate))
-    }
-
-    /// The pre-key-stripping namespace this layer's tiles were cached under
-    /// (see `TileDiskCache.adoptLegacyNamespace`).
-    var legacyCacheNamespace: String {
-        "std-" + CustomTileSource.namespaceHash(urlTemplate)
-    }
-}
-
-enum StandardTileSourceStore {
-    private static let key = "standardTileSources.v1"
-
-    static func loadAll() -> [StandardTileSource] {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
-        return (try? JSONDecoder().decode([StandardTileSource].self, from: data)) ?? []
-    }
-
-    static func saveAll(_ sources: [StandardTileSource]) {
-        if let data = try? JSONEncoder().encode(sources) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-        // Reuse the existing signal so the map picker refreshes for either kind.
-        NotificationCenter.default.post(name: .customTileSourceChanged, object: nil)
-    }
-
-    /// Insert a new source, or replace an existing one with the same id.
-    /// Adding a *new* layer whose template already exists updates that layer in
-    /// place (keeping its id) instead of creating a duplicate.
-    static func upsert(_ source: StandardTileSource) {
-        var all = loadAll()
-        if let idx = all.firstIndex(where: { $0.id == source.id }) {
-            all[idx] = source
-        } else if let idx = all.firstIndex(where: { $0.urlTemplate == source.urlTemplate }) {
-            var merged = source
-            merged.id = all[idx].id
-            all[idx] = merged
-        } else {
-            all.append(source)
-        }
-        saveAll(all)
-    }
-
-    static func remove(id: UUID) {
-        saveAll(loadAll().filter { $0.id != id })
-    }
-
-    static func source(withID id: String) -> StandardTileSource? {
-        loadAll().first { $0.id.uuidString == id }
-    }
 }
