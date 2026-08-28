@@ -176,23 +176,28 @@ struct ItemFormView: View {
     
     @ViewBuilder
     private var formLeftContent: some View {
+        // The name gets its own section and the full row width, the way Reminders and
+        // Calendar treat a title field. A leading `Label` + `Spacer` would force the
+        // field back into a narrow trailing column, so the icon moves to the header.
         Section {
-            HStack {
-                Label("Name", systemImage: "textformat")
-                Spacer()
-                if checked {
-                    Text(itemName.isEmpty ? "Item name" : itemName)
-                        .multilineTextAlignment(.trailing)
-                        .strikethrough(true, color: .secondary)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: 200, alignment: .trailing)
-                } else {
-                    TextField("Item name", text: $itemName)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 200)
-                }
+            if checked {
+                Text(itemName.isEmpty ? "Item name" : itemName)
+                    .strikethrough(true, color: .secondary)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                // `axis: .vertical` with a line-limit range is the modern full-width
+                // form field: it fills the row and grows to wrap a long name instead
+                // of scrolling sideways through it.
+                TextField("Item name", text: $itemName, axis: .vertical)
+                    .lineLimit(1...4)
+                    .accessibilityLabel("Name")
             }
+        } header: {
+            Label("Name", systemImage: "textformat")
+        }
 
+        Section {
             HStack {
                 Label("Quantity:", systemImage: "number")
                 Spacer()
@@ -582,9 +587,10 @@ struct AddItemView: View {
     @State private var location: Coordinate?
     @State private var sourceURL: String?
 
-    init(list: ListSummary, viewModel: ListViewModel, initialLocation: Coordinate? = nil) {
+    init(list: ListSummary, viewModel: ListViewModel, initialName: String = "", initialLocation: Coordinate? = nil) {
         self.list = list
         self.viewModel = viewModel
+        self._itemName = State(initialValue: initialName)
         self._location = State(initialValue: initialLocation)
     }
 

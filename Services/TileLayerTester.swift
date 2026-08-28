@@ -2,8 +2,8 @@
 //  TileLayerTester.swift
 //  QuiteListie
 //
-//  One-shot layer probe behind the settings editors' "Test Layer" buttons:
-//  pick a single tile that should be inside the layer's coverage, fetch it
+//  One-shot layer probe behind the settings screen's "Test" button: pick a
+//  single tile that should be inside the layer's coverage, fetch it
 //  once, and report what came back in user-facing terms. Deliberately outside
 //  TileFetcher — no retries, no caching, no limiter; a test should show the
 //  server's real answer, not the resilient pipeline's.
@@ -62,25 +62,6 @@ enum TileLayerTester {
         return (z, max(0, x), max(0, y))
     }
 
-    /// An in-range tile for a web-mercator XYZ layer: a mid-range zoom at the
-    /// given coordinate (the user's location when known, else central GB).
-    static func testTile(for layer: StandardTileSource,
-                         lat: Double? = nil, lon: Double? = nil) -> (z: Int, x: Int, y: Int) {
-        let z = min(max((layer.minZoom + layer.maxZoom) / 2, layer.minZoom), layer.maxZoom)
-        let (x, y) = webMercatorTileXY(lat: lat ?? 54.5, lon: lon ?? -2.5, z: z)
-        return (z, x, y)
-    }
-
-    /// Web-mercator tile x/y for a lat/lon at zoom `z`.
-    static func webMercatorTileXY(lat: Double, lon: Double, z: Int) -> (x: Int, y: Int) {
-        let n = pow(2.0, Double(z))
-        let x = Int(floor((lon + 180) / 360 * n))
-        let latRad = lat * .pi / 180
-        let y = Int(floor((1 - log(tan(latRad) + 1 / cos(latRad)) / .pi) / 2 * n))
-        let maxIdx = Int(n) - 1
-        return (min(max(x, 0), maxIdx), min(max(y, 0), maxIdx))
-    }
-
     // MARK: - Fetch
 
     static func test(source: CustomTileSource) async -> Outcome {
@@ -88,16 +69,6 @@ enum TileLayerTester {
         let url = TileFetcher.expandTemplate(
             source.zxyTemplate, z: z, x: x, y: y,
             zoomIdentifiers: source.validated?.matrixIdentifiers)
-        return await fetch(urlString: url)
-    }
-
-    static func test(layer: StandardTileSource,
-                     lat: Double? = nil, lon: Double? = nil) async -> Outcome {
-        let (z, x, y) = testTile(for: layer, lat: lat, lon: lon)
-        let url = TileFetcher.expandTemplate(
-            layer.urlTemplate, z: z, x: x, y: y,
-            apiKey: layer.apiKey ?? "",
-            subdomains: layer.subdomainTokens)
         return await fetch(urlString: url)
     }
 

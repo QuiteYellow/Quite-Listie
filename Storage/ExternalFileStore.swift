@@ -904,11 +904,70 @@ actor FileStore {
         return "listie"  // Use .listie for new files
     }
     
+    /// Blindly overwrites the cached document for `url`.
+    ///
+    /// - Warning: Callers that derived `document` from a *previous* read of this cache
+    ///   must use ``mutate(source:_:)`` instead — a read-modify-write split across an
+    ///   `await` loses any edit that landed in between. Reserved for callers holding a
+    ///   document from an authoritative source (a fresh disk read or a completed merge).
     func updateCache(_ document: ListDocument, at url: URL) async {
         openedFiles[url.path] = (url, document)
-        
+
         cacheTimestamps[url.path] = Date()
         AppLogger.cache.info("Cached \(document.list.name) (expires in \(self.cacheTTL)s)")
+    }
+
+    /// Atomically applies `transform` to the cached document and persists it to the cache.
+    ///
+    /// The FileStore counterpart to `NextcloudManager.mutate(remotePath:_:)`, and the only
+    /// safe way to edit an iCloud- or external-file-backed document. Reading the document,
+    /// mutating it, and writing it back is *not* safe even from a single `@MainActor`
+    /// caller: actor-isolated `async` functions are reentrant at every `await`, and both
+    /// the read and the write hop to this actor. Two edits arriving close together both
+    /// read the same pre-edit document, and since `ListDocument` is a struct each mutates
+    /// a private copy — the second write silently discards the first.
+    ///
+    /// Every suspension happens *before* the critical section, so once the cache is
+    /// populated the read → transform → write-back runs through with no `await` and
+    /// cannot be interleaved. No lock, so nothing to starve or deadlock.
+    ///
+    /// Does not write to disk — that stays with the debounced autosave, which is where
+    /// `NSFileCoordinator` and the optimistic-version check belong.
+    ///
+    /// - Parameter transform: Edits the document in place and returns `true` if it
+    ///   changed anything. Returning `false` skips the write so a no-op edit doesn't
+    ///   trigger a pointless save. Must not block — it runs inside the critical section.
+    /// - Returns: The updated document, or `nil` if `transform` reported no change.
+    @discardableResult
+    func mutate(
+        source: FileSource,
+        _ transform: sending (inout ListDocument) -> Bool
+    ) async throws -> ListDocument? {
+        let url: URL
+        switch source {
+        case .privateList(let listId):
+            url = await iCloudContainerManager.shared.fileURL(for: listId)
+        case .externalFile(let fileURL):
+            url = fileURL
+        }
+
+        // Populate the cache first. Every `await` lives here, above the critical
+        // section — deliberately, so the section below stays uninterruptible.
+        // `openFileFromDisk` is synchronous and already populates `openedFiles`.
+        if openedFiles[url.path] == nil, openFileFromDisk(at: url) == nil {
+            _ = try await openFile(from: source)
+        }
+
+        // ---- critical section: no `await` past this line ----
+        guard var doc = openedFiles[url.path]?.document else {
+            throw NSError(domain: "FileStore", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "No cached document for \(url.lastPathComponent)"
+            ])
+        }
+        guard transform(&doc) else { return nil }
+        openedFiles[url.path] = (url, doc)
+        cacheTimestamps[url.path] = Date()
+        return doc
     }
 
     // MARK: - Sync Resolution

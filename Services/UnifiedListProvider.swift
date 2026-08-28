@@ -227,37 +227,69 @@ class UnifiedListProvider {
         }
     }
 
-    /// Cache-first read for write operations. Returns the cached document immediately
-    /// when available, falling through to the network/disk path only as a last resort.
-    /// Use for write flows (updateItem/addItem/etc.) so an offline notification "Complete"
-    /// action can still advance a repeating reminder when the server is unreachable.
-    /// Layer 4: writes downstream go through the existing `pendingUploads` retry queue
-    /// (NextcloudManager) and NSFileCoordinator queueing (iCloud), so the write itself
-    /// never blocks on network either.
-    private func openDocumentForMutation(for list: UnifiedList) async throws -> ListDocument {
+    /// Cache-first read. Returns the cached document immediately when available, falling
+    /// through to the network/disk path only as a last resort, so a read still resolves
+    /// when the server is unreachable.
+    ///
+    /// - Important: Read-only. Do not pair this with a write to build a read-modify-write —
+    ///   the two suspensions let a concurrent edit slip in between and be overwritten.
+    ///   Edits go through ``applyMutation(to:_:)`` / ``mutateDocument(for:immediate:_:)``.
+    private func openDocumentCacheFirst(for list: UnifiedList) async throws -> ListDocument {
         if let cached = await openDocumentForDisplay(for: list) {
             return cached
         }
         return try await openDocument(for: list)
     }
 
-    /// Writes a document to the appropriate backend cache and triggers autosave.
+    // MARK: - Atomic document mutation
+
+    /// Applies `transform` to the list's cached document atomically, inside the actor
+    /// that owns the cache. Does not schedule a save.
+    ///
+    /// Use this — never a cache-first read followed by a cache write — for any edit
+    /// derived from the document's current contents. That read-modify-write pair
+    /// suspends twice (both the read and the write hop to a backend actor), and
+    /// `@MainActor` isolation does *not* make an `async` function atomic: it is reentrant
+    /// at every `await`. Two edits arriving inside that window both read the same
+    /// pre-edit document, and because `ListDocument` is a struct each mutates a private
+    /// copy — so the second write silently drops the first. That was the cause of items
+    /// popping back unchecked when ticked off quickly.
+    ///
+    /// - Parameter transform: Returns `true` if it changed the document. Returning
+    ///   `false` skips the write and yields `nil`, so no-op edits don't trigger saves.
+    /// - Returns: The updated document, or `nil` if nothing changed.
+    @discardableResult
+    private func applyMutation(
+        to list: UnifiedList,
+        _ transform: sending (inout ListDocument) -> Bool
+    ) async throws -> ListDocument? {
+        switch list.source {
+        case .nextcloud(_, let remotePath):
+            return try await NextcloudManager.shared.mutate(remotePath: remotePath, transform)
+        default:
+            guard let source = list.source.asFileSource else {
+                throw NSError(domain: "UnifiedListProvider", code: 99,
+                              userInfo: [NSLocalizedDescriptionKey: "Unhandled list source"])
+            }
+            return try await FileStore.shared.mutate(source: source, transform)
+        }
+    }
+
+    /// Atomic mutation plus the standard persistence tail: debounced autosave and the
+    /// Layer-4 mutation-log entry. The path every item edit should take.
+    ///
     /// Pass `immediate: true` to skip the 500ms debounce — used by notification-action
     /// flows where the app may be suspended before the debounce timer fires.
-    private func cacheDocument(_ doc: ListDocument, for list: UnifiedList, immediate: Bool = false) async {
-        switch list.source {
-        case .privateICloud(let listId):
-            let url = await iCloudContainerManager.shared.fileURL(for: listId)
-            await FileStore.shared.updateCache(doc, at: url)
-            triggerAutosave(for: list, document: doc, immediate: immediate)
-        case .external(let url):
-            await FileStore.shared.updateCache(doc, at: url)
-            triggerAutosave(for: list, document: doc, immediate: immediate)
-        case .nextcloud(_, let remotePath):
-            await NextcloudManager.shared.updateCache(doc, remotePath: remotePath)
-            triggerAutosave(for: list, document: doc, immediate: immediate)
-        }
-        await enqueueMutationIfEnabled(doc, for: list)
+    @discardableResult
+    private func mutateDocument(
+        for list: UnifiedList,
+        immediate: Bool = false,
+        _ transform: sending (inout ListDocument) -> Bool
+    ) async throws -> ListDocument? {
+        guard let updated = try await applyMutation(to: list, transform) else { return nil }
+        triggerAutosave(for: list, document: updated, immediate: immediate)
+        await enqueueMutationIfEnabled(updated, for: list)
+        return updated
     }
 
     /// Layer 4: durable record of edits, complementary to the existing autosave path.
@@ -278,20 +310,6 @@ class UnifiedListProvider {
             op: .persistDocument(payload: payload)
         )
         await MutationLog.shared.enqueue(entry)
-    }
-
-    /// Updates the document cache for the appropriate backend without triggering autosave.
-    /// Use before an immediate `saveFile` call so merge logic sees the latest document.
-    private func updateDocumentCache(_ doc: ListDocument, for list: UnifiedList) async {
-        switch list.source {
-        case .privateICloud(let listId):
-            let url = await iCloudContainerManager.shared.fileURL(for: listId)
-            await FileStore.shared.updateCache(doc, at: url)
-        case .external(let url):
-            await FileStore.shared.updateCache(doc, at: url)
-        case .nextcloud(_, let remotePath):
-            await NextcloudManager.shared.updateCache(doc, remotePath: remotePath)
-        }
     }
 
     /// Caches label array into the per-backend reactive dictionary.
@@ -928,16 +946,24 @@ class UnifiedListProvider {
     }
 
     func addItem(_ item: ListItem, to list: UnifiedList) async throws {
-        var document = try await openDocumentForMutation(for: list)
-        document.items.append(item)
-        await cacheDocument(document, for: list)
+        try await mutateDocument(for: list) { document in
+            document.items.append(item)
+            return true
+        }
     }
 
     func syncIfNeeded(for list: UnifiedList) async throws {
+        // Claim the list BEFORE the first `await`. The check and the insert have to be
+        // one uninterrupted step: this function is `@MainActor` but reentrant at every
+        // suspension, so a guard that claimed the list only after the network round-trip
+        // below let several syncs for the same list run concurrently — each one ending in
+        // a blind `updateCache` that could wipe edits made while it was in flight.
         guard !activeSyncs.contains(list.id) else {
             AppLogger.sync.debug("[Sync] Already syncing \(list.summary.name, privacy: .public), skipping")
             return
         }
+        activeSyncs.insert(list.id)
+        defer { activeSyncs.remove(list.id) }
 
         // Nextcloud sync path
         if case .nextcloud(let accountId, let remotePath) = list.source {
@@ -953,11 +979,11 @@ class UnifiedListProvider {
                 guard hasPending || hasChanged else { return }
 
                 AppLogger.sync.debug("[Sync] Nextcloud sync needed for \(list.summary.name, privacy: .public) (pending=\(hasPending), changed=\(hasChanged))")
-                activeSyncs.insert(list.id)
-                defer { activeSyncs.remove(list.id) }
 
+                // `syncFile` already writes the merged result into the caches it owns.
+                // Re-writing it here would be a blind overwrite of a document read before
+                // the network round-trip, discarding any edit made while it was in flight.
                 let mergedDoc = try await NextcloudManager.shared.syncFile(remotePath: remotePath)
-                await NextcloudManager.shared.updateCache(mergedDoc, remotePath: remotePath)
                 nextcloudLabels[remotePath] = mergedDoc.labels
 
                 if let index = allLists.firstIndex(where: { $0.id == list.id }) {
@@ -995,11 +1021,12 @@ class UnifiedListProvider {
 
         if await FileStore.shared.hasFileChanged(for: fileSource) {
             AppLogger.sync.debug("File changed, syncing: \(list.summary.name, privacy: .public)")
-            activeSyncs.insert(list.id)
-            defer { activeSyncs.remove(list.id) }
+            // The list is already claimed in `activeSyncs` at the top of this function.
 
             let mergedDoc = try await FileStore.shared.syncFile(from: fileSource)
 
+            // Unlike the Nextcloud path, `FileStore.syncFile` returns its merge without
+            // storing it, so the cache write has to happen here.
             switch list.source {
             case .privateICloud(let listId):
                 let url = await iCloudContainerManager.shared.fileURL(for: listId)
@@ -1126,10 +1153,12 @@ class UnifiedListProvider {
     }
 
     func updateItem(_ item: ListItem, in list: UnifiedList, immediate: Bool = false) async throws {
-        var document = try await openDocumentForMutation(for: list)
-        if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+        try await mutateDocument(for: list, immediate: immediate) { document in
+            guard let index = document.items.firstIndex(where: { $0.id == item.id }) else {
+                return false
+            }
             document.items[index] = item
-            await cacheDocument(document, for: list, immediate: immediate)
+            return true
         }
     }
 
@@ -1144,37 +1173,43 @@ class UnifiedListProvider {
     func deleteItem(_ item: ListItem, from list: UnifiedList) async throws {
         if item.reminderDate != nil { ReminderManager.cancelReminder(for: item) }
 
-        var document = try await openDocumentForMutation(for: list)
-        if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+        try await mutateDocument(for: list) { document in
+            guard let index = document.items.firstIndex(where: { $0.id == item.id }) else {
+                return false
+            }
             document.items[index].isDeleted = true
             document.items[index].deletedAt = Date()
             document.items[index].modifiedAt = Date()
             document.items[index].lastChangeField = "deleted"
             document.items[index].reminderDate = nil
-            await cacheDocument(document, for: list)
+            return true
         }
     }
 
     func fetchDeletedItems(for list: UnifiedList) async throws -> [ListItem] {
-        let document = try await openDocumentForMutation(for: list)
+        let document = try await openDocumentCacheFirst(for: list)
         return document.items.filter { $0.isDeleted }
     }
 
     func restoreItem(_ item: ListItem, in list: UnifiedList) async throws {
-        var document = try await openDocumentForMutation(for: list)
-        if let index = document.items.firstIndex(where: { $0.id == item.id }) {
+        try await mutateDocument(for: list) { document in
+            guard let index = document.items.firstIndex(where: { $0.id == item.id }) else {
+                return false
+            }
             document.items[index].isDeleted = false
             document.items[index].deletedAt = nil
             document.items[index].modifiedAt = Date()
             document.items[index].lastChangeField = "restored"
-            await cacheDocument(document, for: list)
+            return true
         }
     }
 
     func permanentlyDeleteItem(_ item: ListItem, from list: UnifiedList) async throws {
-        var document = try await openDocumentForMutation(for: list)
-        document.items.removeAll { $0.id == item.id }
-        await cacheDocument(document, for: list)
+        try await mutateDocument(for: list) { document in
+            let before = document.items.count
+            document.items.removeAll { $0.id == item.id }
+            return document.items.count != before
+        }
     }
 
     // MARK: - Labels
@@ -1204,92 +1239,95 @@ class UnifiedListProvider {
     }
 
     func createLabel(_ label: ListLabel, for list: UnifiedList) async throws {
-        var document = try await openDocument(for: list)
-        document.labels.append(label)
-        document.deletedLabelIDs.removeAll { $0 == label.id }
-        document.list.modifiedAt = Date()
-        cacheLabels(document.labels, for: list)
-        await cacheDocument(document, for: list)
+        let updated = try await mutateDocument(for: list) { document in
+            document.labels.append(label)
+            document.deletedLabelIDs.removeAll { $0 == label.id }
+            document.list.modifiedAt = Date()
+            return true
+        }
+        if let updated { cacheLabels(updated.labels, for: list) }
     }
 
     func updateLabel(_ label: ListLabel, for list: UnifiedList) async throws {
         AppLogger.labels.debug("[updateLabel] Starting update for label: \(label.name, privacy: .public)")
 
-        var document = try await openDocument(for: list)
-        AppLogger.labels.debug("[updateLabel] Document has \(document.labels.count, privacy: .public) labels")
-
-        if let index = document.labels.firstIndex(where: { $0.id == label.id }) {
+        // The cache write happens inside `applyMutation`, so the save below is guaranteed
+        // to see the edited document — the older explicit `updateDocumentCache` call that
+        // kept the Nextcloud Stage-1 merge from discarding edits is now structural.
+        let updated = try await applyMutation(to: list) { document in
+            guard let index = document.labels.firstIndex(where: { $0.id == label.id }) else {
+                return false
+            }
             document.labels[index] = label
             document.list.modifiedAt = Date()
-            cacheLabels(document.labels, for: list)
-            // Update document cache before saving so any merge logic sees the new label,
-            // not the stale pre-edit version (fixes Nextcloud Stage-1 merge discarding edits).
-            await updateDocumentCache(document, for: list)
-            try await saveFile(document, for: list)
-            AppLogger.labels.info("[updateLabel] Label saved successfully")
-        } else {
-            AppLogger.labels.warning("[updateLabel] Label not found in document!")
+            return true
         }
+
+        guard let updated else {
+            AppLogger.labels.warning("[updateLabel] Label not found in document!")
+            return
+        }
+        cacheLabels(updated.labels, for: list)
+        try await saveFile(updated, for: list)
+        AppLogger.labels.info("[updateLabel] Label saved successfully")
     }
 
     func deleteLabel(_ label: ListLabel, from list: UnifiedList) async throws {
         AppLogger.labels.debug("[deleteLabel] Starting delete for label: \(label.name, privacy: .public)")
 
-        var document = try await openDocument(for: list)
-        AppLogger.labels.debug("[deleteLabel] Document has \(document.labels.count, privacy: .public) labels before delete")
-
-        document.labels.removeAll { $0.id == label.id }
-        if !document.deletedLabelIDs.contains(label.id) {
-            document.deletedLabelIDs.append(label.id)
+        let updated = try await applyMutation(to: list) { document in
+            document.labels.removeAll { $0.id == label.id }
+            if !document.deletedLabelIDs.contains(label.id) {
+                document.deletedLabelIDs.append(label.id)
+            }
+            document.list.modifiedAt = Date()
+            return true
         }
-        document.list.modifiedAt = Date()
-        cacheLabels(document.labels, for: list)
-        // Update document cache before saving so any merge logic sees the deletion,
-        // not the stale pre-delete version (fixes Nextcloud Stage-1 merge restoring deleted labels).
-        await updateDocumentCache(document, for: list)
-        try await saveFile(document, for: list)
+
+        guard let updated else { return }
+        cacheLabels(updated.labels, for: list)
+        try await saveFile(updated, for: list)
         AppLogger.labels.info("[deleteLabel] Label deleted successfully")
     }
 
     func updateLabelOrder(_ order: [String], for list: UnifiedList) async throws {
-        var document = try await openDocument(for: list)
-        document.list.labelOrder = order
-        document.list.modifiedAt = Date()
-        try await saveFile(document, for: list)
+        let updated = try await applyMutation(to: list) { document in
+            document.list.labelOrder = order
+            document.list.modifiedAt = Date()
+            return true
+        }
+        guard let updated else { return }
+        try await saveFile(updated, for: list)
     }
 
     // MARK: - List Management
 
     func updateList(_ list: UnifiedList, name: String, icon: String?, hiddenLabels: [String]?, labelOrder: [String]? = nil, enableMapData: Bool? = nil) async throws {
         AppLogger.general.debug("[updateList] Loading document...")
-        var document = try await openDocument(for: list)
-        AppLogger.general.debug("[updateList] Document has \(document.labels.count, privacy: .public) labels, \(document.items.count, privacy: .public) items")
 
-        document.list.name = name
-        document.list.icon = icon
-        document.list.hiddenLabels = hiddenLabels
-        document.list.labelOrder = labelOrder
-        // Only update enableMapData when explicitly passed by the caller.
-        // nil (the default) means "this caller doesn't manage this field — leave it unchanged."
-        // ListSettingsView always passes true or false; other callers (WelcomeView, etc.) pass nil.
-        if let enableMapData {
-            document.list.enableMapData = enableMapData ? true : nil  // store false as nil for JSON compactness
-        }
-        document.list.modifiedAt = Date()
-
-        if case .privateICloud = list.source {
-            let listId = list.privateListId!
-            let url = await iCloudContainerManager.shared.fileURL(for: listId)
-            await FileStore.shared.updateCache(document, at: url)
-            try await saveFile(document, for: list)
-            if let index = allLists.firstIndex(where: { $0.id == list.id }) {
-                var updatedList = allLists[index]
-                updatedList.summary = document.list
-                allLists[index] = updatedList
+        let updated = try await applyMutation(to: list) { document in
+            document.list.name = name
+            document.list.icon = icon
+            document.list.hiddenLabels = hiddenLabels
+            document.list.labelOrder = labelOrder
+            // Only update enableMapData when explicitly passed by the caller.
+            // nil (the default) means "this caller doesn't manage this field — leave it unchanged."
+            // ListSettingsView always passes true or false; other callers (WelcomeView, etc.) pass nil.
+            if let enableMapData {
+                document.list.enableMapData = enableMapData ? true : nil  // store false as nil for JSON compactness
             }
-        } else {
-            await cacheDocument(document, for: list)
-            try await saveFile(document, for: list)
+            document.list.modifiedAt = Date()
+            return true
+        }
+        guard let updated else { return }
+
+        try await saveFile(updated, for: list)
+
+        if case .privateICloud = list.source,
+           let index = allLists.firstIndex(where: { $0.id == list.id }) {
+            var updatedList = allLists[index]
+            updatedList.summary = updated.list
+            allLists[index] = updatedList
         }
         AppLogger.general.info("[updateList] List updated successfully")
     }
@@ -1298,18 +1336,12 @@ class UnifiedListProvider {
     /// Does not bump `document.list.modifiedAt` — presets carry their own per-row
     /// `modifiedAt` and merge independently of summary fields.
     func updateSharePresets(_ list: UnifiedList, presets: [SharePreset]) async throws {
-        var document = try await openDocument(for: list)
-        document.sharePresets = presets
-
-        if case .privateICloud = list.source {
-            let listId = list.privateListId!
-            let url = await iCloudContainerManager.shared.fileURL(for: listId)
-            await FileStore.shared.updateCache(document, at: url)
-            try await saveFile(document, for: list)
-        } else {
-            await cacheDocument(document, for: list)
-            try await saveFile(document, for: list)
+        let updated = try await applyMutation(to: list) { document in
+            document.sharePresets = presets
+            return true
         }
+        guard let updated else { return }
+        try await saveFile(updated, for: list)
     }
 
     func deleteList(_ list: UnifiedList) async throws {

@@ -11,12 +11,10 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
-		<string>processing</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.quiteyellow.quitelistie.reminderRefresh</string>
-		<string>com.quiteyellow.quitelistie.offlineTileRefresh</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

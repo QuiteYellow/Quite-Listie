@@ -373,12 +373,69 @@ actor NextcloudManager {
     }
 
     /// Updates only the in-memory and disk cache without uploading.
+    ///
+    /// - Warning: This is a blind overwrite. Callers that derived `doc` from a
+    ///   *previous* read of this cache must use ``mutate(remotePath:_:)`` instead —
+    ///   a read-modify-write split across an `await` loses any edit that landed in
+    ///   between. Reserved for callers holding a document from an authoritative
+    ///   source (a fresh download or a completed merge).
     func updateCache(_ doc: ListDocument, remotePath: String) async {
         guard let creds = await resolveCredentials() else { return }
         let key = cacheKey(creds: creds, remotePath: remotePath)
         memCache[key] = doc
         let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
         try? saveToDisk(doc, at: diskURL)
+    }
+
+    /// Atomically applies `transform` to the cached document and persists the result.
+    ///
+    /// This is the only safe way to edit a Nextcloud-backed document. The obvious
+    /// alternative — read the document, mutate it, write it back — is *not* safe even
+    /// from a single `@MainActor` caller: actor-isolated `async` functions are reentrant
+    /// at every `await`, and both the read and the write hop to this actor. Two taps
+    /// arriving close together therefore both read the same pre-edit document, and
+    /// because `ListDocument` is a struct each mutates a private copy — the second
+    /// write silently discards the first. That is what made rapidly-ticked items pop
+    /// back unchecked.
+    ///
+    /// Here, every suspension happens *before* the critical section. Once the cache is
+    /// populated, the read → transform → write-back runs straight through with no
+    /// `await`, so the actor cannot interleave another mutation into the middle of it.
+    /// Atomicity comes from the actor's own execution model rather than a lock, so
+    /// there is no queue to starve and no way to deadlock by nesting two mutations.
+    ///
+    /// - Parameter transform: Edits the document in place and returns `true` if it
+    ///   actually changed anything. Returning `false` skips the write entirely so a
+    ///   no-op edit doesn't trigger a pointless upload. Must not block — it runs
+    ///   inside the actor's critical section.
+    /// - Returns: The updated document, or `nil` if `transform` reported no change.
+    /// - Throws: `NCError.notConnected` if there are no credentials, or a download
+    ///   error if nothing is cached yet and the server can't be reached.
+    @discardableResult
+    func mutate(
+        remotePath: String,
+        _ transform: sending (inout ListDocument) -> Bool
+    ) async throws -> ListDocument? {
+        guard let creds = await resolveCredentials() else { throw NCError.notConnected }
+        let key = cacheKey(creds: creds, remotePath: remotePath)
+        let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
+
+        // Populate the cache first. Every `await` in this method lives here, above the
+        // critical section — deliberately, so the section below stays uninterruptible.
+        if memCache[key] == nil {
+            if let onDisk = try? loadFromDisk(at: diskURL) {
+                memCache[key] = onDisk
+            } else {
+                memCache[key] = try await downloadFile(creds: creds, remotePath: remotePath)
+            }
+        }
+
+        // ---- critical section: no `await` past this line ----
+        guard var doc = memCache[key] else { throw NCError.notConnected }
+        guard transform(&doc) else { return nil }
+        memCache[key] = doc
+        try? saveToDisk(doc, at: diskURL)
+        return doc
     }
 
     /// Returns true if the Nextcloud server is reachable (a lightweight PROPFIND on the DAV root).

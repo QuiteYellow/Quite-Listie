@@ -1,7 +1,7 @@
 import Foundation
 
-// OS Transverse Mercator + WGS84 <-> OSGB36 Helmert 7-parameter datum shift.
-// Reference: OS "A guide to coordinate systems in Great Britain", Annexes B and C.
+// Transverse Mercator + WGS84 <-> OSGB36 Helmert 7-parameter datum shift.
+// Parameters are those published for EPSG:27700 (British National Grid).
 // Accuracy: ~5m across GB (approximate Helmert). For sub-metre accuracy, replace
 // the Helmert step with OSTN15 grid interpolation.
 enum BNGProjection {

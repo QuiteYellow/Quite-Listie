@@ -167,14 +167,9 @@ struct ListieApp: App {
                 // Keep the map tile cache under its size cap. Detached +
                 // utility QoS inside; a no-op when under the cap.
                 .task { TileDiskCache.scheduleTrim() }
-                // Offline packs: resume any interrupted download, refresh
-                // stale auto-refresh packs (the reliable fallback — iOS's
-                // BGProcessingTask scheduling is advisory), and re-arm the
-                // background slot.
-                .task {
-                    OfflineRegionManager.shared.performLaunchMaintenance()
-                    BackgroundRefreshManager.scheduleOfflineTileRefresh()
-                }
+                // One-shot cleanup of data left by the removed standard-layer
+                // and offline-pack features. No-op after the first launch.
+                .task { RemovedMapFeaturePurge.runIfNeeded() }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         // iOS may have invalidated the NextcloudKit URLSession during suspension

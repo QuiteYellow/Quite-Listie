@@ -3,7 +3,7 @@ import CoreGraphics
 import ImageIO
 
 /// Fetches tiles from an arbitrary URL template and caches them (memory + disk) as decoded RGBA buffers.
-/// URL template placeholders: {z} {x} {y} {-y} {s} {r} {apikey} — see `expandTemplate`.
+/// URL template placeholders: {z} {x} {y} — see `expandTemplate`.
 actor TileFetcher {
     struct Bitmap {
         let bytes: [UInt8]  // RGBA, premultiplied, row-major
@@ -20,43 +20,30 @@ actor TileFetcher {
     }
 
     private let urlTemplate: String
-    private let apiKey: String
     /// WMTS TileMatrix identifier per zoom. When set, `{z}` substitutes
     /// `zoomIdentifiers[z]` (percent-encoded) instead of the numeric level —
     /// WMTS identifiers are arbitrary strings like "EPSG:27700:5".
     private let zoomIdentifiers: [String]?
-    /// Subdomain tokens for `{s}` rotation (e.g. ["a","b","c"]).
-    private let subdomains: [String]
     /// Identity of the layer this fetcher serves, for the health banner.
     /// nil (probes, tests) = terminal failures aren't reported.
     private let healthSourceID: String?
     private let healthSourceName: String?
     private let session: URLSession
     private let disk: TileDiskCache
-    /// ETag/Last-Modified per cached tile, for conditional refresh (offline
-    /// packs re-validate monthly; unchanged tiles cost a 304, not a download).
-    private let manifest: TileValidatorManifest
     private let limiter: FetchLimiter
     private var memory: [String: Bitmap] = [:]
     private var imageMemory: [String: Image] = [:]
     private var order: [String] = []
     private let memoryLimit = 512
 
-    /// `targetStore` redirects *all* disk traffic (reads, writes, manifest) to
-    /// that store instead of the namespace-derived cache. The offline-pack
-    /// downloader passes the pinned store here — otherwise every pack tile
-    /// would be written twice (once pinned, once in the purgeable cache).
     /// `protocolClasses` lets tests stub the network via URLProtocol.
-    init(urlTemplate: String, apiKey: String, cacheNamespace: String,
+    init(urlTemplate: String, cacheNamespace: String,
          legacyCacheNamespace: String? = nil,
-         zoomIdentifiers: [String]? = nil, subdomains: [String] = [],
+         zoomIdentifiers: [String]? = nil,
          healthSourceID: String? = nil, healthSourceName: String? = nil,
-         targetStore: TileDiskCache? = nil,
          protocolClasses: [AnyClass]? = nil) {
         self.urlTemplate = urlTemplate
-        self.apiKey = apiKey
         self.zoomIdentifiers = zoomIdentifiers
-        self.subdomains = subdomains
         self.healthSourceID = healthSourceID
         self.healthSourceName = healthSourceName
         let cfg = URLSessionConfiguration.default
@@ -64,9 +51,13 @@ actor TileFetcher {
         // connection pool churn rather than concurrent requests. Real
         // concurrency is capped by the FetchLimiter below.
         cfg.httpMaximumConnectionsPerHost = 6
-        // Idle timeout — a well-behaved tile should return within 30s once it
-        // starts flowing bytes. Anything much longer is a lost socket.
-        cfg.timeoutIntervalForRequest = 30
+        // Idle timeout. Deliberately tight: a tile typically answers in a few
+        // hundred milliseconds, so anything still silent after this is a hung
+        // socket, not a slow one. It matters because a hung request holds one of
+        // the limiter's six slots for the whole interval — at 30s, a handful of
+        // them stall every other tile on screen and the map looks dead. Failing
+        // fast frees the slot and lets the caller's retry back-off take over.
+        cfg.timeoutIntervalForRequest = 12
         // Total time a request may spend from start (including queueing) to
         // finish. Keep bounded so lingering ghosts eventually die.
         cfg.timeoutIntervalForResource = 60
@@ -74,10 +65,8 @@ actor TileFetcher {
         cfg.waitsForConnectivity = false
         if let protocolClasses { cfg.protocolClasses = protocolClasses }
         self.session = URLSession(configuration: cfg)
-        let disk = targetStore ?? TileDiskCache(namespace: cacheNamespace,
-                                                legacyNamespace: legacyCacheNamespace)
-        self.disk = disk
-        self.manifest = TileValidatorManifest(directory: disk.root)
+        self.disk = TileDiskCache(namespace: cacheNamespace,
+                                  legacyNamespace: legacyCacheNamespace)
         // Six concurrent requests. Matches typical browser per-origin
         // connection budget and keeps the tile API from being hammered when a
         // hundred tiles are requested at once.
@@ -128,24 +117,12 @@ actor TileFetcher {
         return bmp
     }
 
-    /// Raw tile bytes — disk first, then network — without decoding or touching
-    /// the in-memory bitmap cache. Used by the MKTileOverlay-backed built-in
-    /// raster layer, which hands undecoded data straight to MapKit. Shares the
-    /// same on-disk namespace as `fetch`, so the cache-size readout and the
-    /// "clear cache" action cover both the native and MapKit tile paths.
-    func data(z: Int, x: Int, y: Int) async -> Data? {
-        if let data = disk.read(z: z, x: x, y: y) { return data }
-        return await fetchFromNetwork(z: z, x: x, y: y)
-    }
-
     /// Network fetch with the shared retry/backoff/limiter policy. On a 200 the
     /// bytes are written to the disk cache and returned; transient failures
     /// (network error, 5xx, 429) retry with backoff, everything else returns nil.
     private func fetchFromNetwork(z: Int, x: Int, y: Int) async -> Data? {
         let urlStr = Self.expandTemplate(urlTemplate, z: z, x: x, y: y,
-                                         apiKey: apiKey,
-                                         zoomIdentifiers: zoomIdentifiers,
-                                         subdomains: subdomains)
+                                         zoomIdentifiers: zoomIdentifiers)
         guard let url = URL(string: urlStr) else { return nil }
 
         // Exponential-backoff retry loop. Retries only on transient failures
@@ -197,9 +174,6 @@ actor TileFetcher {
                     // server answered; the answer just isn't a tile.
                     guard Self.looksLikeImage(data) else { return nil }
                     disk.write(z: z, x: x, y: y, data: data)
-                    manifest.record(key: "\(z)/\(x)/\(y)",
-                                    etag: http?.value(forHTTPHeaderField: "ETag"),
-                                    lastModified: http?.value(forHTTPHeaderField: "Last-Modified"))
                     return data
                 }
                 // Terminal auth failure — the key is wrong/revoked/over quota,
@@ -250,78 +224,6 @@ actor TileFetcher {
                                           status: status)
     }
 
-    // MARK: - Conditional refresh
-
-    enum RefreshOutcome {
-        case unchanged   // 304 — validator still current
-        case updated     // 200 — tile changed, cache rewritten
-        case missing     // 404/410 — server dropped it; cache entry removed
-        case failed      // network error / non-image body / other status
-    }
-
-    /// Conditionally re-fetch one cached tile, sending its stored validators.
-    /// An unchanged tile costs a 304 and no bandwidth — this is what makes a
-    /// monthly offline-pack refresh affordable against an API quota. Callers
-    /// doing a batch should `flushValidators()` at the end.
-    func refreshTile(z: Int, x: Int, y: Int) async -> RefreshOutcome {
-        let key = "\(z)/\(x)/\(y)"
-        let urlStr = Self.expandTemplate(urlTemplate, z: z, x: x, y: y,
-                                         apiKey: apiKey,
-                                         zoomIdentifiers: zoomIdentifiers,
-                                         subdomains: subdomains)
-        guard let url = URL(string: urlStr) else { return .failed }
-        var req = URLRequest(url: url)
-        if let entry = manifest.entry(for: key) {
-            if let etag = entry.etag {
-                req.setValue(etag, forHTTPHeaderField: "If-None-Match")
-            }
-            if let lastModified = entry.lastModified {
-                req.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
-            }
-        }
-
-        guard await limiter.acquire() else { return .failed }
-        let data: Data
-        let resp: URLResponse
-        do {
-            (data, resp) = try await session.data(for: req)
-            await limiter.release()
-        } catch {
-            await limiter.release()
-            return .failed
-        }
-        let http = resp as? HTTPURLResponse
-        await honourRateLimitHeaders(http)
-
-        switch http?.statusCode ?? 0 {
-        case 304:
-            manifest.markChecked(key: key)
-            return .unchanged
-        case 200 where Self.looksLikeImage(data):
-            disk.write(z: z, x: x, y: y, data: data)
-            manifest.record(key: key,
-                            etag: http?.value(forHTTPHeaderField: "ETag"),
-                            lastModified: http?.value(forHTTPHeaderField: "Last-Modified"))
-            // Drop stale decoded copies so the next render picks up the new tile.
-            memory.removeValue(forKey: key)
-            imageMemory.removeValue(forKey: key)
-            return .updated
-        case 404, 410:
-            disk.remove(z: z, x: x, y: y)
-            manifest.remove(key: key)
-            memory.removeValue(forKey: key)
-            imageMemory.removeValue(forKey: key)
-            return .missing
-        default:
-            return .failed
-        }
-    }
-
-    /// Persist any batched manifest mutations (see `TileValidatorManifest.flush`).
-    func flushValidators() {
-        manifest.flush()
-    }
-
     // MARK: - Response-header handling
 
     /// Parse a `Retry-After` header (integer seconds only — HTTP-date form is
@@ -357,36 +259,22 @@ actor TileFetcher {
     }
 
     /// Expand a tile URL template. Shared by the fetch path and the settings
-    /// editor's probe so both speak the same dialect:
-    ///  * `{z}` `{x}` `{y}` — slippy-map coordinates ({z} becomes the WMTS
-    ///    TileMatrix identifier when `zoomIdentifiers` is provided)
-    ///  * `{-y}` — TMS flipped y (`2^z − 1 − y`); callers stay in XYZ convention
-    ///  * `{s}` — subdomain, picked deterministically by `(x + y) % n` so
-    ///    retries and cached entries always resolve the same host
-    ///  * `{r}` — retina suffix (every current iOS display is 2×, so "@2x")
-    ///  * `{apikey}` — the per-source key
+    /// screen's test probe so both speak the same dialect: `{z}` `{x}` `{y}`
+    /// slippy-map coordinates, where `{z}` becomes the WMTS TileMatrix
+    /// identifier when `zoomIdentifiers` is provided (the key, when a service
+    /// needs one, is already embedded in the WMTS-derived template).
     static func expandTemplate(_ template: String, z: Int, x: Int, y: Int,
-                               apiKey: String = "",
-                               zoomIdentifiers: [String]? = nil,
-                               subdomains: [String] = [],
-                               retinaToken: String = "@2x") -> String {
+                               zoomIdentifiers: [String]? = nil) -> String {
         let zToken: String
         if let ids = zoomIdentifiers, ids.indices.contains(z) {
             zToken = encodeMatrixIdentifier(ids[z])
         } else {
             zToken = String(z)
         }
-        var s = template
-            .replacingOccurrences(of: "{-y}", with: String((1 << z) - 1 - y))
+        return template
             .replacingOccurrences(of: "{z}", with: zToken)
             .replacingOccurrences(of: "{x}", with: String(x))
             .replacingOccurrences(of: "{y}", with: String(y))
-            .replacingOccurrences(of: "{apikey}", with: apiKey)
-            .replacingOccurrences(of: "{r}", with: retinaToken)
-        if !subdomains.isEmpty {
-            s = s.replacingOccurrences(of: "{s}", with: subdomains[(x + y) % subdomains.count])
-        }
-        return s
     }
 
     /// True if the bytes carry a raster-image magic number (PNG/JPEG/GIF/WebP/

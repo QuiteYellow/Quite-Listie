@@ -13,6 +13,7 @@
 		CB001A012F100000002F4B13 /* ListieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A002F100000002F4B13 /* ListieTests.swift */; };
 		CB001A052F100000002F4B14 /* SyncResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A042F100000002F4B14 /* SyncResilienceTests.swift */; };
 		CB001A092F100000002F4B15 /* TileLayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A082F100000002F4B15 /* TileLayerTests.swift */; };
+		CB001A0D2F100000002F4B16 /* DocumentMutationConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB001A0C2F100000002F4B16 /* DocumentMutationConcurrencyTests.swift */; };
 		CB3015E42DE9D43700CCFCC8 /* SymbolPicker in Frameworks */ = {isa = PBXBuildFile; productRef = CB3015E32DE9D43700CCFCC8 /* SymbolPicker */; };
 		CBEFABE62DE3584B002F4B13 /* extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFABE52DE35848002F4B13 /* extensions.swift */; };
 /* End PBXBuildFile section */
@@ -40,6 +41,7 @@
 		CB001A002F100000002F4B13 /* ListieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListieTests.swift; sourceTree = "<group>"; };
 		CB001A042F100000002F4B14 /* SyncResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncResilienceTests.swift; sourceTree = "<group>"; };
 		CB001A082F100000002F4B15 /* TileLayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileLayerTests.swift; sourceTree = "<group>"; };
+		CB001A0C2F100000002F4B16 /* DocumentMutationConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentMutationConcurrencyTests.swift; sourceTree = "<group>"; };
 		CBEFA7AB2DE31318002F4B13 /* QuiteListie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiteListie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7B92DE3131A002F4B13 /* QuiteListieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiteListieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CBEFA7C32DE3131A002F4B13 /* QuiteListieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiteListieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -126,6 +128,7 @@
 				CB001A002F100000002F4B13 /* ListieTests.swift */,
 				CB001A042F100000002F4B14 /* SyncResilienceTests.swift */,
 				CB001A082F100000002F4B15 /* TileLayerTests.swift */,
+				CB001A0C2F100000002F4B16 /* DocumentMutationConcurrencyTests.swift */,
 			);
 			path = QuiteListieTests;
 			sourceTree = "<group>";
@@ -328,6 +331,7 @@
 				CB001A012F100000002F4B13 /* ListieTests.swift in Sources */,
 				CB001A052F100000002F4B14 /* SyncResilienceTests.swift in Sources */,
 				CB001A092F100000002F4B15 /* TileLayerTests.swift in Sources */,
+				CB001A0D2F100000002F4B16 /* DocumentMutationConcurrencyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -482,7 +486,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 101;
+				CURRENT_PROJECT_VERSION = 112;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -548,7 +552,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuiteListie/QuiteListie.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 101;
+				CURRENT_PROJECT_VERSION = 112;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -611,7 +615,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 101;
+				CURRENT_PROJECT_VERSION = 112;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -634,7 +638,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 101;
+				CURRENT_PROJECT_VERSION = 112;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -656,7 +660,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 101;
+				CURRENT_PROJECT_VERSION = 112;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -679,7 +683,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 101;
+				CURRENT_PROJECT_VERSION = 112;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = WU49GA3HRA;
 				GENERATE_INFOPLIST_FILE = YES;

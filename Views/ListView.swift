@@ -295,6 +295,11 @@ struct ListView: View {
     @State private var activeInlineAdd: String? = nil  // Track which section is active
     @State private var inlineAddText: String = ""
     @FocusState private var inlineAddFocused: Bool
+    /// Text for the search-seeded add row pinned below the results. Seeded from the
+    /// search field so a query that matches nothing can be added as-is.
+    @State private var searchAddText: String = ""
+    @FocusState private var searchAddFocused: Bool
+    @State private var addItemPrefill: AddItemPrefill? = nil
     @State private var listWidth: CGFloat = 0
     @State private var refreshState: RefreshState = .idle
 
@@ -492,48 +497,69 @@ struct ListView: View {
         }
     }
     
+    /// The active "type a name and confirm" row, shared by the per-label inline add and
+    /// the search-seeded add row. `onCancel` is omitted where there is nothing to dismiss.
     @ViewBuilder
-    private func inlineAddRow(for labelName: String, color: Color?) -> some View {
-        if activeInlineAdd == labelName {
-            // Active state - show text field
-            HStack(spacing: 12) {
-                TextField("Item name", text: $inlineAddText)
-                    .font(.subheadline)
-                    .focused($inlineAddFocused)
-                    .onSubmit {
-                        addInlineItem(to: labelName)
-                    }
-                
-                // Cancel button
-                Button {
-                    activeInlineAdd = nil
-                    inlineAddText = ""
-                    inlineAddFocused = false
-                } label: {
+    private func addFieldRow(
+        text: Binding<String>,
+        focus: FocusState<Bool>.Binding,
+        prompt: String = "Item name",
+        onCancel: (() -> Void)?,
+        onExpand: (() -> Void)? = nil,
+        onCommit: @escaping () -> Void
+    ) -> some View {
+        let isEmpty = text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty
+        HStack(spacing: 12) {
+            TextField(prompt, text: text)
+                .font(.subheadline)
+                .focused(focus)
+                .onSubmit(onCommit)
+
+            // Cancel button
+            if let onCancel {
+                Button(action: onCancel) {
                     Image(systemName: "xmark")
                         .foregroundStyle(.red.opacity(0.75))
-                    
-                    //.imageScale(.medium)
                 }
                 .buttonStyle(.glass)
                 .keyboardShortcut(.cancelAction)
-                
-                // Add button
-                Button {
-                    addInlineItem(to: labelName)
-                } label: {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(
-                            inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? Color.secondary
-                            : Color.accentColor
-                        )
-                    //.imageScale(.medium)
+            }
+
+            // Open the full add screen, carrying the typed name across
+            if let onExpand {
+                Button(action: onExpand) {
+                    Image(systemName: "pencil")
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.glass)
-                .disabled(inlineAddText.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityLabel("Add with Details")
             }
-            .padding(.vertical, 1.5)
+
+            // Add button
+            Button(action: onCommit) {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(isEmpty ? Color.secondary : Color.accentColor)
+            }
+            .buttonStyle(.glass)
+            .disabled(isEmpty)
+            .accessibilityLabel("Add Item")
+        }
+        .padding(.vertical, 1.5)
+    }
+
+    @ViewBuilder
+    private func inlineAddRow(for labelName: String, color: Color?) -> some View {
+        if activeInlineAdd == labelName {
+            addFieldRow(
+                text: $inlineAddText,
+                focus: $inlineAddFocused,
+                onCancel: {
+                    activeInlineAdd = nil
+                    inlineAddText = ""
+                    inlineAddFocused = false
+                },
+                onCommit: { addInlineItem(to: labelName) }
+            )
         } else {
             // Inactive state - show "+ Add Item" button
             HStack {
@@ -561,6 +587,64 @@ struct ListView: View {
                 //.padding(.vertical, 4)
             }
         }
+    }
+
+    /// Whether the search-seeded add row should sit below the results.
+    private var showsSearchAddRow: Bool {
+        !hideQuickAdd
+        && !unifiedList.isReadOnly
+        && !viewModel.searchText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// An add row seeded with the current query, in no label group, so a search that
+    /// turns up nothing (or the wrong thing) can be turned straight into a new item.
+    @ViewBuilder
+    private var searchAddRow: some View {
+        addFieldRow(
+            text: $searchAddText,
+            focus: $searchAddFocused,
+            prompt: "New item name",
+            onCancel: nil,
+            onExpand: {
+                // Capture the name first: clearing the query re-seeds `searchAddText`.
+                let name = searchAddText.trimmingCharacters(in: .whitespaces)
+                searchAddFocused = false
+                searchText = ""
+                addItemPrefill = AddItemPrefill(name: name)
+            },
+            onCommit: { addSearchItem() }
+        )
+    }
+
+    /// Mirrors `SectionHeaderView`'s icon-then-name shape, but with a plus instead of a
+    /// tag, so it reads as "this section makes something" rather than as a label group.
+    private var searchAddHeader: some View {
+        HStack {
+            Image(systemName: "plus.circle.fill")
+                .foregroundStyle(.tint)
+            Text("New Item")
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+    }
+
+    /// Spells out what the row will do, so the pre-filled query can't be mistaken for a
+    /// result: whether it matched anything, that it already exists, and where it lands.
+    private var searchAddFooter: String {
+        let name = searchAddText.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            return "Type a name to add it to this list."
+        }
+        let alreadyExists = viewModel.items.contains {
+            !$0.isDeleted && $0.note.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }
+        if alreadyExists {
+            return "“\(name)” is already in this list."
+        }
+        if viewModel.filteredItems.isEmpty {
+            return "Nothing matches “\(name)”. Adds it as a new item with no label."
+        }
+        return "Adds “\(name)” as a new item with no label."
     }
 
     private var listContent: some View {
@@ -607,6 +691,15 @@ struct ListView: View {
             }
             if showCompleted && !completedItems.isEmpty {
                 renderSection(labelName: "Completed", items: completedItems, color: .primary)
+            }
+            if showsSearchAddRow {
+                Section {
+                    searchAddRow
+                } header: {
+                    searchAddHeader
+                } footer: {
+                    Text(searchAddFooter)
+                }
             }
         }
         .id(unifiedList.id)
@@ -694,6 +787,12 @@ struct ListView: View {
             if !newText.isEmpty && mapFocusState != .all {
                 mapCameraPosition = .automatic
                 mapFocusState = .all
+            }
+            // Re-seed the pinned add row from the query. Typing in the search field always
+            // wins over whatever was left in the row (including a just-added item's name).
+            searchAddText = newText
+            if newText.isEmpty {
+                searchAddFocused = false
             }
         }
         .navigationTitle(list.name)
@@ -975,6 +1074,7 @@ struct ListView: View {
             viewModel: viewModel,
             welcomeViewModel: welcomeViewModel,
             showingAddView: $showingAddView,
+            addItemPrefill: $addItemPrefill,
             mapAddLocation: $mapAddLocation,
             editingItem: $editingItem,
             showingRecycleBin: $showingRecycleBin,
@@ -1244,6 +1344,30 @@ struct ListView: View {
         mapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
     }
 
+    /// Adds the text sitting in the search-seeded row as an unlabelled item. The query is
+    /// left alone so the new item appears in the results above as confirmation.
+    private func addSearchItem() {
+        let trimmedText = searchAddText.trimmingCharacters(in: .whitespaces)
+        guard !trimmedText.isEmpty else { return }
+
+        Task {
+            let success = await viewModel.addItem(
+                note: trimmedText,
+                label: nil,
+                quantity: 1,
+                markdownNotes: nil
+            )
+
+            if success {
+                await MainActor.run {
+                    // Clear rather than re-seed, so a second tap can't duplicate the item.
+                    searchAddText = ""
+                    searchAddFocused = false
+                }
+            }
+        }
+    }
+
     private func addInlineItem(to labelName: String) {
         let trimmedText = inlineAddText.trimmingCharacters(in: .whitespaces)
 
@@ -1289,6 +1413,12 @@ fileprivate struct PresetReloadRequest: Identifiable {
     let expectedItems: [ListItem]
 }
 
+/// A request to open the full add screen with the name already typed in.
+fileprivate struct AddItemPrefill: Identifiable {
+    let id = UUID()
+    let name: String
+}
+
 private struct ListSheetsModifier: ViewModifier {
     let list: ListSummary
     let unifiedList: UnifiedList
@@ -1297,6 +1427,7 @@ private struct ListSheetsModifier: ViewModifier {
     var welcomeViewModel: WelcomeViewModel
 
     @Binding var showingAddView: Bool
+    @Binding var addItemPrefill: AddItemPrefill?
     @Binding var mapAddLocation: Coordinate?
     @Binding var editingItem: ListItem?
     @Binding var showingRecycleBin: Bool
@@ -1321,6 +1452,11 @@ private struct ListSheetsModifier: ViewModifier {
                 Task { await refreshReminderCounts() }
             }) {
                 AddItemView(list: list, viewModel: viewModel)
+            }
+            .fullScreenCover(item: $addItemPrefill, onDismiss: {
+                Task { await refreshReminderCounts() }
+            }) { prefill in
+                AddItemView(list: list, viewModel: viewModel, initialName: prefill.name)
             }
             .fullScreenCover(item: $mapAddLocation, onDismiss: {
                 Task { await refreshReminderCounts() }
