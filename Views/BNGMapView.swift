@@ -291,10 +291,47 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     /// `masksToBounds`-plus-`shadow` layer (or a SwiftUI `.shadow`) would.
     private let sheet = CALayer()
     private let tileClip = CALayer()
+    /// The cut edge, as three concentric hairlines — dark outside, bright core,
+    /// dark inside — so the boundary reads as the bevelled edge of a pane rather
+    /// than a drawn border.
+    ///
+    /// Painted rather than a real `UIGlassEffect`. That effect only renders inside
+    /// a `UIVisualEffectView`, which is a view and so cannot live in `tileHost`:
+    /// it would give up the free pan, zoom and rotation these layers inherit, and
+    /// would resample its backdrop every frame of a pan across a ring that can
+    /// span the screen.
+    private let sheetEdgeOuter = CALayer()
     private let sheetEdge = CALayer()
+    private let sheetEdgeInner = CALayer()
+    private var sheetEdges: [CALayer] { [sheetEdgeOuter, sheetEdge, sheetEdgeInner] }
+    /// Low-detail coastline for everywhere the imagery doesn't reach. It sits
+    /// *above* the paper and below the tiles: the sheet extent is the projection's
+    /// bounds, not Great Britain, so a layer behind the paper would be hidden over
+    /// the Irish Sea, the Channel and the whole blank band where imagery stops.
+    private let world = CAShapeLayer()
     /// Corner rounding of the sheet, in points — screen-space, so the corner reads
     /// the same at every zoom. Matches the radius the map's own controls use.
     private static let sheetCornerRadius: CGFloat = 12
+
+    /// Sea, land and coast tones, sampled from the tile imagery so the surround
+    /// reads as a continuation of the map rather than a frame around it.
+    ///
+    /// Deliberately fixed rather than dynamic: the imagery has no dark variant, so
+    /// a surround that followed the interface style would put a hard light/dark
+    /// seam along the sheet edge in dark mode.
+    ///
+    /// These are sRGB. Sampling the imagery off a screenshot gives values in the
+    /// *display's* space — on a wide-gamut monitor the sea read D2E9FB, which as
+    /// sRGB is a visibly different colour from the tile it came from.
+    ///
+    /// Land is a neutral grey rather than the imagery's land tone on purpose. The
+    /// imagery restyles land as coverage runs out — pale green at low zoom, flat
+    /// white further in — so any single colour picked to match it is wrong at some
+    /// zoom. Grey doesn't try: it reads as "outside the data", which is what it is,
+    /// and the sheet edge becomes a deliberate boundary rather than a mismatch.
+    private static let seaColor = UIColor(red: 0xC7/255, green: 0xEA/255, blue: 0xFC/255, alpha: 1)
+    private static let landColor = UIColor(red: 0xDF/255, green: 0xE3/255, blue: 0xE6/255, alpha: 1)
+    private static let coastColor = UIColor(red: 0xBA/255, green: 0xC1/255, blue: 0xC7/255, alpha: 1)
     private var tileLayers: [TileID: CALayer] = [:]
     private var realTiles: Set<TileID> = []
     /// Tiles we've already kicked off a fetch for, so a pan doesn't re-request
@@ -375,11 +412,10 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         self.matrix = source.validated?.matrix ?? .bngDefault
         self.store = BNGTileStore(source: source)
         super.init(frame: .zero)
-        // Off the sheet there is no map, so the surround is just app chrome: use
-        // the same grouped background every other screen sits on rather than a
-        // hardcoded paper tone, which stayed light in dark mode.
-        // (Was: UIColor(red: 0xF2/255, green: 0xEF/255, blue: 0xE9/255, alpha: 1).)
-        backgroundColor = .systemGroupedBackground
+        // The view's own background is the sea the whole world sits in.
+        // (Was a paper tone, UIColor(red: 0xF2/255, green: 0xEF/255, blue: 0xE9/255,
+        // alpha: 1), back when everything off the sheet was blank chrome.)
+        backgroundColor = Self.seaColor
         clipsToBounds = true
 
         // Don't mask to bounds — the view itself clips, and letting buffer tiles
@@ -390,15 +426,36 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         // zPosition rather than sublayer order, so tiles being added and removed
         // constantly can never sandwich these wrongly.
         sheet.zPosition = -1
+        world.zPosition = -0.5
         tileClip.zPosition = 0
-        sheet.backgroundColor = UIColor(red: 0xFD/255, green: 0xFC/255, blue: 0xFA/255, alpha: 1).cgColor
+        // The paper takes the sea colour rather than a paper tone. The sheet extent
+        // is a rectangle far larger than Great Britain, so a distinct paper fill
+        // turns the Irish Sea, the Channel and the North Sea into a pale rectangle
+        // sitting on top of the world — it reads as a rendering fault, not a map.
+        // The sheet stays legible from its cut edge and shadow alone.
+        sheet.backgroundColor = Self.seaColor.cgColor
         sheet.shadowOpacity = 0            // raised in updateSheet() when an edge is near
-        sheet.shadowRadius = 14            // colour + offset: applySheetShadowColor()
-        sheetEdge.zPosition = 1
-        sheetEdge.borderColor = UIColor.black.withAlphaComponent(0.14).cgColor
-        for l in [sheet, tileClip, sheetEdge] {
-            // All three trace the same rounded rect, so the paper, the imagery
-            // clipped to it and the cut edge share one silhouette.
+        sheet.shadowRadius = 14
+        sheet.shadowColor = UIColor.black.cgColor
+        sheet.shadowOffset = CGSize(width: 0, height: 5)
+        sheetEdgeOuter.borderColor = UIColor.black.withAlphaComponent(0.08).cgColor
+        sheetEdge.borderColor = UIColor.white.withAlphaComponent(0.55).cgColor
+        sheetEdgeInner.borderColor = UIColor.black.withAlphaComponent(0.10).cgColor
+        for l in sheetEdges { l.zPosition = 1 }
+
+        world.fillColor = Self.landColor.cgColor
+        world.strokeColor = Self.coastColor.cgColor
+        // Land rings and their holes are one path; even-odd renders the holes
+        // correctly whichever way the source data happens to wind them.
+        world.fillRule = .evenOdd
+        world.actions = ["path": NSNull(), "lineWidth": NSNull()]
+        tileHost.addSublayer(world)
+
+        for l in [sheet, tileClip] + sheetEdges {
+            // They all trace the same rounded rect, so the paper, the imagery
+            // clipped to it and the bevel share one silhouette. The bevel's outer
+            // and inner rings get their radius nudged in updateSheet() to stay
+            // concentric with the core.
             l.cornerRadius = Self.sheetCornerRadius
             l.cornerCurve = .continuous
             let null = NSNull()
@@ -409,16 +466,7 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
             tileHost.addSublayer(l)
         }
         sheet.isHidden = true
-        sheetEdge.isHidden = true
-        applySheetShadowColor()
-        // A CALayer stores a *resolved* CGColor, so a dynamic UIColor can't track
-        // the interface style the way the view's own backgroundColor does — the
-        // shadow has to be re-resolved by hand whenever the style flips.
-        // The registration token is only needed to unregister early; the
-        // registration dies with the view, which is exactly when we want it gone.
-        _ = registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in
-            self.applySheetShadowColor()
-        }
+        for l in sheetEdges { l.isHidden = true }
 
         overlay.frame = bounds
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -788,6 +836,7 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
 
         updateBackdrop()
         updateSheet()
+        updateWorld()
 
         CATransaction.commit()
         repositionPins()
@@ -905,11 +954,20 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
                                   cornerWidth: Self.sheetCornerRadius,
                                   cornerHeight: Self.sheetCornerRadius,
                                   transform: nil)
-        sheet.shadowOpacity = allClamped ? 0 : sheetShadowOpacity
+        sheet.shadowOpacity = allClamped ? 0 : 0.22
         sheet.isHidden = false
-        sheetEdge.frame = rect
-        sheetEdge.borderWidth = 1 / ql_displayScale
-        sheetEdge.isHidden = allClamped
+        // Three touching hairlines: the outer ring sits just outside the cut, the
+        // core on it, the inner just inside. A layer's border is drawn inside its
+        // own bounds, so insetting each frame by one hairline stacks them without
+        // overlap, and the radius shifts with the inset to stay concentric.
+        let hair = 1 / ql_displayScale
+        for (i, l) in sheetEdges.enumerated() {
+            let inset = CGFloat(i - 1) * hair
+            l.frame = rect.insetBy(dx: inset, dy: inset)
+            l.cornerRadius = max(0, Self.sheetCornerRadius - inset)
+            l.borderWidth = hair
+            l.isHidden = allClamped
+        }
 
         // A non-zero bounds origin lets the tiles keep addressing tileHost's
         // coordinate space, so their frames need no adjusting for living in here.
@@ -922,21 +980,48 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
         tileClip.masksToBounds = !allClamped
     }
 
-    /// Opacity the sheet's shadow is raised to when an edge is on screen. A dark
-    /// shadow is a shadow; a light one is a glow, and a glow has to be stronger to
-    /// register at all against the near-black dark-mode surround.
-    private var sheetShadowOpacity: Float {
-        traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.22
-    }
+    /// Rebuild the coastline path in content coordinates.
+    ///
+    /// The path is rebuilt rather than the layer transformed: a CAShapeLayer
+    /// rasterises its path once and a scale transform would just magnify that
+    /// bitmap, so the coast would go soft the moment you zoomed. Re-projecting is
+    /// a multiply-add per point over a few thousand points, which is far cheaper
+    /// than it sounds and matches how the tiles are re-laid.
+    private func updateWorld() {
+        // Skip rings nowhere near the viewport. Zoomed in that leaves one or two.
+        let visible = contentBounds().insetBy(dx: -bounds.width / 2, dy: -bounds.height / 2)
+        let tl = bng(atScreen: CGPoint(x: visible.minX, y: visible.minY))
+        let br = bng(atScreen: CGPoint(x: visible.maxX, y: visible.maxY))
+        let box = CGRect(x: tl.e, y: br.n, width: br.e - tl.e, height: tl.n - br.n)
 
-    /// Lift the light sheet off whichever surround is behind it: a drop shadow in
-    /// light mode, a glow in dark, where black on near-black would be invisible.
-    private func applySheetShadowColor() {
-        let dark = traitCollection.userInterfaceStyle == .dark
-        sheet.shadowColor = (dark ? UIColor.white : UIColor.black).cgColor
-        // Offsetting a glow downward reads as smearing, not lift.
-        sheet.shadowOffset = dark ? .zero : CGSize(width: 0, height: 5)
-        if !sheet.isHidden, sheet.shadowOpacity != 0 { sheet.shadowOpacity = sheetShadowOpacity }
+        // Coordinates are clamped to a box several screens deep for the same
+        // reason the sheet rect is: at the finest zoom an untrimmed ring runs to
+        // hundreds of thousands of points across, which is a lot of path for the
+        // rasteriser to chew on and none of it visible. The box is convex and far
+        // outside the viewport, so a segment between two clamped points cannot cut
+        // back across anything on screen.
+        let pad = max(bounds.width, bounds.height) * 4
+        let limit = contentBounds().insetBy(dx: -pad, dy: -pad)
+
+        let path = CGMutablePath()
+        for ring in WorldOutline.rings where ring.bounds.intersects(box) {
+            var started = false
+            for p in ring.points {
+                let s = screen(e: p.e, n: p.n)
+                let c = CGPoint(x: min(max(s.x, limit.minX), limit.maxX),
+                                y: min(max(s.y, limit.minY), limit.maxY))
+                if started {
+                    path.addLine(to: c)
+                } else {
+                    path.move(to: c)
+                    started = true
+                }
+            }
+            if started { path.closeSubpath() }
+        }
+        world.path = path
+        // Stroke width is in the same space as the path, which is points already.
+        world.lineWidth = 1 / ql_displayScale
     }
 
     private func tileFrame(_ id: TileID) -> CGRect {
