@@ -219,6 +219,16 @@ extension ListDocument {
     /// - List summary: latest `modifiedAt` wins.
     /// - Share presets: union by id, latest `modifiedAt` wins; tombstones older than
     ///   `SharePreset.tombstoneRetention` are purged from the output.
+    /// - Order: `local`'s order is preserved for both items and labels, with entries
+    ///   only `remote` had appended. Item order is user-visible position, so the
+    ///   output is never rebuilt from the merge dictionary.
+    /// - Preserved keys: top-level unknown JSON is unioned, `local` winning.
+    ///
+    /// - Important: Items have no tombstone, so this is a *union* — it can never
+    ///   express a removal. A caller that must let one side delete an item (a fresh
+    ///   authoritative download, where the other device may have run
+    ///   `cleanupOldDeletedItems`) has to take that side wholesale rather than merge,
+    ///   or the purged item is resurrected and re-uploaded on every pass.
     static func merge(local: ListDocument, remote: ListDocument) -> ListDocument {
         var itemsById: [UUID: ListItem] = Dictionary(
             uniqueKeysWithValues: remote.items.map { ($0.id, $0) }
@@ -230,6 +240,14 @@ extension ListDocument {
                 itemsById[item.id] = item
             }
         }
+
+        // Order is user-visible position, so the output must not be rebuilt from the
+        // dictionary — `Array(itemsById.values)` has unspecified order and reshuffles
+        // the list on every merge. Keep local's order, then append items only remote
+        // had, mirroring `FileStore.mergeLabels`.
+        let localIDs = Set(local.items.map(\.id))
+        var mergedItems = local.items.compactMap { itemsById[$0.id] }
+        mergedItems.append(contentsOf: remote.items.filter { !localIDs.contains($0.id) })
 
         let deletedIDs = Set(local.deletedLabelIDs).union(remote.deletedLabelIDs)
 
@@ -245,13 +263,24 @@ extension ListDocument {
 
         let mergedPresets = mergeSharePresets(local: local.sharePresets, remote: remote.sharePresets)
 
-        return ListDocument(
+        // Labels follow the same rule: preserve local order, append remote-only ids.
+        let localLabelIDs = Set(local.labels.map(\.id))
+        var mergedLabels = local.labels.compactMap { labelsById[$0.id] }
+        mergedLabels.append(contentsOf: remote.labels.filter {
+            !localLabelIDs.contains($0.id) && labelsById[$0.id] != nil
+        })
+
+        var merged = ListDocument(
             list: summary,
-            items: Array(itemsById.values),
-            labels: Array(labelsById.values),
+            items: mergedItems,
+            labels: mergedLabels,
             deletedLabelIDs: Array(deletedIDs),
             sharePresets: mergedPresets
         )
+        // The memberwise init doesn't carry `_preserved`, so merging used to strip
+        // top-level keys written by a newer app version. Union them, local winning.
+        merged._preserved = remote._preserved.merging(local._preserved) { _, mine in mine }
+        return merged
     }
 
     private static func mergeSharePresets(local: [SharePreset], remote: [SharePreset]) -> [SharePreset] {
