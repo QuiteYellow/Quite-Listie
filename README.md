@@ -2,9 +2,7 @@
 
 [![TestFlight Beta](https://img.shields.io/badge/TestFlight-Join%20Beta-blue?style=for-the-badge&logo=apple)](https://testflight.apple.com/join/XCUw3f3Y)
 
-A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and Nextcloud sync.
-
-> Also available on Linux: **[Quite Listie for GNOME](https://github.com/QuiteYellow/Quite-Listie-Linux)** (GTK4 + libadwaita). Both apps share the `.listie` file format and Nextcloud sync, so lists move between them.
+A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing lists with support for private local storage, file-based collaboration, and self-hosted server sync.
 
 <img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 45 07" src="https://github.com/user-attachments/assets/ff491cdb-ada5-4b6c-8e10-dae242c8f29f" />
 <img width="1394" height="594" alt="Screenshot 2026-03-13 at 16 44 53" src="https://github.com/user-attachments/assets/a8a493e6-11a4-4133-9aad-eea1e9440135" />
@@ -14,7 +12,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 ### Three Ways to Store Lists
 - **Private Lists** — Local device storage synced via iCloud, completely offline-first
 - **File-Based Lists** — Shareable `.listie` files on iCloud Drive or local files (Dropbox, or any file provider on macOS)
-- **Nextcloud** — Native Nextcloud integration with Login Flow v2 (supports 2FA and SSO), offline-first with background sync and automatic conflict resolution
+- **Server Sync** — Self-hosted WebDAV server integration with browser-based sign-in (supports 2FA and SSO), offline-first with background sync and automatic conflict resolution
 
 ### List Management
 - Modern two-pane navigation with sidebar
@@ -46,7 +44,7 @@ A native Swift app for iOS, iPadOS and macOS (designed for iPad) for managing li
 
 ### Collaboration & Sync
 - File-based collaboration via iCloud Drive, Dropbox, or any file service
-- Nextcloud sync with ETag-based change detection and three-way merge
+- Server sync with ETag-based change detection and three-way merge
 - Offline-first: writes to local cache immediately, uploads in background
 - Automatic conflict resolution using item timestamps
 - Read-only mode for shared reference lists
@@ -95,7 +93,7 @@ Drive-friendly access to items in your lists that have a pinned location, under 
 ## Technical Details
 - Built with SwiftUI
 - Actor-based concurrency for thread-safe file I/O
-- Nextcloud Login Flow v2 — browser-based sign-in, no app passwords required
+- Browser-based server sign-in, no app passwords required
 - ETag-based sync with three-way merge for conflict resolution
 - Security-scoped bookmark storage for external files
 - NSFileCoordinator for reliable iCloud sync
