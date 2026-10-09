@@ -131,6 +131,18 @@ actor FileStore {
     // Track unavailable bookmarks instead of deleting them
     private var unavailableBookmarks: [String: UnavailableBookmark] = [:]
 
+    /// Monotonic counter per cached path, bumped by every *locally originated* cache
+    /// write (`mutate`, and the save paths). A method that suspends samples it before
+    /// its first `await` and compares after: unchanged means no edit landed while it
+    /// was away, so the document it fetched can be stored wholesale. Changed means it
+    /// must merge against the live cache instead of clobbering it.
+    ///
+    /// Deliberately not bumped by the load paths themselves — two overlapping loads
+    /// would force each other onto the merge branch, and the item merge is a union
+    /// with no tombstone, so it would resurrect whatever another device purged.
+    /// See `notes/document-mutation-atomicity.md`.
+    private var cacheGeneration: [String: UInt64] = [:]
+
     init() {
         // Bookmark loading is handled by refreshBookmarkAvailability() in loadAllLists()
         // No need to eagerly load here — it would just duplicate work on startup
@@ -325,6 +337,10 @@ actor FileStore {
 
         AppLogger.fileStore.debug("Attempting to open: \(url.path)")
 
+        // Sample before the first `await` below. `ensureFileDownloaded` can take
+        // seconds for an evicted iCloud file, and an edit can land inside that window.
+        let generationAtStart = cacheGeneration[url.path] ?? 0
+
         // Try to access security-scoped resource FIRST
         let didStart = url.startAccessingSecurityScopedResource()
         AppLogger.fileStore.debug("Security scope started: \(didStart)")
@@ -389,11 +405,10 @@ actor FileStore {
             // Don't save here - let user decide if they want to keep it
         }
         
-        // Cache the opened file
-        openedFiles[url.path] = (url, document)
-        
-        cacheTimestamps[url.path] = Date()
-        AppLogger.cache.info("Cached \(document.list.name) (expires in \(self.cacheTTL)s)")
+        // Cache the opened file, reconciling against any edit that landed during the
+        // reads above rather than clobbering it.
+        let cached = commitToCache(document, at: url, unchangedSince: generationAtStart, reason: "file open")
+        AppLogger.cache.info("Cached \(cached.list.name) (expires in \(self.cacheTTL)s)")
 
         // Save bookmark
         try await saveBookmark(for: url)
@@ -476,6 +491,9 @@ actor FileStore {
         
         AppLogger.fileStore.debug("[DIRECT SAVE] Writing \(document.labels.count) labels to disk")
 
+        // Sample before `resolveConflicts` suspends. The coordinator block below merges
+        // against what is on *disk*, which does not see an edit sitting only in cache.
+        let generationAtStart = cacheGeneration[url.path] ?? 0
 
         // Resolve any conflicts before saving
         try await resolveConflicts(at: url)
@@ -518,10 +536,8 @@ actor FileStore {
         }
 
         // Update cache with the merged document so subsequent in-memory reads match disk
-        openedFiles[url.path] = (url, savedDocument)
-
-        cacheTimestamps[url.path] = Date()
-        AppLogger.cache.info("Cached \(savedDocument.list.name) (expires in \(self.cacheTTL)s)")
+        let cachedDoc = commitToCache(savedDocument, at: url, unchangedSince: generationAtStart, reason: "save")
+        AppLogger.cache.info("Cached \(cachedDoc.list.name) (expires in \(self.cacheTTL)s)")
 
         // Update modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -967,7 +983,55 @@ actor FileStore {
         guard transform(&doc) else { return nil }
         openedFiles[url.path] = (url, doc)
         cacheTimestamps[url.path] = Date()
+        bumpGeneration(url.path)
         return doc
+    }
+
+    /// Records a locally originated cache write. See ``cacheGeneration``.
+    private func bumpGeneration(_ path: String) {
+        cacheGeneration[path] = (cacheGeneration[path] ?? 0) &+ 1
+    }
+
+    /// Stores a document that came from disk (or from a completed disk merge) into the
+    /// cache, reconciling first if a local edit landed while the caller was suspended.
+    ///
+    /// The FileStore counterpart to `NextcloudManager.commitToCache`, and the same
+    /// reasoning applies: storing wholesale is normally correct and *necessary*, because
+    /// the item merge is a union with no tombstone, and replacing the cache outright is
+    /// the only way an item deleted on another device ever leaves this one. But every
+    /// caller here suspends before reaching its cache write — `ensureFileDownloaded` can
+    /// take seconds for an evicted iCloud file — and `mutate` can run to completion
+    /// inside that window. Storing wholesale then discards the edit, and the reload that
+    /// follows a save reads the clobbered cache straight back.
+    ///
+    /// On the reconcile branch the cache ends up ahead of disk. Nothing extra is needed
+    /// to close that: the edit that moved the generation came through `mutateDocument`,
+    /// which schedules its own debounced save, and that save read-merges against disk.
+    /// This method's job is only to stop the edit being destroyed before then.
+    ///
+    /// Must be called with no `await` between the caller's last suspension and here.
+    ///
+    /// - Returns: What was actually stored — the merged document on the reconcile
+    ///   branch, `candidate` otherwise.
+    private func commitToCache(
+        _ candidate: ListDocument,
+        at url: URL,
+        unchangedSince generation: UInt64,
+        reason: String
+    ) -> ListDocument {
+        // ---- critical section: no `await` past this line ----
+        let document: ListDocument
+        if (cacheGeneration[url.path] ?? 0) != generation,
+           let live = openedFiles[url.path]?.document {
+            document = ListDocument.merge(local: live, remote: candidate)
+            AppLogger.sync.info("Local edit landed during \(reason, privacy: .public) — merged instead of overwriting: \(url.lastPathComponent, privacy: .public)")
+        } else {
+            document = candidate
+        }
+
+        openedFiles[url.path] = (url, document)
+        cacheTimestamps[url.path] = Date()
+        return document
     }
 
     // MARK: - Sync Resolution
@@ -979,7 +1043,12 @@ actor FileStore {
         // Resolve conflicts first to ensure clean state
         try await resolveConflicts(at: url)
         
-        // 1. IMPORTANT: Save the cached version BEFORE reloading from disk
+        // 1. IMPORTANT: Save the cached version BEFORE reloading from disk.
+        // This snapshot is deliberate and must stay pre-`await`: it is the local state
+        // that hasn't reached disk yet, which is the whole point of the merge below.
+        // Reading it back after the reload would merge the document with itself.
+        // An edit landing *during* the reload is a different problem, and is handled
+        // inside `openFile` by `commitToCache` — it arrives folded into `diskDocument`.
         let cachedDocument = openedFiles[url.path]?.document
         
         // 2. Load current file from disk (this will update the cache, so we saved it above)
@@ -1207,6 +1276,9 @@ actor FileStore {
 
         AppLogger.fileStore.debug("[Private] Loading: \(url.lastPathComponent)")
 
+        // Sample before the first `await`. See ``cacheGeneration``.
+        let generationAtStart = cacheGeneration[url.path] ?? 0
+
         // Ensure file is downloaded from iCloud if needed
         try await ensureFileDownloaded(at: url)
 
@@ -1228,9 +1300,9 @@ actor FileStore {
         decoder.dateDecodingStrategy = .iso8601
         let document = try decoder.decode(ListDocument.self, from: data)
 
-        // Cache the opened file
-        openedFiles[url.path] = (url, document)
-        cacheTimestamps[url.path] = Date()
+        // Cache the opened file, reconciling against any edit that landed during the
+        // download / conflict resolution above.
+        _ = commitToCache(document, at: url, unchangedSince: generationAtStart, reason: "private file open")
 
         // Store modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -1262,6 +1334,11 @@ actor FileStore {
             }
         }
 
+        // Sample before `resolveConflicts` suspends. Unlike the external save path this
+        // one writes `document` to disk with no read-merge inside the coordinator, so an
+        // edit landing in the window would otherwise be lost from the cache *and* disk.
+        let generationAtStart = cacheGeneration[url.path] ?? 0
+
         // Resolve any conflicts before saving
         try await resolveConflicts(at: url)
 
@@ -1289,8 +1366,7 @@ actor FileStore {
         }
 
         // Update cache
-        openedFiles[url.path] = (url, document)
-        cacheTimestamps[url.path] = Date()
+        _ = commitToCache(document, at: url, unchangedSince: generationAtStart, reason: "private save")
 
         // Update modification date
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -1308,7 +1384,8 @@ actor FileStore {
         // Resolve conflicts first
         try await resolveConflicts(at: url)
 
-        // Save cached version before reloading
+        // Save cached version before reloading — deliberately pre-`await`, see `syncFile`.
+        // Edits landing during the reload arrive folded into `diskDocument` instead.
         let cachedDocument = openedFiles[url.path]?.document
 
         // Load from disk

@@ -192,5 +192,103 @@ final class DocumentMutationConcurrencyTests: XCTestCase {
         let after = try XCTUnwrap(afterCached)
         XCTAssertEqual(after.items.count, before.items.count, "No-op transform still wrote")
     }
-}
 
+    // MARK: - Merge, as used by the download-path reconciliation
+    //
+    // `mutate` closes the *edit* side of the race. The *refresh* side stayed open:
+    // `NextcloudManager.downloadFile` took the server body wholesale, and its network
+    // `await` is a suspension point, so a `mutate` completing in between was discarded
+    // from memCache and disk — then read straight back by the `.externalListChanged`
+    // reload, which is the item popping back. It now reconciles via
+    // `ListDocument.merge` when the cache generation moved while the download was in
+    // flight. These cover the merge properties that reconciliation depends on.
+
+    private func fixedItem(_ note: String, checked: Bool = false, offset: TimeInterval = 0) -> ListItem {
+        ListItem(note: note, checked: checked, modifiedAt: Date(timeIntervalSince1970: 1_000_000 + offset))
+    }
+
+    private func document(_ items: [ListItem]) -> ListDocument {
+        ListDocument(list: ListSummary(id: "list-1", name: "Merge Test",
+                                       modifiedAt: Date(timeIntervalSince1970: 1_000_000)),
+                     items: items)
+    }
+
+    /// The reconciliation case itself: a tick lands while the download is in flight, so
+    /// the live cache carries it and the server body predates it. The tick must survive.
+    func testMergeKeepsAnEditThatLandedDuringADownload() {
+        let apple = fixedItem("apple")
+        let bread = fixedItem("bread")
+        var ticked = apple
+        ticked.checked = true
+        ticked.modifiedAt = apple.modifiedAt.addingTimeInterval(60)
+
+        let merged = ListDocument.merge(local: document([ticked, bread]),
+                                        remote: document([apple, bread]))
+
+        XCTAssertEqual(merged.items.first(where: { $0.note == "apple" })?.checked, true,
+                       "The tick was discarded — this is the pop-back")
+    }
+
+    /// Item order is user-visible position, so merge must not rebuild the array from its
+    /// dictionary. `Array(itemsById.values)` has unspecified order; it reshuffled the
+    /// list on every merge, and was the reason this reconciliation was left unfixed.
+    func testMergePreservesLocalItemOrderAndAppendsRemoteOnlyItems() {
+        let a = fixedItem("apple"), b = fixedItem("bread"), c = fixedItem("cheese")
+        let d = fixedItem("dates")
+
+        let merged = ListDocument.merge(local: document([a, b, c]),
+                                        remote: document([c, a, b, d]))
+
+        XCTAssertEqual(merged.items.map(\.note), ["apple", "bread", "cheese", "dates"],
+                       "Merge reordered items")
+    }
+
+    /// Merge is a union keyed on id with no item tombstone, so it can never express a
+    /// removal. This is why an authoritative download must still replace the cache
+    /// wholesale when nothing changed locally: `cleanupOldDeletedItems` hard-removes
+    /// 30-day-old tombstones, and if every download merged, the other device's cache
+    /// would resurrect the purged item and re-upload it on every pass.
+    func testMergeCannotExpressARemovalSoDownloadsMustStillReplaceWholesale() {
+        let a = fixedItem("apple"), b = fixedItem("bread"), purged = fixedItem("cheese")
+
+        let merged = ListDocument.merge(local: document([a, b, purged]),
+                                        remote: document([a, b]))
+
+        XCTAssertEqual(merged.items.count, 3,
+                       "If merge ever learns item tombstones, revisit downloadFile's wholesale branch")
+    }
+
+    /// Merge used to build its result through the memberwise init, which doesn't carry
+    /// `_preserved` — so every merge stripped top-level keys written by a newer app
+    /// version. Routing the download path through merge would have widened that.
+    func testMergeCarriesTopLevelPreservedKeys() {
+        var local = document([fixedItem("apple")])
+        local._preserved = ["shared": .string("local"), "onlyLocal": .number(1)]
+        var remote = document([fixedItem("apple")])
+        remote._preserved = ["shared": .string("remote"), "onlyRemote": .bool(true)]
+
+        let merged = ListDocument.merge(local: local, remote: remote)
+
+        XCTAssertEqual(merged._preserved["shared"], .string("local"), "Local should win")
+        XCTAssertEqual(merged._preserved["onlyLocal"], .number(1), "Local-only key dropped")
+        XCTAssertEqual(merged._preserved["onlyRemote"], .bool(true), "Remote-only key dropped")
+    }
+
+    /// Label tombstones must keep working now that labels are also order-preserved.
+    func testMergeDropsTombstonedLabelsAndPreservesLabelOrder() {
+        let aisle = ListLabel(id: "a", name: "Aisle", color: "red")
+        let bakery = ListLabel(id: "b", name: "Bakery", color: "blue")
+        let chilled = ListLabel(id: "c", name: "Chilled", color: "green")
+
+        var local = document([])
+        local.labels = [aisle, bakery]
+        var remote = document([])
+        remote.labels = [chilled, aisle, bakery]
+        remote.deletedLabelIDs = ["b"]
+
+        let merged = ListDocument.merge(local: local, remote: remote)
+
+        XCTAssertEqual(merged.labels.map(\.id), ["a", "c"],
+                       "Tombstoned label resurrected, or label order rebuilt from the dictionary")
+    }
+}

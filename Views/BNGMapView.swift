@@ -320,18 +320,18 @@ final class SlippyMapView: UIView, UIGestureRecognizerDelegate {
     /// a surround that followed the interface style would put a hard light/dark
     /// seam along the sheet edge in dark mode.
     ///
-    /// These are sRGB. Sampling the imagery off a screenshot gives values in the
-    /// *display's* space — on a wide-gamut monitor the sea read D2E9FB, which as
-    /// sRGB is a visibly different colour from the tile it came from.
+    /// Land is pure white, which is exactly what the imagery fills land with once
+    /// it runs out of coverage, so the two meet without a seam. The sea is a hair
+    /// off the imagery's own tone rather than a match: the boundary then reads as
+    /// a faint step in the water, present if you look for it and invisible if you
+    /// don't, instead of either a hard mismatch or nothing at all.
     ///
-    /// Land is a neutral grey rather than the imagery's land tone on purpose. The
-    /// imagery restyles land as coverage runs out — pale green at low zoom, flat
-    /// white further in — so any single colour picked to match it is wrong at some
-    /// zoom. Grey doesn't try: it reads as "outside the data", which is what it is,
-    /// and the sheet edge becomes a deliberate boundary rather than a mismatch.
-    private static let seaColor = UIColor(red: 0xC7/255, green: 0xEA/255, blue: 0xFC/255, alpha: 1)
-    private static let landColor = UIColor(red: 0xDF/255, green: 0xE3/255, blue: 0xE6/255, alpha: 1)
-    private static let coastColor = UIColor(red: 0xBA/255, green: 0xC1/255, blue: 0xC7/255, alpha: 1)
+    /// Values are sRGB. Sampling the imagery off a screenshot yields the
+    /// *display's* space — on a wide-gamut monitor the sea read D2E9FB, which set
+    /// as sRGB is a visibly different colour from the tile it came from.
+    private static let seaColor = UIColor(red: 0xC2/255, green: 0xE8/255, blue: 0xFC/255, alpha: 1)
+    private static let landColor = UIColor.white
+    private static let coastColor = UIColor(red: 0xAD/255, green: 0xC6/255, blue: 0xD6/255, alpha: 1)
     private var tileLayers: [TileID: CALayer] = [:]
     private var realTiles: Set<TileID> = []
     /// Tiles we've already kicked off a fetch for, so a pan doesn't re-request

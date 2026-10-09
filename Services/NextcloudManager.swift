@@ -44,6 +44,21 @@ actor NextcloudManager {
     /// callers request the same file before the first download completes (actor reentrancy).
     private var inFlightDownloads: [String: Task<ListDocument, Error>] = [:]
 
+    /// Monotonic counter per cacheKey, bumped by every *locally originated* cache write
+    /// (`mutate`, `saveFile`). `downloadFile` samples it before its network `await` and
+    /// compares after: an unchanged generation means no local edit landed while the
+    /// download was in flight, so the server body can be taken wholesale. A changed one
+    /// means it must merge instead of clobbering. Deliberately not bumped by
+    /// `downloadFile` itself — two overlapping downloads must not force each other to
+    /// merge, or an item another device purged gets resurrected.
+    private var cacheGeneration: [String: UInt64] = [:]
+
+    /// Remote paths with a background refresh already in flight. Claimed before the
+    /// first `await` so the fire-and-forget `Task` in `openFile` can't start a second
+    /// one — several unclaimed refreshes used to race, each ending in a cache write
+    /// carrying whatever the server held when *it* started.
+    private var activeBackgroundSyncs: Set<String> = []
+
     private var pathMonitor: NWPathMonitor?
 
     /// Set to true when the app crosses an inactive→active boundary or any other event
@@ -311,6 +326,7 @@ actor NextcloudManager {
 
         // Write merged version to local cache
         memCache[key] = workingDoc
+        bumpGeneration(key)
         let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
         try? saveToDisk(workingDoc, at: diskURL)
         pendingUploads.insert(remotePath)
@@ -328,6 +344,7 @@ actor NextcloudManager {
                 let serverDoc = try await downloadFile(creds: creds, remotePath: remotePath)
                 let merged = mergeDocuments(local: workingDoc, server: serverDoc)
                 memCache[key] = merged
+                bumpGeneration(key)
                 try? saveToDisk(merged, at: localCacheURL(creds: creds, remotePath: remotePath))
                 docToUpload = merged
             } else {
@@ -434,7 +451,57 @@ actor NextcloudManager {
         guard var doc = memCache[key] else { throw NCError.notConnected }
         guard transform(&doc) else { return nil }
         memCache[key] = doc
+        bumpGeneration(key)
         try? saveToDisk(doc, at: diskURL)
+        return doc
+    }
+
+    /// Records a locally originated cache write. See ``cacheGeneration``.
+    private func bumpGeneration(_ key: String) {
+        cacheGeneration[key] = (cacheGeneration[key] ?? 0) &+ 1
+    }
+
+    /// Stores a server-derived document into the caches, reconciling first if a local
+    /// edit landed while the network call that produced it was in flight.
+    ///
+    /// Normally `candidate` replaces the cache wholesale, and it has to: items have no
+    /// tombstone, so `ListDocument.merge` is a pure union and can never express a
+    /// removal. Taking the remote side whole is the only way an item another device
+    /// purged — `cleanupOldDeletedItems` hard-removes 30-day-old tombstones — ever
+    /// leaves this cache. Merging unconditionally would resurrect it and re-upload it
+    /// on every pass, with the two devices flapping indefinitely.
+    ///
+    /// But the network call above every caller is a suspension point, and `mutate` can
+    /// run to completion inside it. Replacing wholesale then discards that edit from
+    /// memCache *and* the disk cache, and the `.externalListChanged` reload reads the
+    /// clobbered cache straight back — which is what made a ticked item pop back. So
+    /// when the generation has moved, merge instead: one side is then genuinely local
+    /// and the other genuinely remote, which is the case `modifiedAt` resolves correctly.
+    ///
+    /// Must be called with no `await` between the caller's last suspension and here.
+    private func commitToCache(
+        _ candidate: ListDocument,
+        key: String,
+        remotePath: String,
+        creds: NextcloudCredentials,
+        unchangedSince generation: UInt64,
+        reason: String
+    ) -> ListDocument {
+        // ---- critical section: no `await` past this line ----
+        let doc: ListDocument
+        if (cacheGeneration[key] ?? 0) != generation, let live = memCache[key] {
+            doc = ListDocument.merge(local: live, remote: candidate)
+            // The result now differs from what the server holds, while the ETag says
+            // "in sync" — so without this the edit would never be uploaded.
+            pendingUploads.insert(remotePath)
+            savePendingUploads()
+            AppLogger.nextcloud.info("[NC] Local edit landed during \(reason, privacy: .public) — merged instead of overwriting: \(remotePath, privacy: .public)")
+        } else {
+            doc = candidate
+        }
+
+        memCache[key] = doc
+        try? saveToDisk(doc, at: localCacheURL(creds: creds, remotePath: remotePath))
         return doc
     }
 
@@ -506,6 +573,17 @@ actor NextcloudManager {
     /// still return `true` when `saveFile` runs, so any conflict is caught and merged there.
     /// Posts `nextcloudFileNotFound` if the server returns 404.
     private func backgroundSync(remotePath: String) async throws {
+        // Claim BEFORE the first `await`. `openFile` spawns this fire-and-forget on every
+        // cache hit, and a reload touches several documents, so without the claim a burst
+        // of edits puts many refreshes in flight at once — each finishing with a cache
+        // write carrying whatever the server held when that one started.
+        guard !activeBackgroundSyncs.contains(remotePath) else {
+            AppLogger.cache.debug("[NC] Background refresh already in flight: \(remotePath, privacy: .public)")
+            return
+        }
+        activeBackgroundSyncs.insert(remotePath)
+        defer { activeBackgroundSyncs.remove(remotePath) }
+
         guard let creds = await resolveCredentials() else { return }
         do {
             let serverChanged = try await hasFileChanged(remotePath: remotePath)
@@ -551,12 +629,21 @@ actor NextcloudManager {
                 return serverDoc
             }
             let mergedDoc = mergeDocuments(local: localDoc, server: serverDoc)
+            // Sample before the upload: it suspends too, so an edit can land between the
+            // merge and the cache write below.
+            let generationBeforeUpload = cacheGeneration[key] ?? 0
             try await uploadFile(creds: creds, doc: mergedDoc, remotePath: remotePath)
             markUploadDrained(remotePath)
-            memCache[key] = mergedDoc
-            try? saveToDisk(mergedDoc, at: localCacheURL(creds: creds, remotePath: remotePath))
+            let stored = commitToCache(
+                mergedDoc,
+                key: key,
+                remotePath: remotePath,
+                creds: creds,
+                unchangedSince: generationBeforeUpload,
+                reason: "conflict upload"
+            )
             AppLogger.nextcloud.info("[NC] Conflict resolved for \(remotePath, privacy: .public)")
-            return mergedDoc
+            return stored
 
         } else if hasPending {
             // Local changes only — upload and return local
@@ -598,6 +685,7 @@ actor NextcloudManager {
         guard let creds = await resolveCredentials() else { return }
         let key = cacheKey(creds: creds, remotePath: remotePath)
         memCache.removeValue(forKey: key)
+        cacheGeneration.removeValue(forKey: key)
         if pendingUploads.remove(remotePath) != nil { savePendingUploads() }
         let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
         try? FileManager.default.removeItem(at: diskURL)
@@ -619,6 +707,7 @@ actor NextcloudManager {
         let pending = pendingUploads.count
         let etagCount = etagStore.count
         let inflight = inFlightDownloads.count
+        let bgSyncs = activeBackgroundSyncs.count
         let mutationDepth = await MutationLog.shared.depth()
         let accountSummary = creds.map { "\($0.username)@\($0.serverURL)" } ?? "(not connected)"
         return """
@@ -629,6 +718,7 @@ actor NextcloudManager {
         pendingUploads: \(pending) file(s)
         etagStore: \(etagCount) entry(s)
         inFlightDownloads: \(inflight)
+        backgroundSyncs in flight: \(bgSyncs)
         mutationLog depth: \(mutationDepth)
         """
     }
@@ -706,6 +796,11 @@ actor NextcloudManager {
 
     private func downloadFile(creds: NextcloudCredentials, remotePath: String, updateEtag: Bool = true) async throws -> ListDocument {
         let serverURL = creds.davURL(for: remotePath)
+        let key = cacheKey(creds: creds, remotePath: remotePath)
+        // Sample before the network `await` below. Anything that edits the cache while
+        // the download is in flight bumps this, which is how the write at the bottom
+        // knows not to clobber.
+        let generationAtStart = cacheGeneration[key] ?? 0
 
         // Download to a temp file
         let tempURL = FileManager.default.temporaryDirectory
@@ -737,13 +832,16 @@ actor NextcloudManager {
             throw NCError.networkError(result.nkError.errorDescription)
         }
 
-        let doc = try loadFromDisk(at: tempURL)
+        let serverDoc = try loadFromDisk(at: tempURL)
 
-        // Update caches
-        let key = cacheKey(creds: creds, remotePath: remotePath)
-        memCache[key] = doc
-        let diskURL = localCacheURL(creds: creds, remotePath: remotePath)
-        try? saveToDisk(doc, at: diskURL)
+        let doc = commitToCache(
+            serverDoc,
+            key: key,
+            remotePath: remotePath,
+            creds: creds,
+            unchangedSince: generationAtStart,
+            reason: "download"
+        )
 
         // Update ETag (skipped for background refreshes — see backgroundSync)
         if updateEtag, let etag = etag(from: result.response?.response) {
